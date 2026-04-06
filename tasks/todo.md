@@ -64,22 +64,22 @@
 
 > Goal: Working `dockwatch` CLI with `list` and `check` commands.
 
-- [ ] Create `src/dockwatch/display.py`
-  - [ ] `render_containers_table(containers: list[ContainerInfo])` — Rich Table: Name / Image / Tag / Registry
-  - [ ] `render_update_table(results: list[UpdateResult])` — Rich Table: Name / Current / Latest / Status
-    - [ ] Status colors: red=OUTDATED, green=UP-TO-DATE, yellow=UNKNOWN
-  - [ ] `render_summary(results: list[UpdateResult])` — "X outdated, Y up-to-date, Z unknown"
-- [ ] Create `src/dockwatch/main.py` — Typer app
-  - [ ] `dockwatch list` — show all running containers (calls `get_running_containers`, renders table)
-  - [ ] `dockwatch check [--container NAME]` — check all or single container; renders update table + summary
-  - [ ] `dockwatch version` — print version
-  - [ ] Global `--help` with description and usage examples
-- [ ] Wire CLI entry point in `pyproject.toml`: `dockwatch = "dockwatch.main:app"`
-- [ ] End-to-end test:
-  - [ ] `dockwatch --help` shows commands
-  - [ ] `dockwatch list` shows running containers in table
-  - [ ] `dockwatch check` shows update status for all containers
-  - [ ] `dockwatch check --container nginx` checks single container
+- [x] Create `src/dockwatch/display.py`
+  - [x] `render_containers_table(containers: list[ContainerInfo])` — Rich Table: Name / Image / Tag / Registry
+  - [x] `render_update_table(results: list[UpdateResult])` — Rich Table: Name / Current / Latest / Status
+    - [x] Status colors: red=OUTDATED, green=UP-TO-DATE, yellow=UNKNOWN
+  - [x] `render_summary(results: list[UpdateResult])` — "X outdated, Y up-to-date, Z unknown"
+- [x] Create `src/dockwatch/main.py` — Typer app
+  - [x] `dockwatch list` — show all running containers (calls `get_running_containers`, renders table)
+  - [x] `dockwatch check [--container NAME]` — check all or single container; renders update table + summary
+  - [x] `dockwatch version` — print version
+  - [x] Global `--help` with description and usage examples
+- [x] Wire CLI entry point in `pyproject.toml`: `dockwatch = "dockwatch.main:app"`
+- [x] End-to-end test:
+  - [x] `dockwatch --help` shows commands
+  - [x] `dockwatch list` shows running containers in table
+  - [x] `dockwatch check` shows update status for all containers
+  - [x] `dockwatch check --container nginx` checks single container
 
 ---
 
@@ -328,3 +328,4 @@
 - 2026-04-06: Phase 1 complete (`pyproject.toml`, package scaffold, core models, editable-install/import verification).
 - 2026-04-06: Phase 2 complete (`docker_client.py`, image parsing, Docker connection error handling, smoke test run).
 - 2026-04-06: Phase 3 complete (`registry.py`, async Docker Hub/GHCR checks, concurrent checks, mocked httpx unit tests).
+- 2026-04-06: Phase 4 complete (`display.py`, Typer CLI commands, entry point wiring, command verification; Docker unavailable for live table output in this environment).

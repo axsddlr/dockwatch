@@ -16,5 +16,8 @@ dependencies = [
   "packaging>=24.1",
 ]
 
+[project.scripts]
+dockwatch = "dockwatch.main:app"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/dockwatch"]

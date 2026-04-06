@@ -1,26 +1,49 @@
 # dockwatch
 
-Docker container update watcher with a CLI and NiceGUI dashboard.
+`dockwatch` is a notify-first Docker container update watcher with both:
+- a CLI for terminal-first workflows
+- a NiceGUI dashboard for browser-based monitoring
 
-`dockwatch` is a notify-first alternative to auto-updaters: it inspects running container image tags, checks registries for newer tags, and lets you decide what to update.
+It is designed as a practical Watchtower-style replacement where **you are informed first** and stay in control of updates.
 
-## Why this exists
+## What It Does
 
-- Watchtower-style convenience without forced auto-restarts
-- Simple commands for home-lab users
-- Optional browser dashboard and notifications
+- Discovers running Docker containers
+- Parses image references (Docker Hub + GHCR, including digest-pinned images)
+- Checks registries for newer tags
+- Marks containers as `OUTDATED`, `UP-TO-DATE`, `UNKNOWN`, or `PINNED`
+- Supports opt-in notifications (`--notify`) via:
+  - generic webhook
+  - Discord webhook
+- Provides web dashboard actions:
+  - refresh all
+  - check per-row
+  - pin/unpin per-row
 
-## Quick Start
+## Current Status
 
-### CLI (local Python)
+Implemented:
+- Docker Hub + GHCR check pipeline
+- CLI commands: `list`, `check`, `version`, `serve`, `pin`, `ignore`, `config list`
+- CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`
+- NiceGUI dashboard with dark mode + responsive layout
+- Config persistence and notification settings UI
+- Dockerfile + docker-compose scaffolding
+- CI workflow (`ruff`, `mypy`, `pytest`)
+
+In progress / pending:
+- Full compose runtime verification requires a running local Docker daemon
+- Screenshot assets for README examples
+
+## Installation
+
+### Local Python (editable)
 
 ```bash
 python -m pip install -e .
-dockwatch list
-dockwatch check
-dockwatch check --outdated-only
-dockwatch check --json
 ```
+
+If installed in your user scripts path, `dockwatch` will be available as a command.
 
 ### Docker Compose
 
@@ -28,20 +51,69 @@ dockwatch check --json
 docker compose up -d
 ```
 
-Dashboard: `http://localhost:8080`
+Dashboard default URL:
+- `http://localhost:8080`
 
-## CLI Commands
+## Quick Usage
 
-- `dockwatch list` — list running containers and current image tags
+### List running containers
+
+```bash
+dockwatch list
+```
+
+### Check for updates
+
+```bash
+dockwatch check
+```
+
+### Check only one container
+
+```bash
+dockwatch check --container nginx
+```
+
+### Show only outdated containers
+
+```bash
+dockwatch check --outdated-only
+```
+
+### JSON output (for scripts)
+
+```bash
+dockwatch check --json
+```
+
+### Send configured notifications
+
+```bash
+dockwatch check --notify
+```
+
+### Start dashboard
+
+```bash
+dockwatch serve --host 0.0.0.0 --port 8080
+```
+
+## CLI Reference
+
+- `dockwatch list`
 - `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify]`
-- `dockwatch pin <container>` — mark as pinned
-- `dockwatch ignore <container>` — exclude from checks
-- `dockwatch config list` — show pinned/ignored/notifier config
-- `dockwatch serve [--host 0.0.0.0] [--port 8080]` — start web dashboard
+- `dockwatch version`
+- `dockwatch serve [--host 0.0.0.0] [--port 8080]`
+- `dockwatch pin <container>`
+- `dockwatch ignore <container>`
+- `dockwatch config list`
 
-## Config File
+## Configuration
 
-Path: `~/.config/dockwatch/config.toml`
+Default path:
+- `~/.config/dockwatch/config.toml`
+
+Example:
 
 ```toml
 pinned = ["plex"]
@@ -53,16 +125,59 @@ webhook_url = ""
 discord_webhook = ""
 ```
 
-## Supported Registries
+Notes:
+- `pinned`: included in results as `PINNED`
+- `ignored`: skipped during checks
+- notifier URLs can be managed from CLI config file or dashboard settings card
+
+## Registry Support
 
 | Registry | Status |
 | --- | --- |
 | Docker Hub | Supported |
-| GitHub Container Registry (`ghcr.io`) | Supported |
+| GHCR (`ghcr.io`) | Supported |
 
-## CI
+## Notifications
 
-GitHub Actions workflow runs:
-- `ruff` lint
-- `mypy` type checking
-- `pytest` unit tests
+Supported notifiers:
+- Generic webhook (`POST` JSON)
+- Discord webhook (embed payload)
+
+Use `dockwatch check --notify` to send after a check run.
+
+## Docker / Compose Notes
+
+- Container expects Docker socket access.
+- On Linux, bind mount: `/var/run/docker.sock:/var/run/docker.sock`
+- On Windows, Docker Desktop/npipe access must be available to the environment.
+
+If Docker is unavailable, CLI and dashboard show actionable error messaging.
+
+## Development
+
+### Run tests
+
+```bash
+python -m unittest -v tests.test_registry tests.test_config tests.test_notifiers
+```
+
+### CI
+
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
+- `ruff check src tests`
+- `mypy src`
+- `pytest -q`
+
+## Troubleshooting
+
+### `Could not connect to Docker`
+
+- Ensure Docker daemon/Desktop is running
+- Verify permission to Docker socket/pipe
+- Re-run `dockwatch check` or refresh dashboard after daemon recovery
+
+### Notifications not sending
+
+- Confirm webhook URL is reachable
+- Check dashboard "Send Test Notification" result
+- Re-run with `dockwatch check --notify` and inspect notifier errors

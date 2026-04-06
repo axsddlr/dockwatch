@@ -1,15 +1,36 @@
+# VCS and local metadata
 .git
 .gitignore
 .claude
+.tmp_home
+
+# Dev/docs not needed in image build context
 design
 tasks
 tests
+idea.txt
+README.md
+.github
+
+# Python caches and artifacts
 **/__pycache__
 *.pyc
 *.pyo
 *.pyd
-*.log
-.tmp_home
-.env
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Virtualenv / local env files
 venv
 .venv
+.env
+.env.*
+
+# Local OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode
+.idea

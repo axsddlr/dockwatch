@@ -1,0 +1,21 @@
+# dockwatch example configuration
+# Copy to ~/.config/dockwatch/config.toml and customize.
+
+pinned = [
+  # "plex",
+]
+
+ignored = [
+  # "db",
+]
+
+notify_only = [
+  # "nginx",
+]
+
+[notifications]
+# Generic webhook endpoint (POST JSON payload)
+webhook_url = ""
+
+# Discord webhook URL
+discord_webhook = ""

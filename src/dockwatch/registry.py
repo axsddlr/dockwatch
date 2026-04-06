@@ -1,4 +1,4 @@
-"""Registry checkers for Docker Hub and GHCR."""
+"""Registry checkers for Docker Hub, GHCR, and lscr.io."""
 
 from __future__ import annotations
 
@@ -13,7 +13,14 @@ from .docker_client import DIGEST_PINNED_TAG
 from .models import ContainerInfo, RegistryType, UpdateResult
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
-MANIFEST_ACCEPT_HEADER = "application/vnd.docker.distribution.manifest.v2+json"
+# Multi-arch manifest types listed first so registries return manifest list digests
+# (matching what Docker stores in RepoDigests for multi-arch images)
+MANIFEST_ACCEPT_HEADERS = ", ".join([
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+])
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
 
 
@@ -103,10 +110,10 @@ async def _fetch_manifest_digest(
     tag: str,
     headers: dict[str, str] | None = None,
 ) -> str | None:
-    response = await client.get(
+    response = await client.head(
         f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}",
         headers={
-            "Accept": MANIFEST_ACCEPT_HEADER,
+            "Accept": MANIFEST_ACCEPT_HEADERS,
             **(headers or {}),
         },
     )
@@ -120,29 +127,61 @@ async def check_dockerhub(info: ContainerInfo) -> UpdateResult:
     if not info.namespace or not info.image_name:
         return _skip_result(info, "invalid image reference for Docker Hub")
 
-    path = f"library/{info.image_name}" if info.namespace == "library" else f"{info.namespace}/{info.image_name}"
-    url = f"https://hub.docker.com/v2/repositories/{path}/tags?page_size=20&ordering=last_updated"
+    base_url = "https://registry-1.docker.io"
+    token_url = (
+        f"https://auth.docker.io/token"
+        f"?service=registry.docker.io"
+        f"&scope=repository:{info.namespace}/{info.image_name}:pull"
+    )
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url)
-            if response.status_code == 404:
+            token_response = await client.get(token_url)
+            if token_response.status_code == 404:
                 return _skip_result(info, "docker hub image not found")
-            response.raise_for_status()
-            payload = response.json()
+            token_response.raise_for_status()
+            token_payload = token_response.json()
+            token = token_payload.get("token") if isinstance(token_payload, dict) else None
+            if not token:
+                return _skip_result(info, "docker hub token response missing token")
+
+            auth_headers = {"Authorization": f"Bearer {token}"}
+
+            tags_response = await client.get(
+                f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
+                headers=auth_headers,
+            )
+            if tags_response.status_code == 404:
+                return _skip_result(info, "docker hub image not found")
+            tags_response.raise_for_status()
+            tags_payload = tags_response.json()
+            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+            latest_tag = _select_latest_from_tags(tags)
+            if not latest_tag:
+                return UpdateResult(
+                    container_info=info,
+                    latest_tag=None,
+                    is_outdated=None,
+                    check_error="no tags returned by docker hub",
+                    status="UNKNOWN",
+                )
+            remote_digest = await _fetch_manifest_digest(
+                client,
+                base_url=base_url,
+                namespace=info.namespace,
+                image_name=info.image_name,
+                tag=latest_tag,
+                headers=auth_headers,
+            )
     except httpx.HTTPError as exc:
         return _skip_result(info, f"docker hub check failed: {exc}")
-
-    results = payload.get("results", []) if isinstance(payload, dict) else []
-    tags = [row.get("name") for row in results if isinstance(row, dict)]
-    latest_tag = _select_latest_from_tags(tags)
 
     return UpdateResult(
         container_info=info,
         latest_tag=latest_tag,
-        is_outdated=_compare_tags(info, latest_tag),
-        check_error=None if latest_tag else "no tags returned by docker hub",
-        status=None if latest_tag else "UNKNOWN",
+        is_outdated=_compare_tags(info, latest_tag, remote_digest),
+        check_error=None,
+        status=None,
     )
 
 

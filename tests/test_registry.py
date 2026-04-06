@@ -47,6 +47,12 @@ class MockAsyncClient:
             raise AssertionError(f"no mock response configured for {url}")
         return self._responses.pop(0)
 
+    async def head(self, url: str, headers: dict | None = None) -> MockResponse:
+        self.calls.append((url, headers))
+        if not self._responses:
+            raise AssertionError(f"no mock response configured for HEAD {url}")
+        return self._responses.pop(0)
+
 
 def make_container(*, registry: RegistryType, current_tag: str = "1.0.0") -> ContainerInfo:
     return ContainerInfo(
@@ -63,15 +69,21 @@ def make_container(*, registry: RegistryType, current_tag: str = "1.0.0") -> Con
 class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_dockerhub_prefers_latest_semver(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
-        payload = {
-            "results": [
-                {"name": "latest", "last_updated": "2026-01-01T00:00:00Z"},
-                {"name": "1.1.0", "last_updated": "2026-01-02T00:00:00Z"},
-                {"name": "1.2.3", "last_updated": "2026-01-03T00:00:00Z"},
-            ]
-        }
+        token_payload = {"token": "dh-token"}
+        tags_payload = {"tags": ["latest", "1.1.0", "1.2.3"]}
 
-        mock_client = MockAsyncClient([MockResponse(200, payload)])
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.3",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
             result = await check_dockerhub(info)
 
@@ -81,14 +93,21 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_check_dockerhub_falls_back_to_most_recent_non_floating(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="foo")
-        payload = {
-            "results": [
-                {"name": "latest", "last_updated": "2026-01-01T00:00:00Z"},
-                {"name": "rolling", "last_updated": "2026-01-03T00:00:00Z"},
-            ]
-        }
+        token_payload = {"token": "dh-token"}
+        tags_payload = {"tags": ["latest", "rolling"]}
 
-        mock_client = MockAsyncClient([MockResponse(200, payload)])
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/rolling",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
             result = await check_dockerhub(info)
 

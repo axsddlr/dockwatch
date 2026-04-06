@@ -3,7 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: dockwatch:local
+    image: dockwatch-local:dev
+    pull_policy: never
     container_name: dockwatch
     restart: unless-stopped
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]

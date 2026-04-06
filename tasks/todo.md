@@ -166,17 +166,17 @@
 > Goal: Production-ready for home-lab users. Clear docs, good UX.
 
 - [ ] Write `README.md`
-  - [ ] What it does / why it exists (Watchtower replacement)
-  - [ ] Quick start: Docker Compose one-liner
+  - [x] What it does / why it exists (Watchtower replacement)
+  - [x] Quick start: Docker Compose one-liner
   - [ ] CLI usage examples with output screenshots
-  - [ ] Config file reference
-  - [ ] Supported registries table
-- [ ] Add `--json` output flag to `dockwatch check` for scripting/piping
-- [ ] Add `dockwatch check --outdated-only` flag — show only containers with updates
-- [ ] NiceGUI dashboard: dark mode support
-- [ ] NiceGUI dashboard: mobile-responsive layout
-- [ ] Error page in dashboard when Docker socket is unavailable (with fix instructions)
-- [ ] Add GitHub Actions CI: lint (ruff), type check (mypy), unit tests (pytest)
+  - [x] Config file reference
+  - [x] Supported registries table
+- [x] Add `--json` output flag to `dockwatch check` for scripting/piping
+- [x] Add `dockwatch check --outdated-only` flag — show only containers with updates
+- [x] NiceGUI dashboard: dark mode support
+- [x] NiceGUI dashboard: mobile-responsive layout
+- [x] Error page in dashboard when Docker socket is unavailable (with fix instructions)
+- [x] Add GitHub Actions CI: lint (ruff), type check (mypy), unit tests (pytest)
 
 ---
 
@@ -333,3 +333,4 @@
 - 2026-04-06: Phase 6 complete (`config.py`, pin/ignore/config CLI commands, config-aware check pipeline, PINNED status + dashboard pin/unpin).
 - 2026-04-06: Phase 7 complete (`notifiers` package, `--notify` flow, dashboard notification settings, local webhook/discord endpoint smoke tests).
 - 2026-04-06: Phase 8 started (`Dockerfile`, `docker-compose.yml`, `.dockerignore`, compose config validation; blocked on local Docker daemon for `compose up`/publish/release tasks).
+- 2026-04-06: Phase 9 started (`README`, `--json`/`--outdated-only`, dashboard dark/mobile/error UX, CI workflow); screenshots pending.

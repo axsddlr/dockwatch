@@ -15,7 +15,7 @@ PinHandler = Callable[[str], Awaitable[None]]
 class ContainerStatusTable:
     def __init__(self) -> None:
         with ui.column().classes("w-full gap-2"):
-            with ui.row().classes("w-full text-bold text-grey-7"):
+            with ui.row().classes("w-full text-bold text-grey-7 hidden md:flex"):
                 ui.label("Name").classes("w-2/12")
                 ui.label("Image").classes("w-3/12")
                 ui.label("Current Tag").classes("w-2/12")
@@ -52,14 +52,14 @@ class ContainerStatusTable:
                     latest_value = result.check_error
 
                 with ui.card().classes("w-full"):
-                    with ui.row().classes("w-full items-center gap-2"):
-                        ui.label(result.container_info.name or "-").classes("w-2/12")
-                        ui.label(result.container_info.image_ref or "-").classes("w-3/12")
-                        ui.label(result.container_info.current_tag or "-").classes("w-2/12")
-                        ui.label(latest_value).classes("w-2/12 break-all")
-                        with ui.row().classes("w-2/12"):
+                    with ui.row().classes("w-full items-center gap-2 flex-wrap md:flex-nowrap"):
+                        ui.label(result.container_info.name or "-").classes("w-full md:w-2/12")
+                        ui.label(result.container_info.image_ref or "-").classes("w-full md:w-3/12 break-all")
+                        ui.label(result.container_info.current_tag or "-").classes("w-full md:w-2/12")
+                        ui.label(latest_value).classes("w-full md:w-2/12 break-all")
+                        with ui.row().classes("w-full md:w-2/12"):
                             ui.badge(status_text, color=badge_color)
-                        with ui.row().classes("w-1/12 gap-1"):
+                        with ui.row().classes("w-full md:w-1/12 gap-1"):
                             ui.button(
                                 "Check",
                                 on_click=lambda _=None, name=result.container_info.name: on_check(name),

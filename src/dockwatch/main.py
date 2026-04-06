@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from dataclasses import asdict
+from enum import Enum
 
 import typer
 
@@ -44,6 +47,8 @@ def list_containers() -> None:
 def check_updates(
     container: str | None = typer.Option(None, "--container", help="Check only one container by name."),
     notify: bool = typer.Option(False, "--notify", help="Send configured notifications after checking."),
+    json_output: bool = typer.Option(False, "--json", help="Print check output as JSON."),
+    outdated_only: bool = typer.Option(False, "--outdated-only", help="Show only outdated containers."),
 ) -> None:
     """Check running containers for newer image tags."""
     try:
@@ -60,8 +65,20 @@ def check_updates(
 
     config = load_config()
     results = asyncio.run(check_all(containers, config))
-    render_update_table(results)
-    render_summary(results)
+    if outdated_only:
+        results = [result for result in results if result.is_outdated is True]
+
+    if json_output:
+        def _serialize(value):  # noqa: ANN001
+            if isinstance(value, Enum):
+                return value.value
+            return value
+
+        payload = [asdict(result, dict_factory=dict) for result in results]
+        typer.echo(json.dumps(payload, default=_serialize, indent=2))
+    else:
+        render_update_table(results)
+        render_summary(results)
     if notify:
         errors = asyncio.run(send_configured_notifications(results, config))
         if errors:

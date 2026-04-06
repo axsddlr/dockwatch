@@ -20,6 +20,7 @@ class DashboardController:
         self.results: list[UpdateResult] = []
         self.last_checked: str = "Never"
         self.config = load_config()
+        ui.dark_mode().enable()
 
         with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
             with ui.row().classes("w-full items-center justify-between"):
@@ -34,6 +35,7 @@ class DashboardController:
                 self.interval_seconds = ui.number("Interval (seconds)", value=30, min=10, max=3600, step=5)
 
             self.message_label = ui.label("").classes("text-yellow-8")
+            self.error_help = ui.markdown("").classes("text-red-7")
             self.table = ContainerStatusTable()
 
             with ui.card().classes("w-full"):
@@ -69,12 +71,20 @@ class DashboardController:
             containers = get_running_containers()
         except DockerConnectionError as exc:
             self.message_label.set_text(str(exc))
+            self.error_help.set_content(
+                "Docker is unavailable.\\n\\n"
+                "Fixes to try:\\n"
+                "- Ensure Docker Desktop/daemon is running\\n"
+                "- Verify access to Docker socket/pipe\\n"
+                "- Re-open dashboard after Docker is healthy"
+            )
             self.results = []
             self.table.render(self.results, self.check_one, self.toggle_pin)
             return
 
         self.config = load_config()
         self.message_label.set_text("")
+        self.error_help.set_content("")
         self.results = await check_all(containers, self.config)
         self._update_last_checked()
         self.table.render(self.results, self.check_one, self.toggle_pin)

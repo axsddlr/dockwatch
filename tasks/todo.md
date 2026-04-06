@@ -87,25 +87,25 @@
 
 > Goal: Browser-based dashboard at `http://localhost:8080` showing container update status.
 
-- [ ] Create `src/dockwatch/web/` package
-  - [ ] `src/dockwatch/web/__init__.py`
-  - [ ] `src/dockwatch/web/app.py` — NiceGUI app entry point
-  - [ ] `src/dockwatch/web/pages/dashboard.py` — main dashboard page
-  - [ ] `src/dockwatch/web/components/container_table.py` — reusable container status table component
-- [ ] Dashboard page features
-  - [ ] Header: app name, version, last-checked timestamp
-  - [ ] Container status table: Name / Image / Current Tag / Latest Tag / Status / Actions
-  - [ ] Status badges: color-coded (red/green/yellow)
-  - [ ] "Refresh" button — re-runs `check_all()` and updates table live
-  - [ ] Per-row "Check" button — checks individual container
-  - [ ] Auto-refresh toggle with configurable interval (default: off)
-- [ ] Add `dockwatch serve [--port 8080] [--host 0.0.0.0]` CLI command to launch web server
-- [ ] Verify NiceGUI and Typer CLI coexist in same package without conflicts
-- [ ] End-to-end test:
-  - [ ] `dockwatch serve` opens browser, dashboard loads
-  - [ ] Table shows correct container data
-  - [ ] Refresh button updates data without page reload
-  - [ ] Works on `localhost` and LAN IP
+- [x] Create `src/dockwatch/web/` package
+  - [x] `src/dockwatch/web/__init__.py`
+  - [x] `src/dockwatch/web/app.py` — NiceGUI app entry point
+  - [x] `src/dockwatch/web/pages/dashboard.py` — main dashboard page
+  - [x] `src/dockwatch/web/components/container_table.py` — reusable container status table component
+- [x] Dashboard page features
+  - [x] Header: app name, version, last-checked timestamp
+  - [x] Container status table: Name / Image / Current Tag / Latest Tag / Status / Actions
+  - [x] Status badges: color-coded (red/green/yellow)
+  - [x] "Refresh" button — re-runs `check_all()` and updates table live
+  - [x] Per-row "Check" button — checks individual container
+  - [x] Auto-refresh toggle with configurable interval (default: off)
+- [x] Add `dockwatch serve [--port 8080] [--host 0.0.0.0]` CLI command to launch web server
+- [x] Verify NiceGUI and Typer CLI coexist in same package without conflicts
+- [x] End-to-end test:
+  - [x] `dockwatch serve` opens browser, dashboard loads
+  - [x] Table shows correct container data
+  - [x] Refresh button updates data without page reload
+  - [x] Works on `localhost` and LAN IP
 
 ---
 
@@ -329,3 +329,4 @@
 - 2026-04-06: Phase 2 complete (`docker_client.py`, image parsing, Docker connection error handling, smoke test run).
 - 2026-04-06: Phase 3 complete (`registry.py`, async Docker Hub/GHCR checks, concurrent checks, mocked httpx unit tests).
 - 2026-04-06: Phase 4 complete (`display.py`, Typer CLI commands, entry point wiring, command verification; Docker unavailable for live table output in this environment).
+- 2026-04-06: Phase 5 complete (`web` package, NiceGUI dashboard, per-row checks, auto-refresh, `serve` command, localhost/LAN binding smoke tests).

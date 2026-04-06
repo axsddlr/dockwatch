@@ -10,6 +10,7 @@ from . import __version__
 from .display import render_containers_table, render_summary, render_update_table
 from .docker_client import DockerConnectionError, get_running_containers
 from .registry import check_all
+from .web import run_web_app
 
 app = typer.Typer(
     help=(
@@ -59,6 +60,15 @@ def check_updates(container: str | None = typer.Option(None, "--container", help
 def version() -> None:
     """Print dockwatch version."""
     typer.echo(__version__)
+
+
+@app.command("serve")
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host", help="Host interface to bind web dashboard."),
+    port: int = typer.Option(8080, "--port", help="Port to bind web dashboard."),
+) -> None:
+    """Launch NiceGUI dashboard."""
+    run_web_app(host=host, port=port)
 
 
 def main() -> None:

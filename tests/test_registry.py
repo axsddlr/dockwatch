@@ -10,10 +10,17 @@ from dockwatch.registry import check_all, check_container, check_dockerhub, chec
 
 
 class MockResponse:
-    def __init__(self, status_code: int, payload: dict | None = None, url: str = "https://example.test"):
+    def __init__(
+        self,
+        status_code: int,
+        payload: dict | None = None,
+        url: str = "https://example.test",
+        headers: dict[str, str] | None = None,
+    ):
         self.status_code = status_code
         self._payload = payload or {}
         self.request = httpx.Request("GET", url)
+        self.headers = headers or {}
 
     def json(self) -> dict:
         return self._payload
@@ -97,6 +104,12 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             [
                 MockResponse(200, token_payload, url="https://ghcr.io/token"),
                 MockResponse(200, tags_payload, url="https://ghcr.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://ghcr.io/v2/owner/image/manifests/1.3.0",
+                    headers={"Docker-Content-Digest": "sha256:ghcr-digest"},
+                ),
             ]
         )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
@@ -110,20 +123,40 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second_headers, {"Authorization": "Bearer abc-token"})
 
     async def test_check_container_tracks_latest_tag(self) -> None:
-        latest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="latest")
+        latest_info = ContainerInfo(
+            name="bazarr",
+            container_id="abc123",
+            image_ref="lscr.io/linuxserver/bazarr:latest",
+            registry=RegistryType.LSCR,
+            namespace="linuxserver",
+            image_name="bazarr",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "v1.5.4-ls334"},
+            compose_image_digest="sha256:local-digest",
+        )
         payload = {
-            "results": [
-                {"name": "latest", "last_updated": "2026-01-01T00:00:00Z"},
-                {"name": "1.0.0", "last_updated": "2026-01-02T00:00:00Z"},
-                {"name": "1.2.0", "last_updated": "2026-01-03T00:00:00Z"},
+            "tags": [
+                "latest",
+                "v1.5.4-ls334",
+                "v1.5.5-ls335",
             ]
         }
 
-        mock_client = MockAsyncClient([MockResponse(200, payload)])
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/v1.5.5-ls335",
+                    headers={"Docker-Content-Digest": "sha256:remote-digest"},
+                ),
+            ]
+        )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
             latest_result = await check_container(latest_info)
 
-        self.assertEqual(latest_result.latest_tag, "1.2.0")
+        self.assertEqual(latest_result.latest_tag, "v1.5.5-ls335")
         self.assertTrue(latest_result.is_outdated)
         self.assertIsNone(latest_result.check_error)
 
@@ -134,6 +167,43 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(digest_result.is_outdated)
         self.assertIn("skipped", digest_result.check_error or "")
+
+    async def test_check_lscr_uses_digest_for_exact_match(self) -> None:
+        info = ContainerInfo(
+            name="bazarr",
+            container_id="abc123",
+            image_ref="lscr.io/linuxserver/bazarr:latest",
+            registry=RegistryType.LSCR,
+            namespace="linuxserver",
+            image_name="bazarr",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "v1.5.4-ls334"},
+            compose_image_digest="sha256:exact-match",
+        )
+        payload = {
+            "tags": [
+                "latest",
+                "v1.5.4-ls334",
+            ]
+        }
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/v1.5.4-ls334",
+                    headers={"Docker-Content-Digest": "sha256:exact-match"},
+                ),
+            ]
+        )
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_container(info)
+
+        self.assertEqual(result.latest_tag, "v1.5.4-ls334")
+        self.assertFalse(result.is_outdated)
+        self.assertIsNone(result.check_error)
 
     async def test_check_all_runs_concurrently(self) -> None:
         infos = [

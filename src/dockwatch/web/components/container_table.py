@@ -35,6 +35,14 @@ class ContainerStatusTable:
             return "UP-TO-DATE", "green"
         return "UNKNOWN", "yellow"
 
+    def _current_display(self, result: UpdateResult) -> str:
+        container = result.container_info
+        if container.current_tag.lower() == "latest":
+            hint = container.version_label or container.labels.get("build_version")
+            if hint:
+                return f"latest ({hint})"
+        return container.current_tag or "-"
+
     def render(self, results: list[UpdateResult], on_check: CheckHandler, on_pin_toggle: PinHandler) -> None:
         self.rows_container.clear()
 
@@ -55,7 +63,7 @@ class ContainerStatusTable:
                     with ui.row().classes("w-full items-center gap-2 flex-wrap md:flex-nowrap"):
                         ui.label(result.container_info.name or "-").classes("w-full md:w-2/12")
                         ui.label(result.container_info.image_ref or "-").classes("w-full md:w-3/12 break-all")
-                        ui.label(result.container_info.current_tag or "-").classes("w-full md:w-2/12")
+                        ui.label(self._current_display(result)).classes("w-full md:w-2/12")
                         ui.label(latest_value).classes("w-full md:w-2/12 break-all")
                         with ui.row().classes("w-full md:w-2/12"):
                             ui.badge(status_text, color=badge_color)

@@ -10,6 +10,14 @@ from .models import ContainerInfo, UpdateResult
 console = Console()
 
 
+def _current_tag_display(container: ContainerInfo) -> str:
+    if container.current_tag.lower() == "latest":
+        hint = container.version_label or container.labels.get("build_version")
+        if hint:
+            return f"latest ({hint})"
+    return container.current_tag or "-"
+
+
 def render_containers_table(containers: list[ContainerInfo]) -> None:
     table = Table(title="Running Containers")
     table.add_column("Name", style="cyan")
@@ -21,7 +29,7 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
         table.add_row(
             container.name or "-",
             container.image_ref or "-",
-            container.current_tag or "-",
+            _current_tag_display(container),
             container.registry.value,
         )
 
@@ -59,7 +67,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
             latest_display = result.check_error
         table.add_row(
             result.container_info.name or "-",
-            result.container_info.current_tag or "-",
+            _current_tag_display(result.container_info),
             latest_display,
             f"[{color}]{status}[/{color}]",
         )

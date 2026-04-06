@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -12,6 +13,8 @@ from .docker_client import DIGEST_PINNED_TAG
 from .models import ContainerInfo, RegistryType, UpdateResult
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
+MANIFEST_ACCEPT_HEADER = "application/vnd.docker.distribution.manifest.v2+json"
+LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
 
 
 def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
@@ -29,10 +32,25 @@ def _normalize_tag(tag: str) -> str:
 
 
 def _safe_version(tag: str) -> Version | None:
+    normalized = _normalize_tag(tag).lstrip("v")
+    normalized = LINUXSERVER_SUFFIX_RE.sub(r".post\1", normalized)
     try:
-        return Version(tag)
+        return Version(normalized)
     except InvalidVersion:
         return None
+
+
+def _effective_current_version_text(info: ContainerInfo) -> str:
+    if info.current_tag.lower() != "latest":
+        return info.current_tag
+    return info.version_label or info.labels.get("build_version") or info.current_tag
+
+
+def _effective_current_digest(info: ContainerInfo) -> str | None:
+    candidate = info.repo_digest or info.compose_image_digest
+    if not candidate:
+        return None
+    return candidate.split("@", 1)[1] if "@" in candidate else candidate
 
 
 def _select_latest_from_tags(tags: list[str]) -> str | None:
@@ -60,16 +78,42 @@ def _select_latest_from_tags(tags: list[str]) -> str | None:
     return normalized[0]
 
 
-def _compare_tags(current_tag: str, latest_tag: str | None) -> bool | None:
+def _compare_tags(info: ContainerInfo, latest_tag: str | None, remote_digest: str | None = None) -> bool | None:
     if latest_tag is None:
         return None
 
-    current_version = _safe_version(current_tag)
+    current_digest = _effective_current_digest(info)
+    if current_digest and remote_digest:
+        return current_digest != remote_digest
+
+    current_version = _safe_version(_effective_current_version_text(info))
     latest_version = _safe_version(latest_tag)
     if current_version is not None and latest_version is not None:
         return latest_version > current_version
 
-    return latest_tag != current_tag
+    return latest_tag != info.current_tag
+
+
+async def _fetch_manifest_digest(
+    client: httpx.AsyncClient,
+    *,
+    base_url: str,
+    namespace: str,
+    image_name: str,
+    tag: str,
+    headers: dict[str, str] | None = None,
+) -> str | None:
+    response = await client.get(
+        f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}",
+        headers={
+            "Accept": MANIFEST_ACCEPT_HEADER,
+            **(headers or {}),
+        },
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    return response.headers.get("Docker-Content-Digest")
 
 
 async def check_dockerhub(info: ContainerInfo) -> UpdateResult:
@@ -96,9 +140,52 @@ async def check_dockerhub(info: ContainerInfo) -> UpdateResult:
     return UpdateResult(
         container_info=info,
         latest_tag=latest_tag,
-        is_outdated=_compare_tags(info.current_tag, latest_tag),
+        is_outdated=_compare_tags(info, latest_tag),
         check_error=None if latest_tag else "no tags returned by docker hub",
         status=None if latest_tag else "UNKNOWN",
+    )
+
+
+async def check_lscr(info: ContainerInfo) -> UpdateResult:
+    if not info.namespace or not info.image_name:
+        return _skip_result(info, "invalid image reference for lscr")
+
+    base_url = "https://lscr.io"
+    tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            tags_response = await client.get(tags_url)
+            if tags_response.status_code == 404:
+                return _skip_result(info, "lscr image not found")
+            tags_response.raise_for_status()
+            tags_payload = tags_response.json()
+            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+            latest_tag = _select_latest_from_tags(tags)
+            if not latest_tag:
+                return UpdateResult(
+                    container_info=info,
+                    latest_tag=None,
+                    is_outdated=None,
+                    check_error="no tags returned by lscr",
+                    status="UNKNOWN",
+                )
+            remote_digest = await _fetch_manifest_digest(
+                client,
+                base_url=base_url,
+                namespace=info.namespace,
+                image_name=info.image_name,
+                tag=latest_tag,
+            )
+    except httpx.HTTPError as exc:
+        return _skip_result(info, f"lscr check failed: {exc}")
+
+    return UpdateResult(
+        container_info=info,
+        latest_tag=latest_tag,
+        is_outdated=_compare_tags(info, latest_tag, remote_digest),
+        check_error=None,
+        status=None,
     )
 
 
@@ -125,18 +212,33 @@ async def check_ghcr(info: ContainerInfo) -> UpdateResult:
                 return _skip_result(info, "ghcr repository not found")
             tags_response.raise_for_status()
             tags_payload = tags_response.json()
+            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+            latest_tag = _select_latest_from_tags(tags)
+            if not latest_tag:
+                return UpdateResult(
+                    container_info=info,
+                    latest_tag=None,
+                    is_outdated=None,
+                    check_error="no tags returned by ghcr",
+                    status="UNKNOWN",
+                )
+            remote_digest = await _fetch_manifest_digest(
+                client,
+                base_url="https://ghcr.io",
+                namespace=info.namespace,
+                image_name=info.image_name,
+                tag=latest_tag,
+                headers={"Authorization": f"Bearer {token}"},
+            )
     except httpx.HTTPError as exc:
         return _skip_result(info, f"ghcr check failed: {exc}")
-
-    tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-    latest_tag = _select_latest_from_tags(tags)
 
     return UpdateResult(
         container_info=info,
         latest_tag=latest_tag,
-        is_outdated=_compare_tags(info.current_tag, latest_tag),
-        check_error=None if latest_tag else "no tags returned by ghcr",
-        status=None if latest_tag else "UNKNOWN",
+        is_outdated=_compare_tags(info, latest_tag, remote_digest),
+        check_error=None,
+        status=None,
     )
 
 
@@ -147,6 +249,8 @@ async def check_container(info: ContainerInfo) -> UpdateResult:
 
     if info.registry == RegistryType.DOCKERHUB:
         return await check_dockerhub(info)
+    if info.registry == RegistryType.LSCR:
+        return await check_lscr(info)
     if info.registry == RegistryType.GHCR:
         return await check_ghcr(info)
 

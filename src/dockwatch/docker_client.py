@@ -19,8 +19,13 @@ def parse_image_ref(
     *,
     name: str = "",
     container_id: str = "",
+    labels: dict[str, str] | None = None,
+    compose_image_digest: str | None = None,
+    repo_digest: str | None = None,
 ) -> ContainerInfo:
     """Parse an image reference into normalized container metadata."""
+    labels = dict(labels or {})
+    compose_image_digest = compose_image_digest or labels.get("com.docker.compose.image")
     image_ref = (image_str or "").strip()
     if not image_ref:
         return ContainerInfo(
@@ -31,6 +36,10 @@ def parse_image_ref(
             namespace="library",
             image_name="unknown",
             current_tag="latest",
+            labels=labels,
+            version_label=labels.get("org.opencontainers.image.version"),
+            compose_image_digest=compose_image_digest,
+            repo_digest=repo_digest,
         )
 
     repo_part = image_ref
@@ -55,6 +64,10 @@ def parse_image_ref(
             namespace="library",
             image_name="unknown",
             current_tag=current_tag,
+            labels=labels,
+            version_label=labels.get("org.opencontainers.image.version"),
+            compose_image_digest=compose_image_digest,
+            repo_digest=repo_digest,
         )
 
     first = parts[0]
@@ -68,6 +81,8 @@ def parse_image_ref(
         path_parts = parts[1:]
         if host == "ghcr.io":
             registry = RegistryType.GHCR
+        elif host == "lscr.io":
+            registry = RegistryType.LSCR
         elif host in {"docker.io", "index.docker.io", "registry-1.docker.io"}:
             registry = RegistryType.DOCKERHUB
         else:
@@ -82,6 +97,10 @@ def parse_image_ref(
             namespace="library",
             image_name="unknown",
             current_tag=current_tag,
+            labels=labels,
+            version_label=labels.get("org.opencontainers.image.version"),
+            compose_image_digest=compose_image_digest,
+            repo_digest=repo_digest,
         )
 
     if len(path_parts) == 1:
@@ -99,6 +118,10 @@ def parse_image_ref(
         namespace=namespace,
         image_name=image_name,
         current_tag=current_tag,
+        labels=labels,
+        version_label=labels.get("org.opencontainers.image.version"),
+        compose_image_digest=compose_image_digest,
+        repo_digest=repo_digest,
     )
 
 
@@ -115,8 +138,13 @@ def get_running_containers() -> list[ContainerInfo]:
 
     containers: list[ContainerInfo] = []
     for container in raw_containers:
+        config = container.attrs.get("Config", {}) or {}
+        labels = dict(config.get("Labels", {}) or {})
+        image_attrs = getattr(container.image, "attrs", {}) or {}
+        repo_digests = image_attrs.get("RepoDigests", []) or []
+        repo_digest = repo_digests[0] if repo_digests else None
         image_ref = (
-            container.attrs.get("Config", {}).get("Image")
+            config.get("Image")
             or getattr(container.image, "tags", [""])[0]
             or ""
         )
@@ -124,6 +152,9 @@ def get_running_containers() -> list[ContainerInfo]:
             image_ref,
             name=(container.name or ""),
             container_id=(container.id or "")[:12],
+            labels=labels,
+            compose_image_digest=labels.get("com.docker.compose.image"),
+            repo_digest=repo_digest,
         )
         containers.append(info)
 

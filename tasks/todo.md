@@ -146,15 +146,15 @@
 
 > Goal: Ship as a Docker image and provide a ready-to-use `docker-compose.yml`.
 
-- [ ] Create `Dockerfile`
-  - [ ] Multi-stage build: build deps → slim runtime image
-  - [ ] Mount Docker socket: `volumes: ["/var/run/docker.sock:/var/run/docker.sock"]`
-  - [ ] Expose port 8080 for NiceGUI dashboard
-  - [ ] Default `CMD`: `dockwatch serve --host 0.0.0.0 --port 8080`
-- [ ] Create `docker-compose.yml` example for users
-  - [ ] Service: `dockwatch`, image, socket mount, port mapping, restart policy
-  - [ ] Volume for config persistence: `~/.config/dockwatch`
-- [ ] Create `.dockerignore`
+- [x] Create `Dockerfile`
+  - [x] Multi-stage build: build deps → slim runtime image
+  - [x] Mount Docker socket: `volumes: ["/var/run/docker.sock:/var/run/docker.sock"]`
+  - [x] Expose port 8080 for NiceGUI dashboard
+  - [x] Default `CMD`: `dockwatch serve --host 0.0.0.0 --port 8080`
+- [x] Create `docker-compose.yml` example for users
+  - [x] Service: `dockwatch`, image, socket mount, port mapping, restart policy
+  - [x] Volume for config persistence: `~/.config/dockwatch`
+- [x] Create `.dockerignore`
 - [ ] Test: `docker compose up` starts dashboard accessible at `http://localhost:8080`
 - [ ] Publish to Docker Hub: `andresaddler/dockwatch` (or chosen namespace)
 - [ ] Tag `v0.1.0` release on GitHub
@@ -332,3 +332,4 @@
 - 2026-04-06: Phase 5 complete (`web` package, NiceGUI dashboard, per-row checks, auto-refresh, `serve` command, localhost/LAN binding smoke tests).
 - 2026-04-06: Phase 6 complete (`config.py`, pin/ignore/config CLI commands, config-aware check pipeline, PINNED status + dashboard pin/unpin).
 - 2026-04-06: Phase 7 complete (`notifiers` package, `--notify` flow, dashboard notification settings, local webhook/discord endpoint smoke tests).
+- 2026-04-06: Phase 8 started (`Dockerfile`, `docker-compose.yml`, `.dockerignore`, compose config validation; blocked on local Docker daemon for `compose up`/publish/release tasks).

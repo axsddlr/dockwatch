@@ -1,0 +1,15 @@
+.git
+.gitignore
+.claude
+design
+tasks
+tests
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.tmp_home
+.env
+venv
+.venv

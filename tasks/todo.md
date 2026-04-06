@@ -25,16 +25,16 @@
 
 > Goal: Read running containers from Docker socket and parse image references.
 
-- [ ] Create `src/dockwatch/docker_client.py`
-  - [ ] `get_running_containers() -> list[ContainerInfo]` — connect via `docker.from_env()`, call `client.containers.list()`
-  - [ ] `parse_image_ref(image_str: str) -> ContainerInfo` — parse `container.attrs['Config']['Image']`
-    - [ ] Handle Docker Hub official images (`nginx`, `library/nginx`)
-    - [ ] Handle Docker Hub user images (`linuxserver/plex`)
-    - [ ] Handle GHCR images (`ghcr.io/owner/image:tag`)
-    - [ ] Handle digest-pinned images (`image@sha256:...`) → mark tag as `DIGEST_PINNED`
-    - [ ] Handle missing/implicit `latest` tag
-  - [ ] Raise `DockerConnectionError` with helpful message if socket unavailable
-- [ ] Manual smoke test: run `python -c "from dockwatch.docker_client import get_running_containers; print(get_running_containers())"`
+- [x] Create `src/dockwatch/docker_client.py`
+  - [x] `get_running_containers() -> list[ContainerInfo]` — connect via `docker.from_env()`, call `client.containers.list()`
+  - [x] `parse_image_ref(image_str: str) -> ContainerInfo` — parse `container.attrs['Config']['Image']`
+    - [x] Handle Docker Hub official images (`nginx`, `library/nginx`)
+    - [x] Handle Docker Hub user images (`linuxserver/plex`)
+    - [x] Handle GHCR images (`ghcr.io/owner/image:tag`)
+    - [x] Handle digest-pinned images (`image@sha256:...`) → mark tag as `DIGEST_PINNED`
+    - [x] Handle missing/implicit `latest` tag
+  - [x] Raise `DockerConnectionError` with helpful message if socket unavailable
+- [x] Manual smoke test: run `python -c "from dockwatch.docker_client import get_running_containers; print(get_running_containers())"`
 
 ---
 
@@ -326,3 +326,4 @@
 
 <!-- Add entries here as phases complete -->
 - 2026-04-06: Phase 1 complete (`pyproject.toml`, package scaffold, core models, editable-install/import verification).
+- 2026-04-06: Phase 2 complete (`docker_client.py`, image parsing, Docker connection error handling, smoke test run).

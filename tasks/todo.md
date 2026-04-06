@@ -42,21 +42,21 @@
 
 > Goal: Async check of Docker Hub and GHCR for latest available tags.
 
-- [ ] Create `src/dockwatch/registry.py`
-  - [ ] `check_container(info: ContainerInfo) -> UpdateResult` — async, routes to correct registry checker
-  - [ ] `check_dockerhub(info: ContainerInfo) -> UpdateResult`
-    - [ ] Official images: `GET https://hub.docker.com/v2/repositories/library/{image}/tags?page_size=20&ordering=last_updated`
-    - [ ] User images: `GET https://hub.docker.com/v2/repositories/{namespace}/{image}/tags?page_size=20&ordering=last_updated`
-    - [ ] Parse response: find latest semantic version tag (use `packaging.version.Version` for comparison)
-    - [ ] Skip `latest`, `edge`, `dev`, `nightly` floating tags when finding "latest version"
-    - [ ] Fall back to most-recently-updated tag if no semver tags found
-  - [ ] `check_ghcr(info: ContainerInfo) -> UpdateResult`
-    - [ ] Anonymous token: `GET https://ghcr.io/token?scope=repository:{namespace}/{image}:pull`
-    - [ ] Tags list: `GET https://ghcr.io/v2/{namespace}/{image}/tags/list` with Bearer token
-  - [ ] `check_all(containers: list[ContainerInfo]) -> list[UpdateResult]` — `asyncio.gather()` all checks concurrently
-  - [ ] Error handling: registry unreachable or 404 → return `UpdateResult` with `check_error` set, not exception
-  - [ ] Skip check and mark UNKNOWN for `DIGEST_PINNED` and `latest`-only containers
-- [ ] Unit test: mock httpx responses for dockerhub and ghcr endpoints
+- [x] Create `src/dockwatch/registry.py`
+  - [x] `check_container(info: ContainerInfo) -> UpdateResult` — async, routes to correct registry checker
+  - [x] `check_dockerhub(info: ContainerInfo) -> UpdateResult`
+    - [x] Official images: `GET https://hub.docker.com/v2/repositories/library/{image}/tags?page_size=20&ordering=last_updated`
+    - [x] User images: `GET https://hub.docker.com/v2/repositories/{namespace}/{image}/tags?page_size=20&ordering=last_updated`
+    - [x] Parse response: find latest semantic version tag (use `packaging.version.Version` for comparison)
+    - [x] Skip `latest`, `edge`, `dev`, `nightly` floating tags when finding "latest version"
+    - [x] Fall back to most-recently-updated tag if no semver tags found
+  - [x] `check_ghcr(info: ContainerInfo) -> UpdateResult`
+    - [x] Anonymous token: `GET https://ghcr.io/token?scope=repository:{namespace}/{image}:pull`
+    - [x] Tags list: `GET https://ghcr.io/v2/{namespace}/{image}/tags/list` with Bearer token
+  - [x] `check_all(containers: list[ContainerInfo]) -> list[UpdateResult]` — `asyncio.gather()` all checks concurrently
+  - [x] Error handling: registry unreachable or 404 → return `UpdateResult` with `check_error` set, not exception
+  - [x] Skip check and mark UNKNOWN for `DIGEST_PINNED` and `latest`-only containers
+- [x] Unit test: mock httpx responses for dockerhub and ghcr endpoints
 
 ---
 
@@ -327,3 +327,4 @@
 <!-- Add entries here as phases complete -->
 - 2026-04-06: Phase 1 complete (`pyproject.toml`, package scaffold, core models, editable-install/import verification).
 - 2026-04-06: Phase 2 complete (`docker_client.py`, image parsing, Docker connection error handling, smoke test run).
+- 2026-04-06: Phase 3 complete (`registry.py`, async Docker Hub/GHCR checks, concurrent checks, mocked httpx unit tests).

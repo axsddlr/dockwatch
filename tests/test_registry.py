@@ -109,15 +109,29 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         _, second_headers = mock_client.calls[1]
         self.assertEqual(second_headers, {"Authorization": "Bearer abc-token"})
 
-    async def test_check_container_skips_latest_and_digest(self) -> None:
+    async def test_check_container_tracks_latest_tag(self) -> None:
         latest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="latest")
+        payload = {
+            "results": [
+                {"name": "latest", "last_updated": "2026-01-01T00:00:00Z"},
+                {"name": "1.0.0", "last_updated": "2026-01-02T00:00:00Z"},
+                {"name": "1.2.0", "last_updated": "2026-01-03T00:00:00Z"},
+            ]
+        }
+
+        mock_client = MockAsyncClient([MockResponse(200, payload)])
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            latest_result = await check_container(latest_info)
+
+        self.assertEqual(latest_result.latest_tag, "1.2.0")
+        self.assertTrue(latest_result.is_outdated)
+        self.assertIsNone(latest_result.check_error)
+
+    async def test_check_container_skips_digest(self) -> None:
         digest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="DIGEST_PINNED")
 
-        latest_result = await check_container(latest_info)
         digest_result = await check_container(digest_info)
 
-        self.assertIsNone(latest_result.is_outdated)
-        self.assertIn("skipped", latest_result.check_error or "")
         self.assertIsNone(digest_result.is_outdated)
         self.assertIn("skipped", digest_result.check_error or "")
 

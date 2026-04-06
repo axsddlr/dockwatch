@@ -144,8 +144,6 @@ async def check_container(info: ContainerInfo) -> UpdateResult:
     lowered = info.current_tag.lower()
     if lowered == DIGEST_PINNED_TAG.lower():
         return _skip_result(info, "skipped digest-pinned image")
-    if lowered == "latest":
-        return _skip_result(info, "skipped floating latest tag")
 
     if info.registry == RegistryType.DOCKERHUB:
         return await check_dockerhub(info)

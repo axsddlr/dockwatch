@@ -130,15 +130,15 @@
 
 > Goal: Push alerts when outdated containers are found (opt-in).
 
-- [ ] Create `src/dockwatch/notifiers/` package
-  - [ ] `src/dockwatch/notifiers/__init__.py`
-  - [ ] `src/dockwatch/notifiers/base.py` — `BaseNotifier` abstract class with `send(results)` method
-  - [ ] `src/dockwatch/notifiers/webhook.py` — generic HTTP webhook (POST JSON payload)
-  - [ ] `src/dockwatch/notifiers/discord.py` — Discord webhook embed format
-- [ ] Add notifier config to `config.toml`: `[notifications] webhook_url = "..."`, `discord_webhook = "..."`
-- [ ] `dockwatch check --notify` flag — sends notifications after checking
-- [ ] Notification settings page in NiceGUI dashboard (webhook URL input, test button)
-- [ ] Test Discord and generic webhook with live endpoints
+- [x] Create `src/dockwatch/notifiers/` package
+  - [x] `src/dockwatch/notifiers/__init__.py`
+  - [x] `src/dockwatch/notifiers/base.py` — `BaseNotifier` abstract class with `send(results)` method
+  - [x] `src/dockwatch/notifiers/webhook.py` — generic HTTP webhook (POST JSON payload)
+  - [x] `src/dockwatch/notifiers/discord.py` — Discord webhook embed format
+- [x] Add notifier config to `config.toml`: `[notifications] webhook_url = "..."`, `discord_webhook = "..."`
+- [x] `dockwatch check --notify` flag — sends notifications after checking
+- [x] Notification settings page in NiceGUI dashboard (webhook URL input, test button)
+- [x] Test Discord and generic webhook with live endpoints
 
 ---
 
@@ -331,3 +331,4 @@
 - 2026-04-06: Phase 4 complete (`display.py`, Typer CLI commands, entry point wiring, command verification; Docker unavailable for live table output in this environment).
 - 2026-04-06: Phase 5 complete (`web` package, NiceGUI dashboard, per-row checks, auto-refresh, `serve` command, localhost/LAN binding smoke tests).
 - 2026-04-06: Phase 6 complete (`config.py`, pin/ignore/config CLI commands, config-aware check pipeline, PINNED status + dashboard pin/unpin).
+- 2026-04-06: Phase 7 complete (`notifiers` package, `--notify` flow, dashboard notification settings, local webhook/discord endpoint smoke tests).

@@ -9,7 +9,8 @@ from nicegui import ui
 from ... import __version__
 from ...config import load_config, save_config
 from ...docker_client import DockerConnectionError, get_running_containers
-from ...models import UpdateResult
+from ...models import ContainerInfo, RegistryType, UpdateResult
+from ...notifiers import send_configured_notifications
 from ...registry import check_all, check_container
 from ..components.container_table import ContainerStatusTable
 
@@ -34,6 +35,14 @@ class DashboardController:
 
             self.message_label = ui.label("").classes("text-yellow-8")
             self.table = ContainerStatusTable()
+
+            with ui.card().classes("w-full"):
+                ui.label("Notification Settings").classes("text-lg font-medium")
+                self.webhook_input = ui.input("Webhook URL", value=self.config.webhook_url).classes("w-full")
+                self.discord_input = ui.input("Discord Webhook", value=self.config.discord_webhook).classes("w-full")
+                with ui.row().classes("gap-2"):
+                    ui.button("Save Settings", on_click=self.save_notification_settings)
+                    ui.button("Send Test Notification", on_click=self.send_test_notification)
 
         self.timer = ui.timer(interval=30.0, callback=self._timer_refresh, active=False)
         self.auto_refresh_switch.on_value_change(self._on_toggle_auto_refresh)
@@ -113,6 +122,40 @@ class DashboardController:
             self.message_label.set_text(f"Pinned '{container_name}'.")
         save_config(self.config)
         await self.refresh_all()
+
+    async def save_notification_settings(self) -> None:
+        self.config = load_config()
+        self.config.webhook_url = (self.webhook_input.value or "").strip()
+        self.config.discord_webhook = (self.discord_input.value or "").strip()
+        save_config(self.config)
+        self.message_label.set_text("Notification settings saved.")
+
+    async def send_test_notification(self) -> None:
+        self.config = load_config()
+        sample_results = self.results
+        if not sample_results:
+            sample_results = [
+                UpdateResult(
+                    container_info=ContainerInfo(
+                        name="sample",
+                        container_id="sample",
+                        image_ref="library/sample:1.0.0",
+                        registry=RegistryType.DOCKERHUB,
+                        namespace="library",
+                        image_name="sample",
+                        current_tag="1.0.0",
+                    ),
+                    latest_tag="1.1.0",
+                    is_outdated=True,
+                    check_error=None,
+                    status=None,
+                )
+            ]
+        errors = await send_configured_notifications(sample_results, self.config)
+        if errors:
+            self.message_label.set_text("Test notification failed: " + "; ".join(errors))
+        else:
+            self.message_label.set_text("Test notification sent.")
 
 
 def register_dashboard_page() -> None:

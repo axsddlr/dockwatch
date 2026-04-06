@@ -24,12 +24,16 @@ class ConfigTests(unittest.TestCase):
                 pinned=["plex", "plex", "jellyfin"],
                 ignored=["db"],
                 notify_only=["nginx"],
+                webhook_url="https://example.test/webhook",
+                discord_webhook="https://discord.test/hook",
             )
             save_config(source, config_path)
             loaded = load_config(config_path)
             self.assertEqual(loaded.pinned, ["plex", "jellyfin"])
             self.assertEqual(loaded.ignored, ["db"])
             self.assertEqual(loaded.notify_only, ["nginx"])
+            self.assertEqual(loaded.webhook_url, "https://example.test/webhook")
+            self.assertEqual(loaded.discord_webhook, "https://discord.test/hook")
 
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):

@@ -10,6 +10,7 @@ from . import __version__
 from .config import DockwatchConfig, load_config, save_config
 from .display import render_containers_table, render_summary, render_update_table
 from .docker_client import DockerConnectionError, get_running_containers
+from .notifiers import send_configured_notifications
 from .registry import check_all
 from .web import run_web_app
 
@@ -40,7 +41,10 @@ def list_containers() -> None:
 
 
 @app.command("check")
-def check_updates(container: str | None = typer.Option(None, "--container", help="Check only one container by name.")) -> None:
+def check_updates(
+    container: str | None = typer.Option(None, "--container", help="Check only one container by name."),
+    notify: bool = typer.Option(False, "--notify", help="Send configured notifications after checking."),
+) -> None:
     """Check running containers for newer image tags."""
     try:
         containers = get_running_containers()
@@ -58,6 +62,13 @@ def check_updates(container: str | None = typer.Option(None, "--container", help
     results = asyncio.run(check_all(containers, config))
     render_update_table(results)
     render_summary(results)
+    if notify:
+        errors = asyncio.run(send_configured_notifications(results, config))
+        if errors:
+            for error in errors:
+                typer.echo(f"Notifier error: {error}", err=True)
+        else:
+            typer.echo("Notifications sent.")
 
 
 @app.command("version")
@@ -116,6 +127,10 @@ def list_config() -> None:
             typer.echo(f"  - {item}")
     else:
         typer.echo("  (none)")
+
+    typer.echo("Notifications:")
+    typer.echo(f"  webhook_url: {config.webhook_url or '(not set)'}")
+    typer.echo(f"  discord_webhook: {config.discord_webhook or '(not set)'}")
 
 
 def main() -> None:

@@ -9,6 +9,7 @@ from nicegui import ui
 from ...models import UpdateResult
 
 CheckHandler = Callable[[str], Awaitable[None]]
+PinHandler = Callable[[str], Awaitable[None]]
 
 
 class ContainerStatusTable:
@@ -24,6 +25,8 @@ class ContainerStatusTable:
             self.rows_container = ui.column().classes("w-full gap-1")
 
     def _status(self, result: UpdateResult) -> tuple[str, str]:
+        if result.status == "PINNED":
+            return "PINNED", "primary"
         if result.check_error:
             return "UNKNOWN", "yellow"
         if result.is_outdated is True:
@@ -32,7 +35,7 @@ class ContainerStatusTable:
             return "UP-TO-DATE", "green"
         return "UNKNOWN", "yellow"
 
-    def render(self, results: list[UpdateResult], on_check: CheckHandler) -> None:
+    def render(self, results: list[UpdateResult], on_check: CheckHandler, on_pin_toggle: PinHandler) -> None:
         self.rows_container.clear()
 
         if not results:
@@ -56,7 +59,13 @@ class ContainerStatusTable:
                         ui.label(latest_value).classes("w-2/12 break-all")
                         with ui.row().classes("w-2/12"):
                             ui.badge(status_text, color=badge_color)
-                        ui.button(
-                            "Check",
-                            on_click=lambda _=None, name=result.container_info.name: on_check(name),
-                        ).props("size=sm").classes("w-1/12")
+                        with ui.row().classes("w-1/12 gap-1"):
+                            ui.button(
+                                "Check",
+                                on_click=lambda _=None, name=result.container_info.name: on_check(name),
+                            ).props("size=sm")
+                            pin_label = "Unpin" if result.status == "PINNED" else "Pin"
+                            ui.button(
+                                pin_label,
+                                on_click=lambda _=None, name=result.container_info.name: on_pin_toggle(name),
+                            ).props("size=sm flat")

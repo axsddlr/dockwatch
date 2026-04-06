@@ -29,3 +29,4 @@ class UpdateResult:
     latest_tag: str | None = None
     is_outdated: bool | None = None
     check_error: str | None = None
+    status: str | None = None

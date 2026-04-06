@@ -32,6 +32,8 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
 
 
 def _status_label(result: UpdateResult) -> tuple[str, str]:
+    if result.status == "PINNED":
+        return "PINNED", "blue"
     if result.check_error:
         return "UNKNOWN", "yellow"
     if result.is_outdated is True:
@@ -51,6 +53,8 @@ def render_update_table(results: list[UpdateResult]) -> None:
     for result in results:
         status, color = _status_label(result)
         latest_display = result.latest_tag or "-"
+        if result.status == "PINNED":
+            latest_display = "Pinned by config"
         if result.check_error:
             latest_display = result.check_error
         table.add_row(

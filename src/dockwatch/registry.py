@@ -7,6 +7,7 @@ import asyncio
 import httpx
 from packaging.version import InvalidVersion, Version
 
+from .config import DockwatchConfig, load_config
 from .docker_client import DIGEST_PINNED_TAG
 from .models import ContainerInfo, RegistryType, UpdateResult
 
@@ -19,6 +20,7 @@ def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
         latest_tag=None,
         is_outdated=None,
         check_error=reason,
+        status="UNKNOWN",
     )
 
 
@@ -96,6 +98,7 @@ async def check_dockerhub(info: ContainerInfo) -> UpdateResult:
         latest_tag=latest_tag,
         is_outdated=_compare_tags(info.current_tag, latest_tag),
         check_error=None if latest_tag else "no tags returned by docker hub",
+        status=None if latest_tag else "UNKNOWN",
     )
 
 
@@ -133,6 +136,7 @@ async def check_ghcr(info: ContainerInfo) -> UpdateResult:
         latest_tag=latest_tag,
         is_outdated=_compare_tags(info.current_tag, latest_tag),
         check_error=None if latest_tag else "no tags returned by ghcr",
+        status=None if latest_tag else "UNKNOWN",
     )
 
 
@@ -151,8 +155,32 @@ async def check_container(info: ContainerInfo) -> UpdateResult:
     return _skip_result(info, "unsupported registry")
 
 
-async def check_all(containers: list[ContainerInfo]) -> list[UpdateResult]:
-    tasks = [check_container(container) for container in containers]
+async def check_all(containers: list[ContainerInfo], config: DockwatchConfig | None = None) -> list[UpdateResult]:
+    resolved_config = config or load_config()
+    ignored = set(resolved_config.ignored)
+    pinned = set(resolved_config.pinned)
+
+    precomputed: list[UpdateResult] = []
+    check_targets: list[ContainerInfo] = []
+    for container in containers:
+        name = container.name
+        if name in ignored:
+            continue
+        if name in pinned:
+            precomputed.append(
+                UpdateResult(
+                    container_info=container,
+                    latest_tag=None,
+                    is_outdated=None,
+                    check_error=None,
+                    status="PINNED",
+                )
+            )
+            continue
+        check_targets.append(container)
+
+    tasks = [check_container(container) for container in check_targets]
     if not tasks:
-        return []
-    return await asyncio.gather(*tasks)
+        return precomputed
+    checked = await asyncio.gather(*tasks)
+    return [*precomputed, *checked]

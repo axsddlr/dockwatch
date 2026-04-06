@@ -7,6 +7,7 @@ from datetime import datetime
 from nicegui import ui
 
 from ... import __version__
+from ...config import load_config, save_config
 from ...docker_client import DockerConnectionError, get_running_containers
 from ...models import UpdateResult
 from ...registry import check_all, check_container
@@ -17,6 +18,7 @@ class DashboardController:
     def __init__(self) -> None:
         self.results: list[UpdateResult] = []
         self.last_checked: str = "Never"
+        self.config = load_config()
 
         with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
             with ui.row().classes("w-full items-center justify-between"):
@@ -59,13 +61,14 @@ class DashboardController:
         except DockerConnectionError as exc:
             self.message_label.set_text(str(exc))
             self.results = []
-            self.table.render(self.results, self.check_one)
+            self.table.render(self.results, self.check_one, self.toggle_pin)
             return
 
+        self.config = load_config()
         self.message_label.set_text("")
-        self.results = await check_all(containers)
+        self.results = await check_all(containers, self.config)
         self._update_last_checked()
-        self.table.render(self.results, self.check_one)
+        self.table.render(self.results, self.check_one, self.toggle_pin)
 
     async def check_one(self, container_name: str) -> None:
         if not container_name:
@@ -95,7 +98,21 @@ class DashboardController:
             self.results.append(updated)
 
         self._update_last_checked()
-        self.table.render(self.results, self.check_one)
+        self.table.render(self.results, self.check_one, self.toggle_pin)
+
+    async def toggle_pin(self, container_name: str) -> None:
+        if not container_name:
+            return
+
+        self.config = load_config()
+        if container_name in self.config.pinned:
+            self.config.pinned = [name for name in self.config.pinned if name != container_name]
+            self.message_label.set_text(f"Unpinned '{container_name}'.")
+        else:
+            self.config.pinned.append(container_name)
+            self.message_label.set_text(f"Pinned '{container_name}'.")
+        save_config(self.config)
+        await self.refresh_all()
 
 
 def register_dashboard_page() -> None:

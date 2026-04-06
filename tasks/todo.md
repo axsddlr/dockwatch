@@ -113,16 +113,16 @@
 
 > Goal: Per-container rules stored in `~/.config/dockwatch/config.toml`.
 
-- [ ] Create `src/dockwatch/config.py`
-  - [ ] `load_config() -> DockwatchConfig` — reads from `~/.config/dockwatch/config.toml`, creates default if missing
-  - [ ] `DockwatchConfig` dataclass: `pinned: list[str]`, `ignored: list[str]`, `notify_only: list[str]`
-  - [ ] `save_config(config: DockwatchConfig)` — writes back to TOML
-- [ ] `dockwatch pin <container>` CLI command — adds to `pinned` list
-- [ ] `dockwatch ignore <container>` CLI command — adds to `ignored` list
-- [ ] `dockwatch config list` — show current pinned/ignored containers
-- [ ] Integrate config into `check_all()`: skip ignored containers, mark pinned as PINNED status
-- [ ] Show PINNED status in both CLI table and NiceGUI dashboard (distinct color/badge)
-- [ ] Pin / Unpin button in NiceGUI dashboard per container row
+- [x] Create `src/dockwatch/config.py`
+  - [x] `load_config() -> DockwatchConfig` — reads from `~/.config/dockwatch/config.toml`, creates default if missing
+  - [x] `DockwatchConfig` dataclass: `pinned: list[str]`, `ignored: list[str]`, `notify_only: list[str]`
+  - [x] `save_config(config: DockwatchConfig)` — writes back to TOML
+- [x] `dockwatch pin <container>` CLI command — adds to `pinned` list
+- [x] `dockwatch ignore <container>` CLI command — adds to `ignored` list
+- [x] `dockwatch config list` — show current pinned/ignored containers
+- [x] Integrate config into `check_all()`: skip ignored containers, mark pinned as PINNED status
+- [x] Show PINNED status in both CLI table and NiceGUI dashboard (distinct color/badge)
+- [x] Pin / Unpin button in NiceGUI dashboard per container row
 
 ---
 
@@ -330,3 +330,4 @@
 - 2026-04-06: Phase 3 complete (`registry.py`, async Docker Hub/GHCR checks, concurrent checks, mocked httpx unit tests).
 - 2026-04-06: Phase 4 complete (`display.py`, Typer CLI commands, entry point wiring, command verification; Docker unavailable for live table output in this environment).
 - 2026-04-06: Phase 5 complete (`web` package, NiceGUI dashboard, per-row checks, auto-refresh, `serve` command, localhost/LAN binding smoke tests).
+- 2026-04-06: Phase 6 complete (`config.py`, pin/ignore/config CLI commands, config-aware check pipeline, PINNED status + dashboard pin/unpin).

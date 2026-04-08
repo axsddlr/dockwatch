@@ -35,6 +35,19 @@ class ManifestStore:
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
 
+    def _fetch(self, connection: sqlite3.Connection, image_key: str) -> ManifestRecord | None:
+        row = connection.execute(
+            """
+            SELECT image_key, image_ref, current_tag, last_seen_digest, last_seen_latest_tag, last_checked_at
+            FROM manifest_state
+            WHERE image_key = ?
+            """,
+            (image_key,),
+        ).fetchone()
+        if row is None:
+            return None
+        return ManifestRecord(*row)
+
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -53,17 +66,7 @@ class ManifestStore:
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
         image_key = build_image_key(info)
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT image_key, image_ref, current_tag, last_seen_digest, last_seen_latest_tag, last_checked_at
-                FROM manifest_state
-                WHERE image_key = ?
-                """,
-                (image_key,),
-            ).fetchone()
-        if row is None:
-            return None
-        return ManifestRecord(*row)
+            return self._fetch(connection, image_key)
 
     def record_observation(
         self,
@@ -73,16 +76,16 @@ class ManifestStore:
         remote_digest: str | None,
         checked_at: str | None = None,
     ) -> str | None:
-        previous = self.get(info)
-        event: str | None = None
-        if previous is None:
-            event = "new"
-        elif previous.last_seen_digest != remote_digest or previous.last_seen_latest_tag != latest_tag:
-            event = "update"
-
         observed_at = checked_at or datetime.now(timezone.utc).isoformat()
         image_key = build_image_key(info)
+        event: str | None = None
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = self._fetch(connection, image_key)
+            if previous is None:
+                event = "new"
+            elif previous.last_seen_digest != remote_digest or previous.last_seen_latest_tag != latest_tag:
+                event = "update"
             connection.execute(
                 """
                 INSERT INTO manifest_state (

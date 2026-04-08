@@ -1,21 +1,16 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim AS runtime
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
 COPY pyproject.toml ./
 COPY src ./src
 
-RUN python -m pip install --upgrade pip \
-    && python -m pip wheel --no-cache-dir --wheel-dir /wheels .
-
-FROM python:3.11-slim AS runtime
-
-WORKDIR /app
-
-COPY --from=builder /wheels /wheels
-RUN python -m pip install --no-cache-dir /wheels/*
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system .
 
 EXPOSE 8080
 

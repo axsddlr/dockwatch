@@ -242,6 +242,7 @@ async def check_dockerhub(
     info: ContainerInfo,
     store: ManifestStore | None = None,
     config: DockwatchConfig | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> UpdateResult:
     if not info.namespace or not info.image_name:
         return _skip_result(info, "invalid image reference for Docker Hub")
@@ -257,69 +258,74 @@ async def check_dockerhub(
         f"&scope=repository:{info.namespace}/{info.image_name}:pull"
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            token_response = await _request_with_retry(lambda: client.get(token_url))
-            if token_response.status_code == 404:
-                return _skip_result(info, "docker hub image not found")
-            token_response.raise_for_status()
-            token_payload = token_response.json()
-            token = token_payload.get("token") if isinstance(token_payload, dict) else None
-            if not token:
-                return _skip_result(info, "docker hub token response missing token")
+    async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        token_response = await _request_with_retry(lambda: client.get(token_url))
+        if token_response.status_code == 404:
+            return _skip_result(info, "docker hub image not found")
+        token_response.raise_for_status()
+        token_payload = token_response.json()
+        token = token_payload.get("token") if isinstance(token_payload, dict) else None
+        if not token:
+            return _skip_result(info, "docker hub token response missing token")
 
-            auth_headers = {"Authorization": f"Bearer {token}"}
+        auth_headers = {"Authorization": f"Bearer {token}"}
 
-            tags_response = await _request_with_retry(
-                lambda: client.get(
-                    f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
-                    headers=auth_headers,
-                )
-            )
-            if tags_response.status_code == 404:
-                return _skip_result(info, "docker hub image not found")
-            tags_response.raise_for_status()
-            tags_payload = tags_response.json()
-            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-            latest_tag = _select_latest_from_tags(
-                tags,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-            )
-            if not latest_tag:
-                return UpdateResult(
-                    container_info=info,
-                    latest_tag=None,
-                    is_outdated=None,
-                    check_error="no tags matched configured tag filters",
-                    status="UNKNOWN",
-                    event=None,
-                )
-            remote_digest = await _fetch_manifest_digest(
-                client,
-                base_url=base_url,
-                namespace=info.namespace,
-                image_name=info.image_name,
-                tag=latest_tag,
+        tags_response = await _request_with_retry(
+            lambda: client.get(
+                f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
                 headers=auth_headers,
             )
+        )
+        if tags_response.status_code == 404:
+            return _skip_result(info, "docker hub image not found")
+        tags_response.raise_for_status()
+        tags_payload = tags_response.json()
+        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+        latest_tag = _select_latest_from_tags(
+            tags,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        if not latest_tag:
+            return UpdateResult(
+                container_info=info,
+                latest_tag=None,
+                is_outdated=None,
+                check_error="no tags matched configured tag filters",
+                status="UNKNOWN",
+                event=None,
+            )
+        remote_digest = await _fetch_manifest_digest(
+            client,
+            base_url=base_url,
+            namespace=info.namespace,
+            image_name=info.image_name,
+            tag=latest_tag,
+            headers=auth_headers,
+        )
+        return UpdateResult(
+            container_info=info,
+            latest_tag=latest_tag,
+            is_outdated=_compare_tags(info, latest_tag, remote_digest),
+            check_error=None,
+            status=None,
+            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
+        )
+
+    try:
+        if client is not None:
+            return await _run(client)
+        async with httpx.AsyncClient(timeout=15.0) as session:
+            return await _run(session)
     except httpx.HTTPError as exc:
         return _skip_result(info, f"docker hub check failed: {exc}")
-
-    return UpdateResult(
-        container_info=info,
-        latest_tag=latest_tag,
-        is_outdated=_compare_tags(info, latest_tag, remote_digest),
-        check_error=None,
-        status=None,
-        event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
-    )
 
 
 async def check_lscr(
     info: ContainerInfo,
     store: ManifestStore | None = None,
     config: DockwatchConfig | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> UpdateResult:
     if not info.namespace or not info.image_name:
         return _skip_result(info, "invalid image reference for lscr")
@@ -331,52 +337,57 @@ async def check_lscr(
     base_url = "https://lscr.io"
     tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
 
+    async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        tags_response = await _request_with_retry(lambda: client.get(tags_url))
+        if tags_response.status_code == 404:
+            return _skip_result(info, "lscr image not found")
+        tags_response.raise_for_status()
+        tags_payload = tags_response.json()
+        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+        latest_tag = _select_latest_from_tags(
+            tags,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        if not latest_tag:
+            return UpdateResult(
+                container_info=info,
+                latest_tag=None,
+                is_outdated=None,
+                check_error="no tags matched configured tag filters",
+                status="UNKNOWN",
+                event=None,
+            )
+        remote_digest = await _fetch_manifest_digest(
+            client,
+            base_url=base_url,
+            namespace=info.namespace,
+            image_name=info.image_name,
+            tag=latest_tag,
+        )
+        return UpdateResult(
+            container_info=info,
+            latest_tag=latest_tag,
+            is_outdated=_compare_tags(info, latest_tag, remote_digest),
+            check_error=None,
+            status=None,
+            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
+        )
+
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            tags_response = await _request_with_retry(lambda: client.get(tags_url))
-            if tags_response.status_code == 404:
-                return _skip_result(info, "lscr image not found")
-            tags_response.raise_for_status()
-            tags_payload = tags_response.json()
-            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-            latest_tag = _select_latest_from_tags(
-                tags,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-            )
-            if not latest_tag:
-                return UpdateResult(
-                    container_info=info,
-                    latest_tag=None,
-                    is_outdated=None,
-                    check_error="no tags matched configured tag filters",
-                    status="UNKNOWN",
-                    event=None,
-                )
-            remote_digest = await _fetch_manifest_digest(
-                client,
-                base_url=base_url,
-                namespace=info.namespace,
-                image_name=info.image_name,
-                tag=latest_tag,
-            )
+        if client is not None:
+            return await _run(client)
+        async with httpx.AsyncClient(timeout=15.0) as session:
+            return await _run(session)
     except httpx.HTTPError as exc:
         return _skip_result(info, f"lscr check failed: {exc}")
-
-    return UpdateResult(
-        container_info=info,
-        latest_tag=latest_tag,
-        is_outdated=_compare_tags(info, latest_tag, remote_digest),
-        check_error=None,
-        status=None,
-        event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
-    )
 
 
 async def check_ghcr(
     info: ContainerInfo,
     store: ManifestStore | None = None,
     config: DockwatchConfig | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> UpdateResult:
     if not info.namespace or not info.image_name:
         return _skip_result(info, "invalid image reference for ghcr")
@@ -388,75 +399,80 @@ async def check_ghcr(
     token_url = f"https://ghcr.io/token?scope=repository:{info.namespace}/{info.image_name}:pull"
     tags_url = f"https://ghcr.io/v2/{info.namespace}/{info.image_name}/tags/list"
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            token_response = await _request_with_retry(lambda: client.get(token_url))
-            if token_response.status_code == 404:
-                return _skip_result(info, "ghcr repository not found")
-            token_response.raise_for_status()
-            token_payload = token_response.json()
-            token = token_payload.get("token") if isinstance(token_payload, dict) else None
-            if not token:
-                return _skip_result(info, "ghcr token response missing token")
+    async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        token_response = await _request_with_retry(lambda: client.get(token_url))
+        if token_response.status_code == 404:
+            return _skip_result(info, "ghcr repository not found")
+        token_response.raise_for_status()
+        token_payload = token_response.json()
+        token = token_payload.get("token") if isinstance(token_payload, dict) else None
+        if not token:
+            return _skip_result(info, "ghcr token response missing token")
 
-            tags_response = await _request_with_retry(
-                lambda: client.get(tags_url, headers={"Authorization": f"Bearer {token}"})
+        tags_response = await _request_with_retry(
+            lambda: client.get(tags_url, headers={"Authorization": f"Bearer {token}"})
+        )
+        if tags_response.status_code == 404:
+            return _skip_result(info, "ghcr repository not found")
+        tags_response.raise_for_status()
+        tags_payload = tags_response.json()
+        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+        latest_tag = _select_latest_from_tags(
+            tags,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        if not latest_tag:
+            return UpdateResult(
+                container_info=info,
+                latest_tag=None,
+                is_outdated=None,
+                check_error="no tags matched configured tag filters",
+                status="UNKNOWN",
+                event=None,
             )
-            if tags_response.status_code == 404:
-                return _skip_result(info, "ghcr repository not found")
-            tags_response.raise_for_status()
-            tags_payload = tags_response.json()
-            tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-            latest_tag = _select_latest_from_tags(
-                tags,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-            )
-            if not latest_tag:
-                return UpdateResult(
-                    container_info=info,
-                    latest_tag=None,
-                    is_outdated=None,
-                    check_error="no tags matched configured tag filters",
-                    status="UNKNOWN",
-                    event=None,
-                )
-            remote_digest = await _fetch_manifest_digest(
-                client,
-                base_url="https://ghcr.io",
-                namespace=info.namespace,
-                image_name=info.image_name,
-                tag=latest_tag,
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        remote_digest = await _fetch_manifest_digest(
+            client,
+            base_url="https://ghcr.io",
+            namespace=info.namespace,
+            image_name=info.image_name,
+            tag=latest_tag,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        return UpdateResult(
+            container_info=info,
+            latest_tag=latest_tag,
+            is_outdated=_compare_tags(info, latest_tag, remote_digest),
+            check_error=None,
+            status=None,
+            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
+        )
+
+    try:
+        if client is not None:
+            return await _run(client)
+        async with httpx.AsyncClient(timeout=15.0) as session:
+            return await _run(session)
     except httpx.HTTPError as exc:
         return _skip_result(info, f"ghcr check failed: {exc}")
-
-    return UpdateResult(
-        container_info=info,
-        latest_tag=latest_tag,
-        is_outdated=_compare_tags(info, latest_tag, remote_digest),
-        check_error=None,
-        status=None,
-        event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
-    )
 
 
 async def check_container(
     info: ContainerInfo,
     store: ManifestStore | None = None,
     config: DockwatchConfig | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> UpdateResult:
     lowered = info.current_tag.lower()
     if lowered == DIGEST_PINNED_TAG.lower():
         return _skip_result(info, "skipped digest-pinned image")
 
     if info.registry == RegistryType.DOCKERHUB:
-        return await check_dockerhub(info, store, config)
+        return await check_dockerhub(info, store, config, client=client)
     if info.registry == RegistryType.LSCR:
-        return await check_lscr(info, store, config)
+        return await check_lscr(info, store, config, client=client)
     if info.registry == RegistryType.GHCR:
-        return await check_ghcr(info, store, config)
+        return await check_ghcr(info, store, config, client=client)
 
     return _skip_result(info, "unsupported registry")
 
@@ -510,15 +526,16 @@ async def check_all(
     concurrency = max(1, max_concurrency or resolved_config.max_concurrent_checks)
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def _run_check(container: ContainerInfo) -> UpdateResult:
+    async def _run_check(container: ContainerInfo, client: httpx.AsyncClient) -> UpdateResult:
         async with semaphore:
             try:
-                return await check_container(container, store, resolved_config)
+                return await check_container(container, store, resolved_config, client=client)
             except Exception as exc:  # noqa: BLE001
                 return _skip_result(container, f"container check failed: {exc}")
 
-    tasks = [_run_check(container) for container in check_targets]
-    if not tasks:
+    if not check_targets:
         return precomputed
-    checked = await asyncio.gather(*tasks)
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        checked = await asyncio.gather(*[_run_check(container, client) for container in check_targets])
     return [*precomputed, *checked]

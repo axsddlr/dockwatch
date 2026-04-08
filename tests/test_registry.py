@@ -35,8 +35,10 @@ class MockAsyncClient:
     def __init__(self, responses: list[MockResponse]):
         self._responses = responses
         self.calls: list[tuple[str, dict | None]] = []
+        self.enter_count = 0
 
     async def __aenter__(self):
+        self.enter_count += 1
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -342,6 +344,37 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(results), 2)
         self.assertTrue(all(result.check_error and "container check failed" in result.check_error for result in results))
+
+    async def test_check_all_reuses_one_http_client_for_entire_run(self) -> None:
+        infos = [
+            make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0"),
+            make_container(registry=RegistryType.DOCKERHUB, current_tag="2.0.0"),
+        ]
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(200, {"tags": ["1.2.0"]}, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.0",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(200, {"tags": ["2.3.0"]}, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/2.3.0",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest-2"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            await check_all(infos)
+
+        self.assertEqual(mock_client.enter_count, 1)
 
 
 if __name__ == "__main__":

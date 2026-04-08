@@ -13,4 +13,4 @@ def create_app() -> None:
 
 def run_web_app(*, host: str = "0.0.0.0", port: int = 8080) -> None:
     create_app()
-    ui.run(host=host, port=port, title="dockwatch", reload=False, show=True)
+    ui.run(host=host, port=port, title="dockwatch", reload=False, show=False)

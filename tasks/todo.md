@@ -29,14 +29,14 @@ Codebase: dockwatch
 - [x] Add direct tests for Docker label parsing and container discovery - `src/dockwatch/docker_client.py:190` - Current tests cover registry/config logic but not the Docker metadata boundary that feeds everything else. Implemented in commit `1b9c5bf`.
 
 ## Medium Priority
-- [ ] Turn off browser auto-open in server mode - `src/dockwatch/web/app.py:16` - `show=True` is a poor default for headless hosts and containers.
-- [ ] Add CLI coverage for the main command surfaces - `src/dockwatch/main.py:51` - `check`, `daemon`, and `notify test` are unverified compared with the smaller config commands.
-- [ ] Add dashboard/component smoke tests - `src/dockwatch/web/pages/dashboard.py:19` - The web path is featureful but currently untested.
-- [ ] Deduplicate link generation so one helper owns both label and URL - `src/dockwatch/links.py:18` - `build_registry_url` and `build_registry_link` repeat the same routing logic.
-- [ ] Make the CLI `Link` column actionable or rename it - `src/dockwatch/display.py:28` - Showing only `Hub`/`Repo`/`Source` reads like a link but is not usable in terminal output.
-- [ ] Align the documented test command and CLI reference - `README.md:116` - Docs omit newer commands and tell contributors to run a different test command than CI.
-- [ ] Remove or make optional the forced dark-mode side effect - `src/dockwatch/web/pages/dashboard.py:25` - Global theme selection inside controller construction makes future UI behavior harder to control.
-- [ ] Align the auto-refresh lower bound between the input and handler - `src/dockwatch/web/pages/dashboard.py:37` - The UI advertises a 10-second minimum but the callback accepts 1 second.
+- [x] Turn off browser auto-open in server mode - `src/dockwatch/web/app.py:16` - `show=True` is a poor default for headless hosts and containers. Implemented in commit `9229faf`.
+- [x] Add CLI coverage for the main command surfaces - `src/dockwatch/main.py:51` - `check`, `daemon`, and `notify test` are unverified compared with the smaller config commands. Implemented in commit `13474f1`.
+- [x] Add dashboard/component smoke tests - `src/dockwatch/web/pages/dashboard.py:19` - The web path is featureful but currently untested. Implemented in commit `b98bb53`.
+- [x] Deduplicate link generation so one helper owns both label and URL - `src/dockwatch/links.py:18` - `build_registry_url` and `build_registry_link` repeat the same routing logic. Implemented in commit `13474f1`.
+- [x] Make the CLI `Link` column actionable or rename it - `src/dockwatch/display.py:28` - Showing only `Hub`/`Repo`/`Source` reads like a link but is not usable in terminal output. Implemented in commit `13474f1`.
+- [x] Align the documented test command and CLI reference - `README.md:116` - Docs omit newer commands and tell contributors to run a different test command than CI. Implemented in commit `13474f1`.
+- [x] Remove or make optional the forced dark-mode side effect - `src/dockwatch/web/pages/dashboard.py:25` - Global theme selection inside controller construction makes future UI behavior harder to control. Implemented in commit `352c058`.
+- [x] Align the auto-refresh lower bound between the input and handler - `src/dockwatch/web/pages/dashboard.py:37` - The UI advertises a 10-second minimum but the callback accepts 1 second. Implemented in commit `352c058`.
 
 ## Architecture Notes
 The project has a good split between config, discovery, registry, notification, and UI layers.

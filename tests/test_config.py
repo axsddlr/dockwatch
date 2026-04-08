@@ -4,7 +4,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from typer.testing import CliRunner
+
 from dockwatch.config import DockwatchConfig, load_config, save_config
+from dockwatch.main import app
 from dockwatch.models import ContainerInfo, RegistryType
 from dockwatch.registry import check_all
 
@@ -34,6 +37,47 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.notify_only, ["nginx"])
             self.assertEqual(loaded.webhook_url, "https://example.test/webhook")
             self.assertEqual(loaded.discord_webhook, "https://discord.test/hook")
+
+
+class UnpinUnignoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self._config_path = Path(self._tmp.name) / "config.toml"
+        # Pre-populate config with pinned + ignored entries
+        cfg = DockwatchConfig(pinned=["web", "db"], ignored=["cache", "redis"])
+        save_config(cfg, self._config_path)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _run(self, *args: str):  # noqa: ANN202
+        runner = CliRunner()
+        from unittest.mock import patch
+        with patch("dockwatch.main.load_config", lambda: load_config(self._config_path)), \
+             patch("dockwatch.main.save_config", lambda cfg: save_config(cfg, self._config_path)):
+            return runner.invoke(app, list(args))
+
+    def test_unpin_removes_entry(self) -> None:
+        result = self._run("unpin", "web")
+        self.assertEqual(result.exit_code, 0)
+        cfg = load_config(self._config_path)
+        self.assertNotIn("web", cfg.pinned)
+        self.assertIn("db", cfg.pinned)
+
+    def test_unpin_unknown_errors(self) -> None:
+        result = self._run("unpin", "nonexistent")
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_unignore_removes_entry(self) -> None:
+        result = self._run("unignore", "cache")
+        self.assertEqual(result.exit_code, 0)
+        cfg = load_config(self._config_path)
+        self.assertNotIn("cache", cfg.ignored)
+        self.assertIn("redis", cfg.ignored)
+
+    def test_unignore_unknown_errors(self) -> None:
+        result = self._run("unignore", "nonexistent")
+        self.assertNotEqual(result.exit_code, 0)
 
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):

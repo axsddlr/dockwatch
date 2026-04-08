@@ -130,6 +130,30 @@ def ignore_container(container: str) -> None:
     typer.echo(f"Ignored: {container}")
 
 
+@app.command("unpin")
+def unpin_container(container: str) -> None:
+    """Remove a container from the pinned list."""
+    config = load_config()
+    if container not in config.pinned:
+        typer.echo(f"'{container}' is not pinned.", err=True)
+        raise typer.Exit(code=1)
+    config.pinned = [c for c in config.pinned if c != container]
+    save_config(config)
+    typer.echo(f"Unpinned: {container}")
+
+
+@app.command("unignore")
+def unignore_container(container: str) -> None:
+    """Remove a container from the ignored list."""
+    config = load_config()
+    if container not in config.ignored:
+        typer.echo(f"'{container}' is not ignored.", err=True)
+        raise typer.Exit(code=1)
+    config.ignored = [c for c in config.ignored if c != container]
+    save_config(config)
+    typer.echo(f"Unignored: {container}")
+
+
 @config_app.command("list")
 def list_config() -> None:
     """Show pinned and ignored containers from config."""

@@ -13,7 +13,8 @@ from . import __version__
 from .config import DockwatchConfig, load_config, save_config
 from .display import render_containers_table, render_summary, render_update_table
 from .docker_client import DockerConnectionError, get_running_containers
-from .notifiers import send_configured_notifications
+from .models import ContainerInfo, RegistryType, UpdateResult
+from .notifiers import build_notifiers, send_configured_notifications
 from .registry import check_all
 from .web import run_web_app
 
@@ -28,7 +29,9 @@ app = typer.Typer(
     )
 )
 config_app = typer.Typer(help="Manage dockwatch configuration.")
+notify_app = typer.Typer(help="Manage notifications.")
 app.add_typer(config_app, name="config")
+app.add_typer(notify_app, name="notify")
 
 
 @app.command("list")
@@ -148,6 +151,38 @@ def list_config() -> None:
     typer.echo("Notifications:")
     typer.echo(f"  webhook_url: {config.webhook_url or '(not set)'}")
     typer.echo(f"  discord_webhook: {config.discord_webhook or '(not set)'}")
+
+
+@notify_app.command("test")
+def notify_test() -> None:
+    """Send a test notification to all configured notifiers."""
+    config = load_config()
+    notifiers = build_notifiers(config)
+    if not notifiers:
+        typer.echo("No notifiers configured. Set webhook_url or discord_webhook in config.", err=True)
+        raise typer.Exit(code=1)
+
+    test_result = UpdateResult(
+        container_info=ContainerInfo(
+            name="dockwatch-test",
+            container_id="test",
+            image_ref="ghcr.io/example/app:1.0.0",
+            registry=RegistryType.GHCR,
+            namespace="example",
+            image_name="app",
+            current_tag="1.0.0",
+        ),
+        latest_tag="1.1.0",
+        is_outdated=True,
+        status=None,
+    )
+
+    errors = asyncio.run(send_configured_notifications([test_result], config))
+    if errors:
+        for error in errors:
+            typer.echo(f"Notifier error: {error}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Test notification sent to {len(notifiers)} notifier(s).")
 
 
 def main() -> None:

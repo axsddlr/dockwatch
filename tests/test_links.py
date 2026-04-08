@@ -61,6 +61,21 @@ class RegistryLinkTests(unittest.TestCase):
 
         self.assertEqual(build_registry_url(info), "https://github.com/example/source")
 
+    def test_dockerhub_prefers_hub_over_source_metadata(self) -> None:
+        info = ContainerInfo(
+            name="gluetun",
+            container_id="1",
+            image_ref="qmcgaw/gluetun:latest",
+            registry=RegistryType.DOCKERHUB,
+            namespace="qmcgaw",
+            image_name="gluetun",
+            current_tag="latest",
+            labels={"org.opencontainers.image.source": "https://github.com/qdm12/gluetun"},
+        )
+
+        self.assertEqual(build_registry_url(info), "https://hub.docker.com/r/qmcgaw/gluetun")
+        self.assertEqual(build_registry_link(info), ("Hub", "https://hub.docker.com/r/qmcgaw/gluetun"))
+
     def test_registry_link_label_matches_source(self) -> None:
         info = ContainerInfo(
             name="app",

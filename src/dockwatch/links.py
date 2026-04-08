@@ -16,14 +16,14 @@ def _source_url(info: ContainerInfo) -> str | None:
 
 
 def build_registry_url(info: ContainerInfo) -> str | None:
-    source_url = _source_url(info)
-    if source_url:
-        return source_url
-
     if info.registry == RegistryType.DOCKERHUB:
         if info.namespace and info.namespace != "library":
             return f"https://hub.docker.com/r/{info.namespace}/{info.image_name}"
         return f"https://hub.docker.com/_/{info.image_name}"
+
+    source_url = _source_url(info)
+    if source_url:
+        return source_url
 
     if info.registry == RegistryType.GHCR:
         if info.namespace:
@@ -42,9 +42,9 @@ def build_registry_link(info: ContainerInfo) -> tuple[str, str] | None:
     url = build_registry_url(info)
     if not url:
         return None
+    if info.registry == RegistryType.DOCKERHUB:
+        return "Hub", url
     source_url = _source_url(info)
     if source_url:
         return "Source", url
-    if info.registry == RegistryType.DOCKERHUB:
-        return "Hub", url
     return "Repo", url

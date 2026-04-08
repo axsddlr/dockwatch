@@ -189,6 +189,57 @@ async def _fetch_manifest_digest(
     return response.headers.get("Docker-Content-Digest")
 
 
+async def _check_repository_tags(
+    client: httpx.AsyncClient,
+    *,
+    info: ContainerInfo,
+    store: ManifestStore | None,
+    base_url: str,
+    tags_url: str,
+    not_found_reason: str,
+    error_prefix: str,
+    include_patterns: list[re.Pattern[str]],
+    exclude_patterns: list[re.Pattern[str]],
+    headers: dict[str, str] | None = None,
+) -> UpdateResult:
+    tags_response = await _request_with_retry(lambda: client.get(tags_url, headers=headers))
+    if tags_response.status_code == 404:
+        return _skip_result(info, not_found_reason)
+    tags_response.raise_for_status()
+    tags_payload = tags_response.json()
+    tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+    latest_tag = _select_latest_from_tags(
+        tags,
+        include_patterns=include_patterns,
+        exclude_patterns=exclude_patterns,
+    )
+    if not latest_tag:
+        return UpdateResult(
+            container_info=info,
+            latest_tag=None,
+            is_outdated=None,
+            check_error="no tags matched configured tag filters",
+            status="UNKNOWN",
+            event=None,
+        )
+    remote_digest = await _fetch_manifest_digest(
+        client,
+        base_url=base_url,
+        namespace=info.namespace,
+        image_name=info.image_name,
+        tag=latest_tag,
+        headers=headers,
+    )
+    return UpdateResult(
+        container_info=info,
+        latest_tag=latest_tag,
+        is_outdated=_compare_tags(info, latest_tag, remote_digest),
+        check_error=None,
+        status=None,
+        event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
+    )
+
+
 def _record_event(
     store: ManifestStore | None,
     info: ContainerInfo,
@@ -269,47 +320,17 @@ async def check_dockerhub(
             return _skip_result(info, "docker hub token response missing token")
 
         auth_headers = {"Authorization": f"Bearer {token}"}
-
-        tags_response = await _request_with_retry(
-            lambda: client.get(
-                f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
-                headers=auth_headers,
-            )
-        )
-        if tags_response.status_code == 404:
-            return _skip_result(info, "docker hub image not found")
-        tags_response.raise_for_status()
-        tags_payload = tags_response.json()
-        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-        latest_tag = _select_latest_from_tags(
-            tags,
+        return await _check_repository_tags(
+            client,
+            info=info,
+            store=store,
+            base_url=base_url,
+            tags_url=f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
+            not_found_reason="docker hub image not found",
+            error_prefix="docker hub",
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
-        )
-        if not latest_tag:
-            return UpdateResult(
-                container_info=info,
-                latest_tag=None,
-                is_outdated=None,
-                check_error="no tags matched configured tag filters",
-                status="UNKNOWN",
-                event=None,
-            )
-        remote_digest = await _fetch_manifest_digest(
-            client,
-            base_url=base_url,
-            namespace=info.namespace,
-            image_name=info.image_name,
-            tag=latest_tag,
             headers=auth_headers,
-        )
-        return UpdateResult(
-            container_info=info,
-            latest_tag=latest_tag,
-            is_outdated=_compare_tags(info, latest_tag, remote_digest),
-            check_error=None,
-            status=None,
-            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
         )
 
     try:
@@ -338,40 +359,16 @@ async def check_lscr(
     tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
 
     async def _run(client: httpx.AsyncClient) -> UpdateResult:
-        tags_response = await _request_with_retry(lambda: client.get(tags_url))
-        if tags_response.status_code == 404:
-            return _skip_result(info, "lscr image not found")
-        tags_response.raise_for_status()
-        tags_payload = tags_response.json()
-        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-        latest_tag = _select_latest_from_tags(
-            tags,
+        return await _check_repository_tags(
+            client,
+            info=info,
+            store=store,
+            base_url=base_url,
+            tags_url=tags_url,
+            not_found_reason="lscr image not found",
+            error_prefix="lscr",
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
-        )
-        if not latest_tag:
-            return UpdateResult(
-                container_info=info,
-                latest_tag=None,
-                is_outdated=None,
-                check_error="no tags matched configured tag filters",
-                status="UNKNOWN",
-                event=None,
-            )
-        remote_digest = await _fetch_manifest_digest(
-            client,
-            base_url=base_url,
-            namespace=info.namespace,
-            image_name=info.image_name,
-            tag=latest_tag,
-        )
-        return UpdateResult(
-            container_info=info,
-            latest_tag=latest_tag,
-            is_outdated=_compare_tags(info, latest_tag, remote_digest),
-            check_error=None,
-            status=None,
-            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
         )
 
     try:
@@ -409,43 +406,17 @@ async def check_ghcr(
         if not token:
             return _skip_result(info, "ghcr token response missing token")
 
-        tags_response = await _request_with_retry(
-            lambda: client.get(tags_url, headers={"Authorization": f"Bearer {token}"})
-        )
-        if tags_response.status_code == 404:
-            return _skip_result(info, "ghcr repository not found")
-        tags_response.raise_for_status()
-        tags_payload = tags_response.json()
-        tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
-        latest_tag = _select_latest_from_tags(
-            tags,
+        return await _check_repository_tags(
+            client,
+            info=info,
+            store=store,
+            base_url="https://ghcr.io",
+            tags_url=tags_url,
+            not_found_reason="ghcr repository not found",
+            error_prefix="ghcr",
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
-        )
-        if not latest_tag:
-            return UpdateResult(
-                container_info=info,
-                latest_tag=None,
-                is_outdated=None,
-                check_error="no tags matched configured tag filters",
-                status="UNKNOWN",
-                event=None,
-            )
-        remote_digest = await _fetch_manifest_digest(
-            client,
-            base_url="https://ghcr.io",
-            namespace=info.namespace,
-            image_name=info.image_name,
-            tag=latest_tag,
             headers={"Authorization": f"Bearer {token}"},
-        )
-        return UpdateResult(
-            container_info=info,
-            latest_tag=latest_tag,
-            is_outdated=_compare_tags(info, latest_tag, remote_digest),
-            check_error=None,
-            status=None,
-            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
         )
 
     try:

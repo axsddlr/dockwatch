@@ -19,10 +19,13 @@ def build_notifiers(config: DockwatchConfig) -> list[BaseNotifier]:
 
 
 async def send_configured_notifications(results: list[UpdateResult], config: DockwatchConfig) -> list[str]:
+    notify_only = set(config.notify_only)
+    filtered = [r for r in results if r.container_info.name in notify_only] if notify_only else results
+
     errors: list[str] = []
     for notifier in build_notifiers(config):
         try:
-            await notifier.send(results)
+            await notifier.send(filtered)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{notifier.name}: {exc}")
     return errors

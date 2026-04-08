@@ -34,6 +34,49 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         notifiers = build_notifiers(config)
         self.assertEqual(len(notifiers), 2)
 
+    async def test_notify_only_filters_results(self) -> None:
+        sent: list[list[UpdateResult]] = []
+        config = DockwatchConfig(
+            webhook_url="https://example.test/webhook",
+            notify_only=["web"],
+        )
+        results = self._sample_results() + [
+            UpdateResult(
+                container_info=ContainerInfo(
+                    name="db",
+                    container_id="2",
+                    image_ref="postgres:15",
+                    registry=RegistryType.DOCKERHUB,
+                    namespace="library",
+                    image_name="postgres",
+                    current_tag="15",
+                ),
+                latest_tag="16",
+                is_outdated=True,
+            )
+        ]
+
+        async def capture_send(self_inner, r):  # noqa: ANN001
+            sent.append(r)
+
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
+            await send_configured_notifications(results, config)
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][0].container_info.name, "web")
+
+    async def test_notify_only_empty_sends_all(self) -> None:
+        sent: list[list[UpdateResult]] = []
+
+        async def capture_send(self_inner, r):  # noqa: ANN001
+            sent.append(r)
+
+        config = DockwatchConfig(webhook_url="https://example.test/webhook")
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
+            await send_configured_notifications(self._sample_results(), config)
+
+        self.assertEqual(len(sent[0]), 1)
+
     async def test_send_configured_notifications_collects_errors(self) -> None:
         config = DockwatchConfig(
             webhook_url="https://example.test/webhook",

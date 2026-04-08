@@ -5,6 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
+from .links import build_registry_link
 from .models import ContainerInfo, UpdateResult
 
 console = Console()
@@ -24,17 +25,21 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
     table.add_column("Image")
     table.add_column("Tag")
     table.add_column("Registry")
+    table.add_column("Link")
 
     for container in containers:
+        registry_link = build_registry_link(container)
+        link_text = registry_link[0] if registry_link else "-"
         table.add_row(
             container.name or "-",
             container.image_ref or "-",
             _current_tag_display(container),
             container.registry.value,
+            link_text,
         )
 
     if not containers:
-        table.add_row("-", "No running containers", "-", "-")
+        table.add_row("-", "No running containers", "-", "-", "-")
 
     console.print(table)
 
@@ -57,6 +62,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
     table.add_column("Current")
     table.add_column("Latest")
     table.add_column("Status")
+    table.add_column("Link")
 
     for result in results:
         status, color = _status_label(result)
@@ -65,15 +71,18 @@ def render_update_table(results: list[UpdateResult]) -> None:
             latest_display = "Pinned by config"
         if result.check_error:
             latest_display = result.check_error
+        registry_link = build_registry_link(result.container_info)
+        link_text = registry_link[0] if registry_link else "-"
         table.add_row(
             result.container_info.name or "-",
             _current_tag_display(result.container_info),
             latest_display,
             f"[{color}]{status}[/{color}]",
+            link_text,
         )
 
     if not results:
-        table.add_row("-", "-", "No results", "[yellow]UNKNOWN[/yellow]")
+        table.add_row("-", "-", "No results", "[yellow]UNKNOWN[/yellow]", "-")
 
     console.print(table)
 

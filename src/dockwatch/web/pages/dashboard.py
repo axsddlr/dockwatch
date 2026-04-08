@@ -8,10 +8,11 @@ from nicegui import ui
 
 from ... import __version__
 from ...config import load_config, save_config
+from ...db import ManifestStore
 from ...docker_client import DockerConnectionError, get_running_containers
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
-from ...registry import check_all, check_container
+from ...registry import check_all
 from ..components.container_table import ContainerStatusTable
 
 
@@ -20,6 +21,7 @@ class DashboardController:
         self.results: list[UpdateResult] = []
         self.last_checked: str = "Never"
         self.config = load_config()
+        self.store = ManifestStore()
         ui.dark_mode().enable()
 
         with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
@@ -42,6 +44,7 @@ class DashboardController:
                 ui.label("Notification Settings").classes("text-lg font-medium")
                 self.webhook_input = ui.input("Webhook URL", value=self.config.webhook_url).classes("w-full")
                 self.discord_input = ui.input("Discord Webhook", value=self.config.discord_webhook).classes("w-full")
+                self.ntfy_input = ui.input("ntfy Topic URL", value=self.config.ntfy_url).classes("w-full")
                 with ui.row().classes("gap-2"):
                     ui.button("Save Settings", on_click=self.save_notification_settings)
                     ui.button("Send Test Notification", on_click=self.send_test_notification)
@@ -85,7 +88,12 @@ class DashboardController:
         self.config = load_config()
         self.message_label.set_text("")
         self.error_help.set_content("")
-        self.results = await check_all(containers, self.config)
+        self.results = await check_all(
+            containers,
+            self.config,
+            store=self.store,
+            max_concurrency=self.config.max_concurrent_checks,
+        )
         self._update_last_checked()
         self.table.render(self.results, self.check_one, self.toggle_pin)
 
@@ -105,7 +113,13 @@ class DashboardController:
             await self.refresh_all()
             return
 
-        updated = await check_container(target)
+        self.config = load_config()
+        updated_results = await check_all([target], self.config, store=self.store, max_concurrency=1)
+        if not updated_results:
+            self.message_label.set_text(f"Container '{container_name}' is currently ignored.")
+            await self.refresh_all()
+            return
+        updated = updated_results[0]
         replaced = False
         for idx, existing in enumerate(self.results):
             if existing.container_info.name == container_name:
@@ -137,6 +151,7 @@ class DashboardController:
         self.config = load_config()
         self.config.webhook_url = (self.webhook_input.value or "").strip()
         self.config.discord_webhook = (self.discord_input.value or "").strip()
+        self.config.ntfy_url = (self.ntfy_input.value or "").strip()
         save_config(self.config)
         self.message_label.set_text("Notification settings saved.")
 
@@ -159,9 +174,10 @@ class DashboardController:
                     is_outdated=True,
                     check_error=None,
                     status=None,
+                    event="update",
                 )
             ]
-        errors = await send_configured_notifications(sample_results, self.config)
+        errors = await send_configured_notifications(sample_results, self.config, apply_filters=False)
         if errors:
             self.message_label.set_text("Test notification failed: " + "; ".join(errors))
         else:

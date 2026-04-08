@@ -8,10 +8,52 @@ from docker.errors import DockerException
 from .models import ContainerInfo, RegistryType
 
 DIGEST_PINNED_TAG = "DIGEST_PINNED"
+TRUE_LABEL_VALUES = {"1", "true", "yes", "on"}
+FALSE_LABEL_VALUES = {"0", "false", "no", "off"}
 
 
 class DockerConnectionError(RuntimeError):
     """Raised when the Docker daemon cannot be reached."""
+
+
+def _parse_label_flag(labels: dict[str, str], key: str) -> bool | None:
+    raw_value = labels.get(key)
+    if raw_value is None:
+        return None
+    normalized = str(raw_value).strip().lower()
+    if normalized in TRUE_LABEL_VALUES:
+        return True
+    if normalized in FALSE_LABEL_VALUES:
+        return False
+    return None
+
+
+def _parse_label_list(labels: dict[str, str], key: str) -> list[str] | None:
+    if key not in labels:
+        return None
+    raw_value = str(labels.get(key, "")).strip()
+    if not raw_value:
+        return []
+    items: list[str] = []
+    for line in raw_value.splitlines():
+        for chunk in line.split(";"):
+            for item in chunk.split(","):
+                items.append(item.strip())
+    unique: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
+
+
+def _tag_override_kwargs(labels: dict[str, str]) -> dict[str, list[str] | None]:
+    return {
+        "include_tags_override": _parse_label_list(labels, "dockwatch.include_tags"),
+        "exclude_tags_override": _parse_label_list(labels, "dockwatch.exclude_tags"),
+    }
 
 
 def parse_image_ref(
@@ -40,6 +82,11 @@ def parse_image_ref(
             version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
+            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
+            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
+            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
+            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+            **_tag_override_kwargs(labels),
         )
 
     repo_part = image_ref
@@ -68,6 +115,11 @@ def parse_image_ref(
             version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
+            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
+            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
+            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
+            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+            **_tag_override_kwargs(labels),
         )
 
     first = parts[0]
@@ -101,6 +153,11 @@ def parse_image_ref(
             version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
+            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
+            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
+            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
+            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+            **_tag_override_kwargs(labels),
         )
 
     if len(path_parts) == 1:
@@ -122,6 +179,11 @@ def parse_image_ref(
         version_label=labels.get("org.opencontainers.image.version"),
         compose_image_digest=compose_image_digest,
         repo_digest=repo_digest,
+        watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
+        pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
+        ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
+        notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+        **_tag_override_kwargs(labels),
     )
 
 

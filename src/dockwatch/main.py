@@ -11,11 +11,13 @@ import typer
 
 from . import __version__
 from .config import DockwatchConfig, load_config, save_config
+from .db import ManifestStore
 from .display import render_containers_table, render_summary, render_update_table
 from .docker_client import DockerConnectionError, get_running_containers
 from .models import ContainerInfo, RegistryType, UpdateResult
 from .notifiers import build_notifiers, send_configured_notifications
 from .registry import check_all
+from .scheduler import ScheduledCheckRunner
 from .web import run_web_app
 
 app = typer.Typer(
@@ -67,7 +69,8 @@ def check_updates(
             raise typer.Exit(code=1)
 
     config = load_config()
-    results = asyncio.run(check_all(containers, config))
+    store = ManifestStore()
+    results = asyncio.run(check_all(containers, config, store=store, max_concurrency=config.max_concurrent_checks))
     if outdated_only:
         results = [result for result in results if result.is_outdated is True]
 
@@ -83,6 +86,10 @@ def check_updates(
         render_update_table(results)
         render_summary(results)
     if notify:
+        notifiers = build_notifiers(config)
+        if not notifiers:
+            typer.echo("No notifiers configured. Set webhook_url, discord_webhook, or ntfy_url in config.", err=True)
+            raise typer.Exit(code=1)
         errors = asyncio.run(send_configured_notifications(results, config))
         if errors:
             for error in errors:
@@ -104,6 +111,32 @@ def serve(
 ) -> None:
     """Launch NiceGUI dashboard."""
     run_web_app(host=host, port=port)
+
+
+@app.command("daemon")
+def daemon(
+    notify: bool = typer.Option(True, "--notify/--no-notify", help="Send configured notifications after each run."),
+) -> None:
+    """Run dockwatch in scheduled background mode using config file schedule settings."""
+    config = load_config()
+    store = ManifestStore()
+    runner = ScheduledCheckRunner(
+        config=config,
+        store=store,
+        notify=notify,
+        emit=typer.echo,
+    )
+    typer.echo(
+        "Starting daemon "
+        f"(interval={config.schedule_interval_seconds}s, "
+        f"jitter={config.schedule_jitter_seconds}s, "
+        f"run_on_startup={config.run_on_startup}, "
+        f"workers={config.max_concurrent_checks})."
+    )
+    try:
+        asyncio.run(runner.serve_forever())
+    except KeyboardInterrupt:
+        typer.echo("Daemon stopped.")
 
 
 def _update_named_list(current: list[str], item: str) -> list[str]:
@@ -173,8 +206,17 @@ def list_config() -> None:
         typer.echo("  (none)")
 
     typer.echo("Notifications:")
+    typer.echo(f"  include_tags: {', '.join(config.include_tags) if config.include_tags else '(none)'}")
+    typer.echo(f"  exclude_tags: {', '.join(config.exclude_tags) if config.exclude_tags else '(none)'}")
     typer.echo(f"  webhook_url: {config.webhook_url or '(not set)'}")
     typer.echo(f"  discord_webhook: {config.discord_webhook or '(not set)'}")
+    typer.echo(f"  ntfy_url: {config.ntfy_url or '(not set)'}")
+    typer.echo(f"  notify_on: {', '.join(config.notify_on) if config.notify_on else '(none)'}")
+    typer.echo(f"  first_check_notify: {config.first_check_notify}")
+    typer.echo(f"  schedule_interval_seconds: {config.schedule_interval_seconds}")
+    typer.echo(f"  schedule_jitter_seconds: {config.schedule_jitter_seconds}")
+    typer.echo(f"  run_on_startup: {config.run_on_startup}")
+    typer.echo(f"  max_concurrent_checks: {config.max_concurrent_checks}")
 
 
 @notify_app.command("test")
@@ -183,7 +225,7 @@ def notify_test() -> None:
     config = load_config()
     notifiers = build_notifiers(config)
     if not notifiers:
-        typer.echo("No notifiers configured. Set webhook_url or discord_webhook in config.", err=True)
+        typer.echo("No notifiers configured. Set webhook_url, discord_webhook, or ntfy_url in config.", err=True)
         raise typer.Exit(code=1)
 
     test_result = UpdateResult(
@@ -199,9 +241,10 @@ def notify_test() -> None:
         latest_tag="1.1.0",
         is_outdated=True,
         status=None,
+        event="update",
     )
 
-    errors = asyncio.run(send_configured_notifications([test_result], config))
+    errors = asyncio.run(send_configured_notifications([test_result], config, apply_filters=False))
     if errors:
         for error in errors:
             typer.echo(f"Notifier error: {error}", err=True)

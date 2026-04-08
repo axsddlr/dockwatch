@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from nicegui import ui
 
+from ...links import build_registry_link
 from ...models import UpdateResult
 
 CheckHandler = Callable[[str], Awaitable[None]]
@@ -21,6 +22,7 @@ class ContainerStatusTable:
                 ui.label("Current Tag").classes("w-2/12")
                 ui.label("Latest Tag").classes("w-2/12")
                 ui.label("Status").classes("w-2/12")
+                ui.label("Registry").classes("w-1/12")
                 ui.label("Actions").classes("w-1/12")
             self.rows_container = ui.column().classes("w-full gap-1")
 
@@ -67,6 +69,13 @@ class ContainerStatusTable:
                         ui.label(latest_value).classes("w-full md:w-2/12 break-all")
                         with ui.row().classes("w-full md:w-2/12"):
                             ui.badge(status_text, color=badge_color)
+                        with ui.row().classes("w-full md:w-1/12"):
+                            registry_link = build_registry_link(result.container_info)
+                            if registry_link:
+                                label, registry_url = registry_link
+                                ui.link(label, registry_url).props("target=_blank")
+                            else:
+                                ui.label("-")
                         with ui.row().classes("w-full md:w-1/12 gap-1"):
                             ui.button(
                                 "Check",

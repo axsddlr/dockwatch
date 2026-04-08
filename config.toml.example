@@ -13,9 +13,31 @@ notify_only = [
   # "nginx",
 ]
 
+include_tags = [
+  # "^1\\.",
+]
+
+exclude_tags = [
+  # "-rc$",
+]
+
+notify_on = ["update"]
+first_check_notify = false
+schedule_interval_seconds = 300
+schedule_jitter_seconds = 30
+run_on_startup = true
+max_concurrent_checks = 5
+
 [notifications]
 # Generic webhook endpoint (POST JSON payload)
 webhook_url = ""
 
 # Discord webhook URL
 discord_webhook = ""
+
+# ntfy topic URL
+ntfy_url = ""
+
+# Optional container labels can override tag filters:
+# dockwatch.include_tags = "^1\\.;^2\\."
+# dockwatch.exclude_tags = "-rc$"

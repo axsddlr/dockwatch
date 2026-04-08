@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 
 from .base import BaseNotifier
+from ..links import build_registry_url
 from ..models import UpdateResult
 
 
@@ -15,23 +16,46 @@ class DiscordNotifier(BaseNotifier):
         self.webhook_url = webhook_url
 
     async def send(self, results: list[UpdateResult]) -> None:
+        new_events = sum(1 for result in results if result.event == "new")
+        update_events = sum(1 for result in results if result.event == "update")
         outdated = [result for result in results if result.is_outdated is True]
         unknown = [result for result in results if result.is_outdated is None]
 
         description = [
+            f"New events: {new_events}",
+            f"Update events: {update_events}",
             f"Outdated: {len(outdated)}",
             f"Unknown: {len(unknown)}",
             f"Total checked: {len(results)}",
         ]
         fields = []
         for result in outdated[:10]:
+            registry_url = build_registry_url(result.container_info)
+            link_text = f" [link]({registry_url})" if registry_url else ""
             fields.append(
                 {
                     "name": result.container_info.name or "unknown",
-                    "value": f"{result.container_info.current_tag} -> {result.latest_tag or '?'}",
+                    "value": (
+                        f"{result.container_info.current_tag} -> {result.latest_tag or '?'}"
+                        f" ({result.event or 'check'}){link_text}"
+                    ),
                     "inline": False,
                 }
             )
+        if not fields:
+            for result in results[:10]:
+                registry_url = build_registry_url(result.container_info)
+                link_text = f" [link]({registry_url})" if registry_url else ""
+                fields.append(
+                    {
+                        "name": result.container_info.name or "unknown",
+                        "value": (
+                            f"{result.container_info.current_tag} -> {result.latest_tag or '?'}"
+                            f" ({result.event or 'check'}){link_text}"
+                        ),
+                        "inline": False,
+                    }
+                )
 
         payload = {
             "embeds": [

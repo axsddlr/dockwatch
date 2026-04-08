@@ -27,16 +27,34 @@ class ConfigTests(unittest.TestCase):
                 pinned=["plex", "plex", "jellyfin"],
                 ignored=["db"],
                 notify_only=["nginx"],
+                include_tags=[r"^1\\.", r"^1\\."],
+                exclude_tags=[r"-rc$"],
+                notify_on=["new", "update", "bogus"],
+                first_check_notify=True,
                 webhook_url="https://example.test/webhook",
                 discord_webhook="https://discord.test/hook",
+                ntfy_url="https://ntfy.test/topic",
+                schedule_interval_seconds=600,
+                schedule_jitter_seconds=45,
+                run_on_startup=False,
+                max_concurrent_checks=8,
             )
             save_config(source, config_path)
             loaded = load_config(config_path)
             self.assertEqual(loaded.pinned, ["plex", "jellyfin"])
             self.assertEqual(loaded.ignored, ["db"])
             self.assertEqual(loaded.notify_only, ["nginx"])
+            self.assertEqual(loaded.include_tags, [r"^1\\."])
+            self.assertEqual(loaded.exclude_tags, [r"-rc$"])
+            self.assertEqual(loaded.notify_on, ["new", "update"])
+            self.assertTrue(loaded.first_check_notify)
             self.assertEqual(loaded.webhook_url, "https://example.test/webhook")
             self.assertEqual(loaded.discord_webhook, "https://discord.test/hook")
+            self.assertEqual(loaded.ntfy_url, "https://ntfy.test/topic")
+            self.assertEqual(loaded.schedule_interval_seconds, 600)
+            self.assertEqual(loaded.schedule_jitter_seconds, 45)
+            self.assertFalse(loaded.run_on_startup)
+            self.assertEqual(loaded.max_concurrent_checks, 8)
 
 
 class UnpinUnignoreTests(unittest.TestCase):
@@ -122,6 +140,38 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_name["web"].status, "PINNED")
         self.assertIsNone(by_name["web"].is_outdated)
         self.assertEqual(by_name["cache"].status, "UNKNOWN")
+
+    async def test_check_all_respects_label_overrides(self) -> None:
+        containers = [
+            ContainerInfo(
+                name="web",
+                container_id="1",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.UNKNOWN,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+                ignored_override=False,
+                pinned_override=True,
+            ),
+            ContainerInfo(
+                name="db",
+                container_id="2",
+                image_ref="postgres:15",
+                registry=RegistryType.UNKNOWN,
+                namespace="library",
+                image_name="postgres",
+                current_tag="15",
+                watch_enabled=False,
+            ),
+        ]
+
+        config = DockwatchConfig(pinned=[], ignored=["web"])
+        results = await check_all(containers, config)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].container_info.name, "web")
+        self.assertEqual(results[0].status, "PINNED")
 
 
 if __name__ == "__main__":

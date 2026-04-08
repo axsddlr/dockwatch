@@ -5,8 +5,9 @@ from unittest.mock import patch
 
 import httpx
 
+from dockwatch.config import DockwatchConfig
 from dockwatch.models import ContainerInfo, RegistryType
-from dockwatch.registry import check_all, check_container, check_dockerhub, check_ghcr
+from dockwatch.registry import _compile_tag_patterns, _select_latest_from_tags, check_all, check_container, check_dockerhub, check_ghcr
 
 
 class MockResponse:
@@ -67,6 +68,72 @@ def make_container(*, registry: RegistryType, current_tag: str = "1.0.0") -> Con
 
 
 class RegistryTests(unittest.IsolatedAsyncioTestCase):
+    def test_select_latest_from_tags_honors_include_regex(self) -> None:
+        include_patterns, error = _compile_tag_patterns([r"^1\."])
+        self.assertIsNone(error)
+
+        latest = _select_latest_from_tags(
+            ["latest", "1.2.0", "2.0.0"],
+            include_patterns=include_patterns,
+            exclude_patterns=[],
+        )
+
+        self.assertEqual(latest, "1.2.0")
+
+    def test_select_latest_from_tags_honors_exclude_regex(self) -> None:
+        exclude_patterns, error = _compile_tag_patterns([r"-rc$"])
+        self.assertIsNone(error)
+
+        latest = _select_latest_from_tags(
+            ["latest", "1.2.0-rc", "1.1.0"],
+            include_patterns=[],
+            exclude_patterns=exclude_patterns,
+        )
+
+        self.assertEqual(latest, "1.1.0")
+
+    async def test_check_dockerhub_returns_unknown_for_invalid_tag_regex(self) -> None:
+        info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
+
+        result = await check_dockerhub(info, config=DockwatchConfig(include_tags=["["]))
+
+        self.assertIsNone(result.is_outdated)
+        self.assertIn("invalid tag regex", result.check_error or "")
+
+    async def test_container_label_tag_filters_override_config(self) -> None:
+        info = ContainerInfo(
+            name="svc",
+            container_id="abc123",
+            image_ref="example",
+            registry=RegistryType.DOCKERHUB,
+            namespace="owner",
+            image_name="image",
+            current_tag="1.0.0",
+            include_tags_override=[r"^2\."],
+            exclude_tags_override=[],
+        )
+        token_payload = {"token": "dh-token"}
+        tags_payload = {"tags": ["1.2.0", "2.1.0"]}
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/2.1.0",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_dockerhub(info, config=DockwatchConfig(include_tags=[r"^1\."]))
+
+        self.assertEqual(result.latest_tag, "2.1.0")
+        self.assertTrue(result.is_outdated)
+        self.assertIsNone(result.check_error)
+
     async def test_check_dockerhub_prefers_latest_semver(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
         token_payload = {"token": "dh-token"}
@@ -85,7 +152,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
-            result = await check_dockerhub(info)
+            result = await check_dockerhub(info, config=DockwatchConfig(include_tags=[r"^1\."]))
 
         self.assertEqual(result.latest_tag, "1.2.3")
         self.assertTrue(result.is_outdated)
@@ -109,10 +176,10 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
-            result = await check_dockerhub(info)
+            result = await check_dockerhub(info, config=DockwatchConfig(exclude_tags=[r"^rolling$"]))
 
-        self.assertEqual(result.latest_tag, "rolling")
-        self.assertTrue(result.is_outdated)
+        self.assertIsNone(result.latest_tag)
+        self.assertIn("matched configured tag filters", result.check_error or "")
 
     async def test_check_ghcr_uses_token_and_tags(self) -> None:
         info = make_container(registry=RegistryType.GHCR, current_tag="1.0.0")

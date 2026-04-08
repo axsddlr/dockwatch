@@ -15,6 +15,12 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 - Supports opt-in notifications (`--notify`) via:
   - generic webhook
   - Discord webhook
+  - ntfy
+- Persists last-seen manifest state in SQLite to classify first discovery vs later updates
+- Supports daemon mode with scheduled checks, jitter, and overlap protection
+- Supports Docker label overrides for enable/pin/ignore/notify behavior
+- Supports label-based tag regex overrides via `dockwatch.include_tags` and `dockwatch.exclude_tags`
+- Adds registry links to notification payloads when a registry page can be derived
 - Provides web dashboard actions:
   - refresh all
   - check per-row
@@ -25,6 +31,7 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 Implemented:
 - Docker Hub + GHCR check pipeline
 - CLI commands: `list`, `check`, `version`, `serve`, `pin`, `ignore`, `config list`
+- CLI command: `daemon`
 - CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`
 - NiceGUI dashboard with dark mode + responsive layout
 - Config persistence and notification settings UI
@@ -92,6 +99,12 @@ dockwatch check --json
 dockwatch check --notify
 ```
 
+### Run scheduled daemon mode
+
+```bash
+dockwatch daemon --notify
+```
+
 ### Start dashboard
 
 ```bash
@@ -104,6 +117,7 @@ dockwatch serve --host 0.0.0.0 --port 8080
 - `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify]`
 - `dockwatch version`
 - `dockwatch serve [--host 0.0.0.0] [--port 8080]`
+- `dockwatch daemon [--notify/--no-notify]`
 - `dockwatch pin <container>`
 - `dockwatch ignore <container>`
 - `dockwatch config list`
@@ -119,15 +133,29 @@ Example:
 pinned = ["plex"]
 ignored = ["db"]
 notify_only = []
+include_tags = []
+exclude_tags = []
+notify_on = ["update"]
+first_check_notify = false
+schedule_interval_seconds = 300
+schedule_jitter_seconds = 30
+run_on_startup = true
+max_concurrent_checks = 5
 
 [notifications]
 webhook_url = ""
 discord_webhook = ""
+ntfy_url = ""
 ```
 
 Notes:
 - `pinned`: included in results as `PINNED`
 - `ignored`: skipped during checks
+- `notify_only`: optional container-name allowlist for notifications
+- `include_tags`: optional regex allowlist applied before latest-tag selection
+- `exclude_tags`: optional regex denylist applied after include filtering
+- `notify_on`: event filter for `new` and `update`
+- `first_check_notify`: controls whether first discovery (`new`) is allowed to notify
 - notifier URLs can be managed from CLI config file or dashboard settings card
 
 ## Registry Support
@@ -142,8 +170,17 @@ Notes:
 Supported notifiers:
 - Generic webhook (`POST` JSON)
 - Discord webhook (embed payload)
+- ntfy (`POST` message)
 
 Use `dockwatch check --notify` to send after a check run.
+
+Docker label overrides:
+- `dockwatch.enable`
+- `dockwatch.pin`
+- `dockwatch.ignore`
+- `dockwatch.notify`
+- `dockwatch.include_tags`
+- `dockwatch.exclude_tags`
 
 ## Docker / Compose Notes
 
@@ -158,7 +195,7 @@ If Docker is unavailable, CLI and dashboard show actionable error messaging.
 ### Run tests
 
 ```bash
-python -m unittest -v tests.test_registry tests.test_config tests.test_notifiers
+python -m unittest discover -s tests -v
 ```
 
 ### CI

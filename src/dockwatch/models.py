@@ -27,6 +27,12 @@ class ContainerInfo:
     version_label: str | None = None
     compose_image_digest: str | None = None
     repo_digest: str | None = None
+    watch_enabled: bool | None = None
+    pinned_override: bool | None = None
+    ignored_override: bool | None = None
+    notify_enabled: bool | None = None
+    include_tags_override: list[str] | None = None
+    exclude_tags_override: list[str] | None = None
 
 
 @dataclass(slots=True)
@@ -36,3 +42,4 @@ class UpdateResult:
     is_outdated: bool | None = None
     check_error: str | None = None
     status: str | None = None
+    event: str | None = None

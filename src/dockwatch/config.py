@@ -7,6 +7,8 @@ from pathlib import Path
 import tomllib
 
 CONFIG_PATH = Path.home() / ".config" / "dockwatch" / "config.toml"
+DEFAULT_NOTIFY_ON = ["update"]
+VALID_NOTIFY_EVENTS = {"new", "update"}
 
 
 @dataclass(slots=True)
@@ -14,8 +16,17 @@ class DockwatchConfig:
     pinned: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
     notify_only: list[str] = field(default_factory=list)
+    include_tags: list[str] = field(default_factory=list)
+    exclude_tags: list[str] = field(default_factory=list)
+    notify_on: list[str] = field(default_factory=lambda: DEFAULT_NOTIFY_ON.copy())
+    first_check_notify: bool = False
     webhook_url: str = ""
     discord_webhook: str = ""
+    ntfy_url: str = ""
+    schedule_interval_seconds: int = 300
+    schedule_jitter_seconds: int = 30
+    run_on_startup: bool = True
+    max_concurrent_checks: int = 5
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
@@ -36,19 +47,61 @@ def _parse_list(data: object) -> list[str]:
     return _unique_ordered([str(item) for item in data])
 
 
+def _parse_notify_events(data: object) -> list[str]:
+    values = [item.lower() for item in _parse_list(data)]
+    filtered = [item for item in values if item in VALID_NOTIFY_EVENTS]
+    return filtered or DEFAULT_NOTIFY_ON.copy()
+
+
+def _parse_bool(data: object, default: bool) -> bool:
+    if isinstance(data, bool):
+        return data
+    if isinstance(data, str):
+        normalized = data.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _parse_int(data: object, default: int, *, minimum: int) -> int:
+    try:
+        value = int(data)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, value)
+
+
+def _bool_toml(value: bool) -> str:
+    return "true" if value else "false"
+
+
 def _to_toml(config: DockwatchConfig) -> str:
     pinned = ", ".join(f'"{item}"' for item in config.pinned)
     ignored = ", ".join(f'"{item}"' for item in config.ignored)
     notify_only = ", ".join(f'"{item}"' for item in config.notify_only)
+    include_tags = ", ".join(f'"{item}"' for item in config.include_tags)
+    exclude_tags = ", ".join(f'"{item}"' for item in config.exclude_tags)
+    notify_on = ", ".join(f'"{item}"' for item in config.notify_on)
     base = (
         "pinned = [" + pinned + "]\n"
         "ignored = [" + ignored + "]\n"
         "notify_only = [" + notify_only + "]\n"
+        "include_tags = [" + include_tags + "]\n"
+        "exclude_tags = [" + exclude_tags + "]\n"
+        "notify_on = [" + notify_on + "]\n"
+        f"first_check_notify = {_bool_toml(config.first_check_notify)}\n"
+        f"schedule_interval_seconds = {config.schedule_interval_seconds}\n"
+        f"schedule_jitter_seconds = {config.schedule_jitter_seconds}\n"
+        f"run_on_startup = {_bool_toml(config.run_on_startup)}\n"
+        f"max_concurrent_checks = {config.max_concurrent_checks}\n"
     )
     notifications = (
         "\n[notifications]\n"
         f"webhook_url = \"{config.webhook_url}\"\n"
         f"discord_webhook = \"{config.discord_webhook}\"\n"
+        f"ntfy_url = \"{config.ntfy_url}\"\n"
     )
     return base + notifications
 
@@ -59,8 +112,17 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
         pinned=_unique_ordered(config.pinned),
         ignored=_unique_ordered(config.ignored),
         notify_only=_unique_ordered(config.notify_only),
+        include_tags=_unique_ordered(config.include_tags),
+        exclude_tags=_unique_ordered(config.exclude_tags),
+        notify_on=_parse_notify_events(config.notify_on),
+        first_check_notify=bool(config.first_check_notify),
         webhook_url=config.webhook_url.strip(),
         discord_webhook=config.discord_webhook.strip(),
+        ntfy_url=config.ntfy_url.strip(),
+        schedule_interval_seconds=max(10, int(config.schedule_interval_seconds)),
+        schedule_jitter_seconds=max(0, int(config.schedule_jitter_seconds)),
+        run_on_startup=bool(config.run_on_startup),
+        max_concurrent_checks=max(1, int(config.max_concurrent_checks)),
     )
     path.write_text(_to_toml(normalized), encoding="utf-8")
 
@@ -78,8 +140,17 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         pinned=_parse_list(data.get("pinned")),
         ignored=_parse_list(data.get("ignored")),
         notify_only=_parse_list(data.get("notify_only")),
+        include_tags=_parse_list(data.get("include_tags")),
+        exclude_tags=_parse_list(data.get("exclude_tags")),
+        notify_on=_parse_notify_events(data.get("notify_on")),
+        first_check_notify=_parse_bool(data.get("first_check_notify"), False),
         webhook_url=str(notifications.get("webhook_url", "")) if isinstance(notifications, dict) else "",
         discord_webhook=str(notifications.get("discord_webhook", "")) if isinstance(notifications, dict) else "",
+        ntfy_url=str(notifications.get("ntfy_url", "")) if isinstance(notifications, dict) else "",
+        schedule_interval_seconds=_parse_int(data.get("schedule_interval_seconds"), 300, minimum=10),
+        schedule_jitter_seconds=_parse_int(data.get("schedule_jitter_seconds"), 30, minimum=0),
+        run_on_startup=_parse_bool(data.get("run_on_startup"), True),
+        max_concurrent_checks=_parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
     )
     save_config(config, path)
     return config

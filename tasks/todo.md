@@ -20,13 +20,13 @@ Codebase: dockwatch
 - [x] Add retry/backoff around registry HTTP calls - `src/dockwatch/registry.py:233` - Transient registry failures currently become false `UNKNOWN` results with no recovery attempt. Implemented in commit `d5a8e71`.
 
 ## High Priority
-- [x] Reuse a shared `httpx.AsyncClient` per run instead of creating one per registry check - `src/dockwatch/registry.py:234` - Current connection churn will scale poorly with more containers and increases rate-limit pressure. Implemented in commit `d5a8e71` and the follow-up refactor in the registry path.
-- [ ] Add retry/backoff to notifier delivery - `src/dockwatch/notifiers/webhook.py:40` - A brief network flap currently drops notifications outright.
-- [ ] Normalize manifest identity away from raw `image_ref|current_tag` - `src/dockwatch/db.py:25` - Equivalent image refs can map to different rows and weaken persistence continuity.
-- [ ] Fix the false-success notification path in the CLI - `src/dockwatch/main.py:93` - The CLI can print `Notifications sent.` even when filters suppress all deliveries.
-- [ ] Collapse the duplicated registry-check flow - `src/dockwatch/registry.py:214` - Token fetch, tag fetch, filter, manifest fetch, and result assembly are repeated three times and will drift.
-- [ ] Collapse repeated `ContainerInfo(...)` construction paths - `src/dockwatch/docker_client.py:73` - The parser repeats the same field mapping across multiple return branches, which is a maintenance trap.
-- [ ] Add direct tests for Docker label parsing and container discovery - `src/dockwatch/docker_client.py:190` - Current tests cover registry/config logic but not the Docker metadata boundary that feeds everything else.
+- [x] Reuse a shared `httpx.AsyncClient` per run instead of creating one per registry check - `src/dockwatch/registry.py:234` - Current connection churn will scale poorly with more containers and increases rate-limit pressure. Implemented in commit `65bdb41`.
+- [x] Add retry/backoff to notifier delivery - `src/dockwatch/notifiers/webhook.py:40` - A brief network flap currently drops notifications outright. Implemented in commit `606911a`.
+- [x] Normalize manifest identity away from raw `image_ref|current_tag` - `src/dockwatch/db.py:25` - Equivalent image refs can map to different rows and weaken persistence continuity. Implemented in commit `9b943c0`.
+- [x] Fix the false-success notification path in the CLI - `src/dockwatch/main.py:93` - The CLI can print `Notifications sent.` even when filters suppress all deliveries. Implemented in commit `606911a`.
+- [x] Collapse the duplicated registry-check flow - `src/dockwatch/registry.py:214` - Token fetch, tag fetch, filter, manifest fetch, and result assembly are repeated three times and will drift. Implemented in commit `ccad2d5`.
+- [x] Collapse repeated `ContainerInfo(...)` construction paths - `src/dockwatch/docker_client.py:73` - The parser repeats the same field mapping across multiple return branches, which is a maintenance trap. Implemented in commit `1b9c5bf`.
+- [x] Add direct tests for Docker label parsing and container discovery - `src/dockwatch/docker_client.py:190` - Current tests cover registry/config logic but not the Docker metadata boundary that feeds everything else. Implemented in commit `1b9c5bf`.
 
 ## Medium Priority
 - [ ] Turn off browser auto-open in server mode - `src/dockwatch/web/app.py:16` - `show=True` is a poor default for headless hosts and containers.

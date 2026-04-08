@@ -77,20 +77,31 @@ def _bool_toml(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _toml_string(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def _toml_array(values: list[str]) -> str:
+    return "[" + ", ".join(_toml_string(item) for item in values) + "]"
+
+
 def _to_toml(config: DockwatchConfig) -> str:
-    pinned = ", ".join(f'"{item}"' for item in config.pinned)
-    ignored = ", ".join(f'"{item}"' for item in config.ignored)
-    notify_only = ", ".join(f'"{item}"' for item in config.notify_only)
-    include_tags = ", ".join(f'"{item}"' for item in config.include_tags)
-    exclude_tags = ", ".join(f'"{item}"' for item in config.exclude_tags)
-    notify_on = ", ".join(f'"{item}"' for item in config.notify_on)
     base = (
-        "pinned = [" + pinned + "]\n"
-        "ignored = [" + ignored + "]\n"
-        "notify_only = [" + notify_only + "]\n"
-        "include_tags = [" + include_tags + "]\n"
-        "exclude_tags = [" + exclude_tags + "]\n"
-        "notify_on = [" + notify_on + "]\n"
+        f"pinned = {_toml_array(config.pinned)}\n"
+        f"ignored = {_toml_array(config.ignored)}\n"
+        f"notify_only = {_toml_array(config.notify_only)}\n"
+        f"include_tags = {_toml_array(config.include_tags)}\n"
+        f"exclude_tags = {_toml_array(config.exclude_tags)}\n"
+        f"notify_on = {_toml_array(config.notify_on)}\n"
         f"first_check_notify = {_bool_toml(config.first_check_notify)}\n"
         f"schedule_interval_seconds = {config.schedule_interval_seconds}\n"
         f"schedule_jitter_seconds = {config.schedule_jitter_seconds}\n"
@@ -99,9 +110,9 @@ def _to_toml(config: DockwatchConfig) -> str:
     )
     notifications = (
         "\n[notifications]\n"
-        f"webhook_url = \"{config.webhook_url}\"\n"
-        f"discord_webhook = \"{config.discord_webhook}\"\n"
-        f"ntfy_url = \"{config.ntfy_url}\"\n"
+        f"webhook_url = {_toml_string(config.webhook_url)}\n"
+        f"discord_webhook = {_toml_string(config.discord_webhook)}\n"
+        f"ntfy_url = {_toml_string(config.ntfy_url)}\n"
     )
     return base + notifications
 
@@ -152,5 +163,4 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         run_on_startup=_parse_bool(data.get("run_on_startup"), True),
         max_concurrent_checks=_parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
     )
-    save_config(config, path)
     return config

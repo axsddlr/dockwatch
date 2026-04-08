@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -23,6 +24,7 @@ MANIFEST_ACCEPT_HEADERS = ", ".join([
     "application/vnd.oci.image.manifest.v1+json",
 ])
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
+RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 
 def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
@@ -90,6 +92,29 @@ def _effective_current_digest(info: ContainerInfo) -> str | None:
     return candidate.split("@", 1)[1] if "@" in candidate else candidate
 
 
+async def _request_with_retry(
+    request: Callable[[], Awaitable[httpx.Response]],
+    *,
+    attempts: int = 3,
+    initial_delay: float = 0.25,
+) -> httpx.Response:
+    delay = initial_delay
+    for attempt in range(1, attempts + 1):
+        try:
+            response = await request()
+            if response.status_code in RETRYABLE_STATUSES and attempt < attempts:
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            return response
+        except httpx.RequestError:
+            if attempt >= attempts:
+                raise
+            await asyncio.sleep(delay)
+            delay *= 2
+    raise RuntimeError("request retry loop exhausted")
+
+
 def _select_latest_from_tags(
     tags: list[str],
     *,
@@ -149,12 +174,14 @@ async def _fetch_manifest_digest(
     tag: str,
     headers: dict[str, str] | None = None,
 ) -> str | None:
-    response = await client.head(
-        f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}",
-        headers={
-            "Accept": MANIFEST_ACCEPT_HEADERS,
-            **(headers or {}),
-        },
+    response = await _request_with_retry(
+        lambda: client.head(
+            f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}",
+            headers={
+                "Accept": MANIFEST_ACCEPT_HEADERS,
+                **(headers or {}),
+            },
+        )
     )
     if response.status_code == 404:
         return None
@@ -232,7 +259,7 @@ async def check_dockerhub(
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            token_response = await client.get(token_url)
+            token_response = await _request_with_retry(lambda: client.get(token_url))
             if token_response.status_code == 404:
                 return _skip_result(info, "docker hub image not found")
             token_response.raise_for_status()
@@ -243,9 +270,11 @@ async def check_dockerhub(
 
             auth_headers = {"Authorization": f"Bearer {token}"}
 
-            tags_response = await client.get(
-                f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
-                headers=auth_headers,
+            tags_response = await _request_with_retry(
+                lambda: client.get(
+                    f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
+                    headers=auth_headers,
+                )
             )
             if tags_response.status_code == 404:
                 return _skip_result(info, "docker hub image not found")
@@ -304,7 +333,7 @@ async def check_lscr(
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            tags_response = await client.get(tags_url)
+            tags_response = await _request_with_retry(lambda: client.get(tags_url))
             if tags_response.status_code == 404:
                 return _skip_result(info, "lscr image not found")
             tags_response.raise_for_status()
@@ -361,7 +390,7 @@ async def check_ghcr(
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            token_response = await client.get(token_url)
+            token_response = await _request_with_retry(lambda: client.get(token_url))
             if token_response.status_code == 404:
                 return _skip_result(info, "ghcr repository not found")
             token_response.raise_for_status()
@@ -370,7 +399,9 @@ async def check_ghcr(
             if not token:
                 return _skip_result(info, "ghcr token response missing token")
 
-            tags_response = await client.get(tags_url, headers={"Authorization": f"Bearer {token}"})
+            tags_response = await _request_with_retry(
+                lambda: client.get(tags_url, headers={"Authorization": f"Bearer {token}"})
+            )
             if tags_response.status_code == 404:
                 return _skip_result(info, "ghcr repository not found")
             tags_response.raise_for_status()

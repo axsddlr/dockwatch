@@ -100,6 +100,32 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result.is_outdated)
         self.assertIn("invalid tag regex", result.check_error or "")
 
+    async def test_check_dockerhub_retries_transient_status(self) -> None:
+        info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
+        token_payload = {"token": "dh-token"}
+        tags_payload = {"tags": ["1.2.0"]}
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(503, {}, url="https://auth.docker.io/token"),
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.0",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_dockerhub(info, config=DockwatchConfig())
+
+        self.assertEqual(result.latest_tag, "1.2.0")
+        self.assertTrue(result.is_outdated)
+        self.assertIsNone(result.check_error)
+
     async def test_container_label_tag_filters_override_config(self) -> None:
         info = ContainerInfo(
             name="svc",

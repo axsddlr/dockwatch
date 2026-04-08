@@ -107,6 +107,34 @@ class UnpinUnignoreTests(unittest.TestCase):
         self.assertIn("No notifications matched configured filters.", result.stdout)
         notify_mock.assert_not_called()
 
+    def test_version_command_prints_version(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(app, ["version"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("0.1.0", result.stdout)
+
+    def test_serve_command_calls_web_runner(self) -> None:
+        runner = CliRunner()
+        with patch("dockwatch.main.run_web_app") as run_mock:
+            result = runner.invoke(app, ["serve", "--host", "127.0.0.1", "--port", "9090"])
+
+        self.assertEqual(result.exit_code, 0)
+        run_mock.assert_called_once_with(host="127.0.0.1", port=9090)
+
+    def test_notify_test_command_uses_configured_notifiers(self) -> None:
+        runner = CliRunner()
+        config = DockwatchConfig(webhook_url="https://example.test/webhook")
+        with patch("dockwatch.main.load_config", return_value=config), patch(
+            "dockwatch.main.build_notifiers", return_value=[object()]
+        ) as build_mock, patch(
+            "dockwatch.main.send_configured_notifications", return_value=[]
+        ) as notify_mock:
+            result = runner.invoke(app, ["notify", "test"])
+
+        self.assertEqual(result.exit_code, 0)
+        build_mock.assert_called_once()
+        notify_mock.assert_called_once()
+
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_all_skips_ignored_and_marks_pinned(self) -> None:

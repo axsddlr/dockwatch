@@ -29,7 +29,7 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
 
     for container in containers:
         registry_link = build_registry_link(container)
-        link_text = registry_link[0] if registry_link else "-"
+        link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             container.name or "-",
             container.image_ref or "-",
@@ -72,7 +72,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
         if result.check_error:
             latest_display = result.check_error
         registry_link = build_registry_link(result.container_info)
-        link_text = registry_link[0] if registry_link else "-"
+        link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             result.container_info.name or "-",
             _current_tag_display(result.container_info),

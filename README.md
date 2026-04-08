@@ -195,7 +195,7 @@ If Docker is unavailable, CLI and dashboard show actionable error messaging.
 ### Run tests
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest -q
 ```
 
 ### CI
@@ -204,6 +204,19 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
 - `ruff check src tests`
 - `mypy src`
 - `pytest -q`
+
+CLI commands:
+- `dockwatch list`
+- `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify]`
+- `dockwatch version`
+- `dockwatch serve [--host 0.0.0.0] [--port 8080]`
+- `dockwatch daemon [--notify/--no-notify]`
+- `dockwatch pin <container>`
+- `dockwatch ignore <container>`
+- `dockwatch unpin <container>`
+- `dockwatch unignore <container>`
+- `dockwatch config list`
+- `dockwatch notify test`
 
 ## Troubleshooting
 

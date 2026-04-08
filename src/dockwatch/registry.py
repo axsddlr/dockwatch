@@ -481,7 +481,10 @@ async def check_all(
 
     async def _run_check(container: ContainerInfo) -> UpdateResult:
         async with semaphore:
-            return await check_container(container, store, resolved_config)
+            try:
+                return await check_container(container, store, resolved_config)
+            except Exception as exc:  # noqa: BLE001
+                return _skip_result(container, f"container check failed: {exc}")
 
     tasks = [_run_check(container) for container in check_targets]
     if not tasks:

@@ -302,6 +302,21 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(results), 2)
         self.assertTrue(all(result.check_error for result in results))
 
+    async def test_check_all_isolates_container_exceptions(self) -> None:
+        infos = [
+            make_container(registry=RegistryType.UNKNOWN, current_tag="1.0.0"),
+            make_container(registry=RegistryType.UNKNOWN, current_tag="latest"),
+        ]
+
+        async def boom(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("boom")
+
+        with patch("dockwatch.registry.check_container", side_effect=boom):
+            results = await check_all(infos)
+
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(result.check_error and "container check failed" in result.check_error for result in results))
+
 
 if __name__ == "__main__":
     unittest.main()

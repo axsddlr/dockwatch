@@ -174,6 +174,10 @@ class DashboardController:
                     check_error=None,
                     status=None,
                     event="update",
+                    deployed_tag="1.0.0",
+                    remote_tag="1.1.0",
+                    comparison_basis="version",
+                    comparison_reason="remote version 1.1.0 is newer than deployed 1.0.0",
                 )
             ]
         errors = await send_configured_notifications(sample_results, self.config, apply_filters=False)

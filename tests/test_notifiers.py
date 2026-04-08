@@ -24,6 +24,10 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
                 latest_tag="1.1.0",
                 is_outdated=True,
                 event="update",
+                deployed_tag="1.0.0",
+                remote_tag="1.1.0",
+                comparison_basis="version",
+                comparison_reason="remote version 1.1.0 is newer than deployed 1.0.0",
             )
         ]
 
@@ -61,6 +65,9 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(captured), 1)
         result_entry = captured[0]["json"]["results"][0]
         self.assertEqual(result_entry["registry_url"], "https://hub.docker.com/_/nginx")
+        self.assertEqual(result_entry["deployed_display"], "1.0.0")
+        self.assertEqual(result_entry["remote_display"], "1.1.0")
+        self.assertEqual(result_entry["comparison_reason"], "remote version 1.1.0 is newer than deployed 1.0.0")
 
     async def test_notify_only_filters_results(self) -> None:
         sent: list[list[UpdateResult]] = []

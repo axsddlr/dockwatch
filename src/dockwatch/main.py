@@ -246,6 +246,10 @@ def notify_test() -> None:
         is_outdated=True,
         status=None,
         event="update",
+        deployed_tag="1.0.0",
+        remote_tag="1.1.0",
+        comparison_basis="version",
+        comparison_reason="remote version 1.1.0 is newer than deployed 1.0.0",
     )
 
     errors = asyncio.run(send_configured_notifications([test_result], config, apply_filters=False))

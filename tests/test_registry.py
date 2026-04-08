@@ -273,6 +273,10 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(latest_result.latest_tag, "v1.5.5-ls335")
         self.assertTrue(latest_result.is_outdated)
         self.assertIsNone(latest_result.check_error)
+        self.assertEqual(latest_result.comparison_basis, "digest")
+        self.assertEqual(latest_result.remote_tag, "v1.5.5-ls335")
+        self.assertEqual(latest_result.deployed_tag, "latest")
+        self.assertEqual(latest_result.deployed_version, "v1.5.4-ls334")
 
     async def test_check_container_skips_digest(self) -> None:
         digest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="DIGEST_PINNED")
@@ -318,6 +322,41 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.latest_tag, "v1.5.4-ls334")
         self.assertFalse(result.is_outdated)
         self.assertIsNone(result.check_error)
+        self.assertEqual(result.comparison_basis, "digest")
+        self.assertEqual(result.comparison_reason, "digest matches")
+
+    async def test_check_container_reports_same_tag_digest_drift(self) -> None:
+        info = ContainerInfo(
+            name="gluetun",
+            container_id="abc123",
+            image_ref="qmcgaw/gluetun:latest",
+            registry=RegistryType.DOCKERHUB,
+            namespace="qmcgaw",
+            image_name="gluetun",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "v3.39.0"},
+            compose_image_digest="sha256:local-digest",
+        )
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(200, {"tags": ["latest"]}, url="https://registry-1.docker.io/v2/qmcgaw/gluetun/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/qmcgaw/gluetun/manifests/latest",
+                    headers={"Docker-Content-Digest": "sha256:remote-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_container(info)
+
+        self.assertEqual(result.remote_tag, "latest")
+        self.assertTrue(result.is_outdated)
+        self.assertEqual(result.comparison_basis, "digest")
+        self.assertEqual(result.comparison_reason, "digest changed behind same tag")
 
     async def test_check_all_runs_concurrently(self) -> None:
         infos = [

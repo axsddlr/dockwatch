@@ -6,24 +6,16 @@ from rich.console import Console
 from rich.table import Table
 
 from .links import build_registry_link
-from .models import ContainerInfo, UpdateResult
+from .models import ContainerInfo, UpdateResult, comparison_summary, deployed_display, remote_display
 
 console = Console()
-
-
-def _current_tag_display(container: ContainerInfo) -> str:
-    if container.current_tag.lower() == "latest":
-        hint = container.version_label or container.labels.get("build_version")
-        if hint:
-            return f"latest ({hint})"
-    return container.current_tag or "-"
 
 
 def render_containers_table(containers: list[ContainerInfo]) -> None:
     table = Table(title="Running Containers")
     table.add_column("Name", style="cyan")
     table.add_column("Image")
-    table.add_column("Tag")
+    table.add_column("Deployed")
     table.add_column("Registry")
     table.add_column("Link")
 
@@ -33,7 +25,7 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
         table.add_row(
             container.name or "-",
             container.image_ref or "-",
-            _current_tag_display(container),
+            deployed_display(container),
             container.registry.value,
             link_text,
         )
@@ -59,30 +51,29 @@ def _status_label(result: UpdateResult) -> tuple[str, str]:
 def render_update_table(results: list[UpdateResult]) -> None:
     table = Table(title="Container Update Status")
     table.add_column("Name", style="cyan")
-    table.add_column("Current")
-    table.add_column("Latest")
+    table.add_column("Deployed")
+    table.add_column("Remote")
+    table.add_column("Why")
     table.add_column("Status")
     table.add_column("Link")
 
     for result in results:
         status, color = _status_label(result)
-        latest_display = result.latest_tag or "-"
-        if result.status == "PINNED":
-            latest_display = "Pinned by config"
-        if result.check_error:
-            latest_display = result.check_error
+        remote_value = remote_display(result)
+        reason_display = comparison_summary(result)
         registry_link = build_registry_link(result.container_info)
         link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             result.container_info.name or "-",
-            _current_tag_display(result.container_info),
-            latest_display,
+            deployed_display(result.container_info),
+            remote_value,
+            reason_display,
             f"[{color}]{status}[/{color}]",
             link_text,
         )
 
     if not results:
-        table.add_row("-", "-", "No results", "[yellow]UNKNOWN[/yellow]", "-")
+        table.add_row("-", "-", "No results", "-", "[yellow]UNKNOWN[/yellow]", "-")
 
     console.print(table)
 

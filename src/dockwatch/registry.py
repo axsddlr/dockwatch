@@ -12,7 +12,14 @@ from packaging.version import InvalidVersion, Version
 from .config import DockwatchConfig, load_config
 from .db import ManifestStore
 from .docker_client import DIGEST_PINNED_TAG
-from .models import ContainerInfo, RegistryType, UpdateResult
+from .models import (
+    ContainerInfo,
+    RegistryType,
+    UpdateResult,
+    deployed_digest,
+    deployed_display,
+    deployed_version_hint,
+)
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 # Multi-arch manifest types listed first so registries return manifest list digests
@@ -35,6 +42,9 @@ def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
         check_error=reason,
         status="UNKNOWN",
         event=None,
+        deployed_tag=info.current_tag,
+        deployed_version=deployed_version_hint(info),
+        deployed_digest=deployed_digest(info),
     )
 
 
@@ -77,19 +87,6 @@ def _safe_version(tag: str) -> Version | None:
         return Version(normalized)
     except InvalidVersion:
         return None
-
-
-def _effective_current_version_text(info: ContainerInfo) -> str:
-    if info.current_tag.lower() != "latest":
-        return info.current_tag
-    return info.version_label or info.labels.get("build_version") or info.current_tag
-
-
-def _effective_current_digest(info: ContainerInfo) -> str | None:
-    candidate = info.repo_digest or info.compose_image_digest
-    if not candidate:
-        return None
-    return candidate.split("@", 1)[1] if "@" in candidate else candidate
 
 
 async def _request_with_retry(
@@ -149,20 +146,65 @@ def _select_latest_from_tags(
     return normalized[0]
 
 
-def _compare_tags(info: ContainerInfo, latest_tag: str | None, remote_digest: str | None = None) -> bool | None:
-    if latest_tag is None:
-        return None
+def _build_comparison_result(
+    info: ContainerInfo,
+    *,
+    latest_tag: str | None,
+    remote_digest: str | None,
+    event: str | None,
+    check_error: str | None = None,
+    status: str | None = None,
+) -> UpdateResult:
+    local_digest = deployed_digest(info)
+    local_version = deployed_version_hint(info)
+    comparison_basis: str | None = None
+    comparison_reason: str | None = None
+    is_outdated: bool | None = None
 
-    current_digest = _effective_current_digest(info)
-    if current_digest and remote_digest:
-        return current_digest != remote_digest
+    if latest_tag is not None:
+        if local_digest and remote_digest:
+            comparison_basis = "digest"
+            is_outdated = local_digest != remote_digest
+            if is_outdated:
+                if latest_tag == info.current_tag:
+                    comparison_reason = "digest changed behind same tag"
+                else:
+                    comparison_reason = f"registry digest differs for {latest_tag}"
+            else:
+                comparison_reason = "digest matches"
+        else:
+            current_version = _safe_version(local_version or info.current_tag)
+            latest_version = _safe_version(latest_tag)
+            if current_version is not None and latest_version is not None:
+                comparison_basis = "version"
+                is_outdated = latest_version > current_version
+                if is_outdated:
+                    comparison_reason = f"remote version {latest_tag} is newer than deployed {deployed_display(info)}"
+                else:
+                    comparison_reason = "version matches latest candidate"
+            else:
+                comparison_basis = "tag"
+                is_outdated = latest_tag != info.current_tag
+                if is_outdated:
+                    comparison_reason = f"remote tag {latest_tag} differs from deployed tag {info.current_tag}"
+                else:
+                    comparison_reason = "tag matches latest candidate"
 
-    current_version = _safe_version(_effective_current_version_text(info))
-    latest_version = _safe_version(latest_tag)
-    if current_version is not None and latest_version is not None:
-        return latest_version > current_version
-
-    return latest_tag != info.current_tag
+    return UpdateResult(
+        container_info=info,
+        latest_tag=latest_tag,
+        is_outdated=is_outdated,
+        check_error=check_error,
+        status=status,
+        event=event,
+        deployed_tag=info.current_tag,
+        deployed_version=local_version,
+        deployed_digest=local_digest,
+        remote_tag=latest_tag,
+        remote_digest=remote_digest,
+        comparison_basis=comparison_basis,
+        comparison_reason=comparison_reason,
+    )
 
 
 async def _fetch_manifest_digest(
@@ -214,13 +256,13 @@ async def _check_repository_tags(
         exclude_patterns=exclude_patterns,
     )
     if not latest_tag:
-        return UpdateResult(
-            container_info=info,
+        return _build_comparison_result(
+            info,
             latest_tag=None,
-            is_outdated=None,
+            remote_digest=None,
+            event=None,
             check_error="no tags matched configured tag filters",
             status="UNKNOWN",
-            event=None,
         )
     remote_digest = await _fetch_manifest_digest(
         client,
@@ -230,12 +272,10 @@ async def _check_repository_tags(
         tag=latest_tag,
         headers=headers,
     )
-    return UpdateResult(
-        container_info=info,
+    return _build_comparison_result(
+        info,
         latest_tag=latest_tag,
-        is_outdated=_compare_tags(info, latest_tag, remote_digest),
-        check_error=None,
-        status=None,
+        remote_digest=remote_digest,
         event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
     )
 
@@ -482,13 +522,12 @@ async def check_all(
             continue
         if _is_effectively_pinned(container, pinned):
             precomputed.append(
-                UpdateResult(
-                    container_info=container,
+                _build_comparison_result(
+                    container,
                     latest_tag=None,
-                    is_outdated=None,
-                    check_error=None,
-                    status="PINNED",
+                    remote_digest=None,
                     event=None,
+                    status="PINNED",
                 )
             )
             continue

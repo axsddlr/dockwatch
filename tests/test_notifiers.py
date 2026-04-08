@@ -225,6 +225,21 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(errors), 2)
 
+    async def test_send_configured_notifications_retries_transient_failures(self) -> None:
+        config = DockwatchConfig(webhook_url="https://example.test/webhook")
+        calls = {"count": 0}
+
+        async def flaky_send(self, _results):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise RuntimeError("temporary")
+
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", flaky_send):
+            errors = await send_configured_notifications(self._sample_results(), config, apply_filters=False)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(calls["count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

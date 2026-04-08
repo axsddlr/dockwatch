@@ -15,7 +15,7 @@ from .db import ManifestStore
 from .display import render_containers_table, render_summary, render_update_table
 from .docker_client import DockerConnectionError, get_running_containers
 from .models import ContainerInfo, RegistryType, UpdateResult
-from .notifiers import build_notifiers, send_configured_notifications
+from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
 from .web import run_web_app
@@ -90,6 +90,10 @@ def check_updates(
         if not notifiers:
             typer.echo("No notifiers configured. Set webhook_url, discord_webhook, or ntfy_url in config.", err=True)
             raise typer.Exit(code=1)
+        filtered = filter_notification_results(results, config)
+        if not filtered:
+            typer.echo("No notifications matched configured filters.")
+            return
         errors = asyncio.run(send_configured_notifications(results, config))
         if errors:
             for error in errors:

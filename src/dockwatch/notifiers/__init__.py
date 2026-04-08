@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from .base import BaseNotifier
 from .discord import DiscordNotifier
 from .ntfy import NtfyNotifier
@@ -21,12 +23,7 @@ def build_notifiers(config: DockwatchConfig) -> list[BaseNotifier]:
     return notifiers
 
 
-async def send_configured_notifications(
-    results: list[UpdateResult],
-    config: DockwatchConfig,
-    *,
-    apply_filters: bool = True,
-) -> list[str]:
+def filter_notification_results(results: list[UpdateResult], config: DockwatchConfig) -> list[UpdateResult]:
     notify_only = set(config.notify_only)
     notify_on = set(config.notify_on)
 
@@ -44,18 +41,36 @@ async def send_configured_notifications(
             return False
         return result.event in notify_on
 
-    filtered = results
-    if apply_filters:
-        filtered = [
-            result for result in results if _matches_container_filter(result) and _matches_event_filter(result)
-        ]
+    return [result for result in results if _matches_container_filter(result) and _matches_event_filter(result)]
+
+
+async def _send_with_retry(notifier: BaseNotifier, results: list[UpdateResult]) -> None:
+    delay = 0.25
+    for attempt in range(1, 4):
+        try:
+            await notifier.send(results)
+            return
+        except Exception:  # noqa: BLE001
+            if attempt >= 3:
+                raise
+            await asyncio.sleep(delay)
+            delay *= 2
+
+
+async def send_configured_notifications(
+    results: list[UpdateResult],
+    config: DockwatchConfig,
+    *,
+    apply_filters: bool = True,
+) -> list[str]:
+    filtered = filter_notification_results(results, config) if apply_filters else results
     if not filtered:
         return []
 
     errors: list[str] = []
     for notifier in build_notifiers(config):
         try:
-            await notifier.send(filtered)
+            await _send_with_retry(notifier, filtered)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{notifier.name}: {exc}")
     return errors

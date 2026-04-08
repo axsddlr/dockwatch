@@ -97,6 +97,16 @@ class UnpinUnignoreTests(unittest.TestCase):
         result = self._run("unignore", "nonexistent")
         self.assertNotEqual(result.exit_code, 0)
 
+    def test_check_notify_reports_filtered_out_notifications(self) -> None:
+        with patch("dockwatch.main.get_running_containers", return_value=[]), patch(
+            "dockwatch.main.send_configured_notifications", return_value=[]
+        ) as notify_mock:
+            result = self._run("check", "--notify")
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("No notifications matched configured filters.", result.stdout)
+        notify_mock.assert_not_called()
+
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_all_skips_ignored_and_marks_pinned(self) -> None:

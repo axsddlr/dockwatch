@@ -22,7 +22,6 @@ class DashboardController:
         self.last_checked: str = "Never"
         self.config = load_config()
         self.store = ManifestStore()
-        ui.dark_mode().enable()
 
         with ui.column().classes("w-full max-w-7xl mx-auto p-4 gap-4"):
             with ui.row().classes("w-full items-center justify-between"):
@@ -49,7 +48,7 @@ class DashboardController:
                     ui.button("Save Settings", on_click=self.save_notification_settings)
                     ui.button("Send Test Notification", on_click=self.send_test_notification)
 
-        self.timer = ui.timer(interval=30.0, callback=self._timer_refresh, active=False)
+        self.timer = ui.timer(interval=float(self.config.schedule_interval_seconds), callback=self._timer_refresh, active=False)
         self.auto_refresh_switch.on_value_change(self._on_toggle_auto_refresh)
         self.interval_seconds.on_value_change(self._on_interval_change)
 
@@ -64,9 +63,9 @@ class DashboardController:
         self.timer.active = bool(event.value)
 
     def _on_interval_change(self, event) -> None:
-        new_value = float(event.value or 30)
-        if new_value < 1:
-            new_value = 1
+        new_value = float(event.value or self.config.schedule_interval_seconds)
+        if new_value < 10:
+            new_value = 10
         self.timer.interval = new_value
 
     async def refresh_all(self) -> None:

@@ -56,6 +56,39 @@ def _tag_override_kwargs(labels: dict[str, str]) -> dict[str, list[str] | None]:
     }
 
 
+def _build_container_info(
+    *,
+    name: str,
+    container_id: str,
+    image_ref: str,
+    registry: RegistryType,
+    namespace: str,
+    image_name: str,
+    current_tag: str,
+    labels: dict[str, str],
+    compose_image_digest: str | None,
+    repo_digest: str | None,
+) -> ContainerInfo:
+    return ContainerInfo(
+        name=name,
+        container_id=container_id,
+        image_ref=image_ref,
+        registry=registry,
+        namespace=namespace,
+        image_name=image_name,
+        current_tag=current_tag,
+        labels=labels,
+        version_label=labels.get("org.opencontainers.image.version"),
+        compose_image_digest=compose_image_digest,
+        repo_digest=repo_digest,
+        watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
+        pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
+        ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
+        notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+        **_tag_override_kwargs(labels),
+    )
+
+
 def parse_image_ref(
     image_str: str,
     *,
@@ -70,7 +103,7 @@ def parse_image_ref(
     compose_image_digest = compose_image_digest or labels.get("com.docker.compose.image")
     image_ref = (image_str or "").strip()
     if not image_ref:
-        return ContainerInfo(
+        return _build_container_info(
             name=name,
             container_id=container_id,
             image_ref=image_ref,
@@ -79,14 +112,8 @@ def parse_image_ref(
             image_name="unknown",
             current_tag="latest",
             labels=labels,
-            version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
-            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
-            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
-            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
-            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
-            **_tag_override_kwargs(labels),
         )
 
     repo_part = image_ref
@@ -103,7 +130,7 @@ def parse_image_ref(
 
     parts = [p for p in repo_part.split("/") if p]
     if not parts:
-        return ContainerInfo(
+        return _build_container_info(
             name=name,
             container_id=container_id,
             image_ref=image_ref,
@@ -112,14 +139,8 @@ def parse_image_ref(
             image_name="unknown",
             current_tag=current_tag,
             labels=labels,
-            version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
-            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
-            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
-            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
-            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
-            **_tag_override_kwargs(labels),
         )
 
     first = parts[0]
@@ -141,7 +162,7 @@ def parse_image_ref(
             registry = RegistryType.UNKNOWN
 
     if not path_parts:
-        return ContainerInfo(
+        return _build_container_info(
             name=name,
             container_id=container_id,
             image_ref=image_ref,
@@ -150,14 +171,8 @@ def parse_image_ref(
             image_name="unknown",
             current_tag=current_tag,
             labels=labels,
-            version_label=labels.get("org.opencontainers.image.version"),
             compose_image_digest=compose_image_digest,
             repo_digest=repo_digest,
-            watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
-            pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
-            ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
-            notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
-            **_tag_override_kwargs(labels),
         )
 
     if len(path_parts) == 1:
@@ -167,7 +182,7 @@ def parse_image_ref(
         namespace = "/".join(path_parts[:-1])
         image_name = path_parts[-1]
 
-    return ContainerInfo(
+    return _build_container_info(
         name=name,
         container_id=container_id,
         image_ref=image_ref,
@@ -176,14 +191,8 @@ def parse_image_ref(
         image_name=image_name,
         current_tag=current_tag,
         labels=labels,
-        version_label=labels.get("org.opencontainers.image.version"),
         compose_image_digest=compose_image_digest,
         repo_digest=repo_digest,
-        watch_enabled=_parse_label_flag(labels, "dockwatch.enable"),
-        pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
-        ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
-        notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
-        **_tag_override_kwargs(labels),
     )
 
 

@@ -56,6 +56,18 @@ class ManifestStoreTests(unittest.TestCase):
 
         self.assertEqual(event, "update")
 
+    def test_equivalent_image_refs_share_the_same_identity(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(Path(tmp_dir) / "manifests.db")
+            first = make_container(image_ref="nginx:1.0.0")
+            second = make_container(image_ref="docker.io/library/nginx:1.0.0")
+
+            first_event = store.record_observation(first, latest_tag="1.1.0", remote_digest="sha256:first")
+            second_event = store.record_observation(second, latest_tag="1.1.0", remote_digest="sha256:first")
+
+        self.assertEqual(first_event, "new")
+        self.assertIsNone(second_event)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,10 @@ class ManifestRecord:
 
 
 def build_image_key(info: ContainerInfo) -> str:
+    return f"{info.registry.value}|{info.namespace}|{info.image_name}|{info.current_tag}"
+
+
+def build_legacy_image_key(info: ContainerInfo) -> str:
     return f"{info.image_ref}|{info.current_tag}"
 
 
@@ -48,6 +52,17 @@ class ManifestStore:
             return None
         return ManifestRecord(*row)
 
+    def _fetch_any(self, connection: sqlite3.Connection, info: ContainerInfo) -> tuple[str, ManifestRecord] | None:
+        image_key = build_image_key(info)
+        current = self._fetch(connection, image_key)
+        if current is not None:
+            return image_key, current
+        legacy_key = build_legacy_image_key(info)
+        legacy = self._fetch(connection, legacy_key)
+        if legacy is not None:
+            return legacy_key, legacy
+        return None
+
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -64,9 +79,9 @@ class ManifestStore:
             )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
-        image_key = build_image_key(info)
         with self._connect() as connection:
-            return self._fetch(connection, image_key)
+            found = self._fetch_any(connection, info)
+            return found[1] if found else None
 
     def record_observation(
         self,
@@ -78,10 +93,11 @@ class ManifestStore:
     ) -> str | None:
         observed_at = checked_at or datetime.now(timezone.utc).isoformat()
         image_key = build_image_key(info)
+        legacy_key = build_legacy_image_key(info)
         event: str | None = None
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            previous = self._fetch(connection, image_key)
+            previous = self._fetch(connection, image_key) or self._fetch(connection, legacy_key)
             if previous is None:
                 event = "new"
             elif previous.last_seen_digest != remote_digest or previous.last_seen_latest_tag != latest_tag:
@@ -113,4 +129,6 @@ class ManifestStore:
                     observed_at,
                 ),
             )
+            if legacy_key != image_key:
+                connection.execute("DELETE FROM manifest_state WHERE image_key = ?", (legacy_key,))
         return event

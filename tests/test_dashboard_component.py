@@ -88,6 +88,7 @@ class DashboardComponentTests(unittest.TestCase):
                         event="update",
                         deployed_tag="1.0.0",
                         remote_tag="1.1.0",
+                        remote_digest="sha256:abcdef1234567890",
                         comparison_basis="version",
                         comparison_reason="remote version 1.1.0 is newer than deployed 1.0.0",
                     )
@@ -99,6 +100,7 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertEqual(ui.links[0], ("Hub", "https://hub.docker.com/_/nginx"))
         self.assertIn("web", ui.labels)
         self.assertIn("version", ui.labels)
+        self.assertIn("1.1.0 (sha256:abcdef123456)", ui.labels)
 
 
 if __name__ == "__main__":

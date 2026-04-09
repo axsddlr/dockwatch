@@ -41,6 +41,7 @@ class DisplayTests(unittest.TestCase):
         self.assertIn("latest (v3.39.0)", output)
         self.assertIn("digest", output)
         self.assertIn("digest changed behind same tag", output)
+        self.assertIn("latest (sha256:remote-diges)", output)
         self.assertIn("OUTDATED", output)
 
 

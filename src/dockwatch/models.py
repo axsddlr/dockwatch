@@ -46,6 +46,15 @@ def deployed_digest(info: ContainerInfo) -> str | None:
     return candidate.split("@", 1)[1] if "@" in candidate else candidate
 
 
+def _short_digest(digest: str | None) -> str | None:
+    if not digest:
+        return None
+    normalized = digest.split("@", 1)[1] if "@" in digest else digest
+    if normalized.startswith("sha256:"):
+        return f"sha256:{normalized.removeprefix('sha256:')[:12]}"
+    return normalized[:19]
+
+
 _FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 
 
@@ -56,10 +65,9 @@ def deployed_display(info: ContainerInfo) -> str:
     hint = deployed_version_hint(info)
     if hint:
         return f"latest ({hint})"
-    digest = deployed_digest(info)
-    if digest:
-        short = digest.replace("sha256:", "")[:12]
-        return f"latest (sha256:{short})"
+    short_digest = _short_digest(deployed_digest(info))
+    if short_digest:
+        return f"latest ({short_digest})"
     return "latest"
 
 
@@ -125,9 +133,11 @@ def remote_display(result: UpdateResult) -> str:
     if result.check_error:
         return result.check_error
     remote_version = resolved_remote_version(result)
-    if result.remote_tag and remote_version and result.remote_tag != remote_version:
-        return f"{result.remote_tag} ({remote_version})"
-    return remote_version or result.remote_tag or result.latest_tag or "-"
+    remote_label = remote_version or result.remote_tag or result.latest_tag or "-"
+    short_digest = _short_digest(result.remote_digest)
+    if short_digest:
+        return f"{remote_label} ({short_digest})"
+    return remote_label
 
 
 def comparison_summary(result: UpdateResult) -> str:

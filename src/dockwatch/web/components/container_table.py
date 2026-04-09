@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from nicegui import ui
 
 from ...links import build_registry_link
-from ...models import UpdateResult, comparison_summary, deployed_display_result, remote_display
+from ...models import UpdateResult, deployed_display_result, remote_display
 from ..theme import (
     STATUS_BG,
     STATUS_COLOR,
@@ -72,7 +72,6 @@ class ContainerStatusTable:
                 status_text, dot_cls, border_cls, pill_color = _status_info(result)
                 pill_bg = STATUS_BG.get(status_text, "rgba(255,255,255,0.06)")
                 remote_value = remote_display(result)
-                reason_value = comparison_summary(result)
                 deployed_value = deployed_display_result(result)
                 registry_link = build_registry_link(result.container_info)
                 pin_label = "Unpin" if result.status == "PINNED" else "Pin"
@@ -102,7 +101,6 @@ class ContainerStatusTable:
                     ):
                         _field("Image", result.container_info.image_ref or "-", mono=True)
                         _field("Basis", result.comparison_basis or "-")
-                        _field("Reason", reason_value or "-")
                         _field("Deployed", deployed_value or "-", mono=True)
                         _field("Remote", remote_value or "-", mono=True)
 

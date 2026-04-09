@@ -67,6 +67,7 @@ def deployed_display(info: ContainerInfo) -> str:
 class UpdateResult:
     container_info: ContainerInfo
     latest_tag: str | None = None
+    latest_version: str | None = None
     is_outdated: bool | None = None
     check_error: str | None = None
     status: str | None = None
@@ -78,6 +79,25 @@ class UpdateResult:
     remote_digest: str | None = None
     comparison_basis: str | None = None
     comparison_reason: str | None = None
+    version_status: str | None = None
+
+
+def resolved_deployed_version(result: UpdateResult) -> str | None:
+    if result.deployed_version:
+        return result.deployed_version
+    deployed_tag = result.deployed_tag or result.container_info.current_tag
+    if deployed_tag and deployed_tag.lower() not in _FLOATING_TAGS:
+        return deployed_tag
+    return None
+
+
+def resolved_remote_version(result: UpdateResult) -> str | None:
+    if result.latest_version:
+        return result.latest_version
+    remote_tag = result.remote_tag or result.latest_tag
+    if remote_tag and remote_tag.lower() not in _FLOATING_TAGS:
+        return remote_tag
+    return None
 
 
 def deployed_display_result(result: UpdateResult) -> str:
@@ -104,7 +124,10 @@ def remote_display(result: UpdateResult) -> str:
         return "Pinned by config"
     if result.check_error:
         return result.check_error
-    return result.remote_tag or result.latest_tag or "-"
+    remote_version = resolved_remote_version(result)
+    if result.remote_tag and remote_version and result.remote_tag != remote_version:
+        return f"{result.remote_tag} ({remote_version})"
+    return remote_version or result.remote_tag or result.latest_tag or "-"
 
 
 def comparison_summary(result: UpdateResult) -> str:

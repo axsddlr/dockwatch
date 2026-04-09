@@ -158,10 +158,24 @@ def _build_comparison_result(
 ) -> UpdateResult:
     local_digest = deployed_digest(info)
     local_version = deployed_version_hint(info)
+    deployed_version = local_version or (_normalize_tag(info.current_tag) if _safe_version(info.current_tag) else None)
+    latest_version = latest_tag if latest_tag and _safe_version(latest_tag) is not None else None
     comparison_basis: str | None = None
     comparison_reason: str | None = None
     is_outdated: bool | None = None
+    version_status: str | None = None
     effective_remote_tag = remote_tag or latest_tag
+
+    if deployed_version is not None and latest_version is not None:
+        deployed_parsed = _safe_version(deployed_version)
+        latest_parsed = _safe_version(latest_version)
+        if deployed_parsed is not None and latest_parsed is not None:
+            if latest_parsed > deployed_parsed:
+                version_status = "behind"
+            elif latest_parsed < deployed_parsed:
+                version_status = "ahead"
+            else:
+                version_status = "equal"
 
     if latest_tag is not None:
         if local_digest and remote_digest:
@@ -171,17 +185,29 @@ def _build_comparison_result(
                 if effective_remote_tag == info.current_tag:
                     comparison_reason = "digest changed behind same tag"
                 else:
-                    comparison_reason = f"registry digest differs for {effective_remote_tag}"
+                    if latest_version and deployed_version:
+                        comparison_reason = (
+                            f"registry digest differs for {effective_remote_tag} "
+                            f"({deployed_version} -> {latest_version})"
+                        )
+                    else:
+                        comparison_reason = f"registry digest differs for {effective_remote_tag}"
             else:
-                comparison_reason = "digest matches"
+                if latest_version and deployed_version and latest_version == deployed_version:
+                    comparison_reason = f"digest matches ({deployed_version})"
+                else:
+                    comparison_reason = "digest matches"
         else:
-            current_version = _safe_version(local_version or info.current_tag)
-            latest_version = _safe_version(latest_tag)
-            if current_version is not None and latest_version is not None:
+            current_version = _safe_version(deployed_version or "")
+            latest_parsed = _safe_version(latest_tag)
+            if current_version is not None and latest_parsed is not None:
                 comparison_basis = "version"
-                is_outdated = latest_version > current_version
+                is_outdated = latest_parsed > current_version
                 if is_outdated:
-                    comparison_reason = f"remote version {latest_tag} is newer than deployed {deployed_display(info)}"
+                    comparison_reason = (
+                        f"remote version {latest_tag} is newer than deployed "
+                        f"{deployed_version or deployed_display(info)}"
+                    )
                 else:
                     comparison_reason = "version matches latest candidate"
             else:
@@ -202,12 +228,14 @@ def _build_comparison_result(
         status=status,
         event=event,
         deployed_tag=info.current_tag,
-        deployed_version=local_version,
+        deployed_version=deployed_version,
         deployed_digest=local_digest,
         remote_tag=effective_remote_tag,
         remote_digest=remote_digest,
+        latest_version=latest_version,
         comparison_basis=comparison_basis,
         comparison_reason=comparison_reason,
+        version_status=version_status,
     )
 
 

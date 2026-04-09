@@ -24,6 +24,7 @@ class DisplayTests(unittest.TestCase):
                 compose_image_digest="sha256:local-digest",
             ),
             latest_tag="latest",
+            latest_version="v3.39.0",
             remote_tag="latest",
             remote_digest="sha256:remote-digest",
             is_outdated=True,
@@ -37,6 +38,7 @@ class DisplayTests(unittest.TestCase):
             render_update_table([result])
 
         output = console.export_text()
+        self.assertIn("latest (v3.39.0)", output)
         self.assertIn("latest (v3.39.0)", output)
         self.assertIn("digest changed behind same tag", output)
         self.assertIn("OUTDATED", output)

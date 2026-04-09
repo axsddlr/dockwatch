@@ -277,6 +277,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(latest_result.remote_tag, "v1.5.5-ls335")
         self.assertEqual(latest_result.deployed_tag, "latest")
         self.assertEqual(latest_result.deployed_version, "v1.5.4-ls334")
+        self.assertEqual(latest_result.latest_version, "v1.5.5-ls335")
+        self.assertEqual(latest_result.version_status, "behind")
 
     async def test_check_container_skips_digest(self) -> None:
         digest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="DIGEST_PINNED")
@@ -323,7 +325,9 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.is_outdated)
         self.assertIsNone(result.check_error)
         self.assertEqual(result.comparison_basis, "digest")
-        self.assertEqual(result.comparison_reason, "digest matches")
+        self.assertEqual(result.comparison_reason, "digest matches (v1.5.4-ls334)")
+        self.assertEqual(result.latest_version, "v1.5.4-ls334")
+        self.assertEqual(result.version_status, "equal")
 
     async def test_check_container_reports_same_tag_digest_drift(self) -> None:
         info = ContainerInfo(
@@ -357,6 +361,33 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.is_outdated)
         self.assertEqual(result.comparison_basis, "digest")
         self.assertEqual(result.comparison_reason, "digest changed behind same tag")
+        self.assertEqual(result.version_status, "equal")
+
+    async def test_check_dockerhub_non_floating_tag_records_version_status(self) -> None:
+        info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
+        token_payload = {"token": "dh-token"}
+        tags_payload = {"tags": ["1.2.3"]}
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.3",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_dockerhub(info)
+
+        self.assertEqual(result.deployed_version, "1.0.0")
+        self.assertEqual(result.latest_version, "1.2.3")
+        self.assertEqual(result.version_status, "behind")
+        self.assertIn("1.0.0 -> 1.2.3", result.comparison_reason or "")
 
     async def test_check_ghcr_floating_tag_prefers_same_tag_digest_for_non_semver_tags(self) -> None:
         info = ContainerInfo(

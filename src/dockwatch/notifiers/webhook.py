@@ -6,7 +6,7 @@ import httpx
 
 from .base import BaseNotifier
 from ..links import build_registry_url
-from ..models import UpdateResult, comparison_summary, deployed_display, remote_display
+from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
 
 
 class WebhookNotifier(BaseNotifier):
@@ -28,7 +28,7 @@ class WebhookNotifier(BaseNotifier):
                     "image": result.container_info.image_ref,
                     "current": result.container_info.current_tag,
                     "latest": result.latest_tag,
-                    "deployed_display": deployed_display(result.container_info),
+                    "deployed_display": deployed_display_result(result),
                     "remote_display": remote_display(result),
                     "registry_url": build_registry_url(result.container_info),
                     "event": result.event,

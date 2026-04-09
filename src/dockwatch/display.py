@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .links import build_registry_link
-from .models import ContainerInfo, UpdateResult, comparison_summary, deployed_display, remote_display
+from .models import ContainerInfo, UpdateResult, comparison_summary, deployed_display, deployed_display_result, remote_display
 
 console = Console()
 
@@ -65,7 +65,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
         link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             result.container_info.name or "-",
-            deployed_display(result.container_info),
+            deployed_display_result(result),
             remote_value,
             reason_display,
             f"[{color}]{status}[/{color}]",

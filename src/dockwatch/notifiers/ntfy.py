@@ -6,7 +6,7 @@ import httpx
 
 from .base import BaseNotifier
 from ..links import build_registry_url
-from ..models import UpdateResult, comparison_summary, deployed_display, remote_display
+from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
 
 
 class NtfyNotifier(BaseNotifier):
@@ -25,7 +25,7 @@ class NtfyNotifier(BaseNotifier):
             registry_url = build_registry_url(result.container_info)
             title = f"{result.container_info.name}: {result.event or 'check'}"
             message = (
-                f"{deployed_display(result.container_info)} -> {remote_display(result)}\n"
+                f"{deployed_display_result(result)} -> {remote_display(result)}\n"
                 f"{comparison_summary(result)}"
             )
             if registry_url:
@@ -37,7 +37,7 @@ class NtfyNotifier(BaseNotifier):
             lines = [
                 (
                     f"- {result.container_info.name} [{result.event or 'check'}]: "
-                    f"{deployed_display(result.container_info)} -> {remote_display(result)} "
+                    f"{deployed_display_result(result)} -> {remote_display(result)} "
                     f"({comparison_summary(result)})"
                 )
                 for result in results

@@ -46,13 +46,21 @@ def deployed_digest(info: ContainerInfo) -> str | None:
     return candidate.split("@", 1)[1] if "@" in candidate else candidate
 
 
+_FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
+
+
 def deployed_display(info: ContainerInfo) -> str:
-    if info.current_tag.lower() != "latest":
+    """Best-effort display of the deployed version from container info alone."""
+    if info.current_tag.lower() not in _FLOATING_TAGS:
         return info.current_tag or "-"
     hint = deployed_version_hint(info)
     if hint:
         return f"latest ({hint})"
-    return info.current_tag or "-"
+    digest = deployed_digest(info)
+    if digest:
+        short = digest.replace("sha256:", "")[:12]
+        return f"latest (sha256:{short})"
+    return "latest"
 
 
 @dataclass(slots=True)
@@ -70,6 +78,25 @@ class UpdateResult:
     remote_digest: str | None = None
     comparison_basis: str | None = None
     comparison_reason: str | None = None
+
+
+def deployed_display_result(result: UpdateResult) -> str:
+    """Richer deployed display using comparison results.
+
+    When digests match the remote tag we can confirm the exact running version,
+    e.g. ``latest = 4.13.7``. Falls back to ``deployed_display()`` otherwise.
+    """
+    info = result.container_info
+    if info.current_tag.lower() not in _FLOATING_TAGS:
+        return info.current_tag or "-"
+    if (
+        result.deployed_digest
+        and result.remote_digest
+        and result.deployed_digest == result.remote_digest
+        and result.remote_tag
+    ):
+        return f"latest = {result.remote_tag}"
+    return deployed_display(info)
 
 
 def remote_display(result: UpdateResult) -> str:

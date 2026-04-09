@@ -6,7 +6,7 @@ import httpx
 
 from .base import BaseNotifier
 from ..links import build_registry_url
-from ..models import UpdateResult, comparison_summary, deployed_display, remote_display
+from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
 
 
 class DiscordNotifier(BaseNotifier):
@@ -36,7 +36,7 @@ class DiscordNotifier(BaseNotifier):
                 {
                     "name": result.container_info.name or "unknown",
                     "value": (
-                        f"{deployed_display(result.container_info)} -> {remote_display(result)}"
+                        f"{deployed_display_result(result)} -> {remote_display(result)}"
                         f" ({comparison_summary(result)} / {result.event or 'check'}){link_text}"
                     ),
                     "inline": False,
@@ -50,7 +50,7 @@ class DiscordNotifier(BaseNotifier):
                     {
                         "name": result.container_info.name or "unknown",
                         "value": (
-                            f"{deployed_display(result.container_info)} -> {remote_display(result)}"
+                            f"{deployed_display_result(result)} -> {remote_display(result)}"
                             f" ({comparison_summary(result)} / {result.event or 'check'}){link_text}"
                         ),
                         "inline": False,

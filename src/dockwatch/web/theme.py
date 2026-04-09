@@ -45,7 +45,11 @@ STATUS_BG: dict[str, str] = {
 
 
 def apply_theme() -> None:
-    """Inject dark theme, fonts, and global CSS into the NiceGUI app."""
+    """Inject dark theme, fonts, and global CSS into the NiceGUI app.
+
+    Must be called before ui.run(). Do not call ui.dark_mode() here —
+    dark mode is enabled via dark=True in ui.run() to avoid global scope conflicts.
+    """
     ui.colors(
         primary=PRIMARY,
         secondary="#1D4ED8",

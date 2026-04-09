@@ -14,6 +14,7 @@ from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ...registry import check_all
 from ..components.container_table import ContainerStatusTable
+from ..theme import apply_theme
 from ..theme import (
     ACCENT,
     BG_CARD,
@@ -365,5 +366,6 @@ class DashboardController:
 def register_dashboard_page() -> None:
     @ui.page("/")
     async def _dashboard() -> None:
+        apply_theme()
         controller = DashboardController()
         await controller.refresh_all()

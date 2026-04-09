@@ -5,11 +5,9 @@ from __future__ import annotations
 from nicegui import ui
 
 from .pages.dashboard import register_dashboard_page
-from .theme import apply_theme
 
 
 def create_app() -> None:
-    apply_theme()
     register_dashboard_page()
 
 

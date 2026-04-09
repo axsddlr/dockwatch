@@ -195,7 +195,10 @@ class DashboardController:
     def _set_loading(self, loading: bool) -> None:
         self._loading = loading
         self.loading_row.set_visibility(loading)
-        self.refresh_btn.props("loading" if loading else "")
+        if loading:
+            self.refresh_btn.props(add="loading")
+        else:
+            self.refresh_btn.props(remove="loading")
         if not loading:
             self.table.container.set_visibility(True)
 
@@ -239,6 +242,19 @@ class DashboardController:
         self._set_loading(True)
         try:
             containers = get_running_containers()
+            self.conn_dot.set_content('<span class="status-dot dot-green"></span>')
+            self.conn_label.set_text("connected")
+            self._clear_error()
+            self.config = load_config()
+            self.results = await check_all(
+                containers,
+                self.config,
+                store=self.store,
+                max_concurrency=self.config.max_concurrent_checks,
+            )
+            self._update_last_checked()
+            self._update_stats()
+            self.table.render(self.results, self.check_one, self.toggle_pin)
         except DockerConnectionError as exc:
             self.conn_dot.set_content('<span class="status-dot dot-red"></span>')
             self.conn_label.set_text("disconnected")
@@ -252,23 +268,8 @@ class DashboardController:
             self.results = []
             self._update_stats()
             self.table.render(self.results, self.check_one, self.toggle_pin)
+        finally:
             self._set_loading(False)
-            return
-
-        self.conn_dot.set_content('<span class="status-dot dot-green"></span>')
-        self.conn_label.set_text("connected")
-        self._clear_error()
-        self.config = load_config()
-        self.results = await check_all(
-            containers,
-            self.config,
-            store=self.store,
-            max_concurrency=self.config.max_concurrent_checks,
-        )
-        self._update_last_checked()
-        self._update_stats()
-        self.table.render(self.results, self.check_one, self.toggle_pin)
-        self._set_loading(False)
 
     async def check_one(self, container_name: str) -> None:
         if not container_name:

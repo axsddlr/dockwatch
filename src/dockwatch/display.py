@@ -53,6 +53,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
     table.add_column("Name", style="cyan")
     table.add_column("Deployed")
     table.add_column("Remote")
+    table.add_column("Basis")
     table.add_column("Why")
     table.add_column("Status")
     table.add_column("Link")
@@ -67,13 +68,14 @@ def render_update_table(results: list[UpdateResult]) -> None:
             result.container_info.name or "-",
             deployed_display_result(result),
             remote_value,
+            result.comparison_basis or "-",
             reason_display,
             f"[{color}]{status}[/{color}]",
             link_text,
         )
 
     if not results:
-        table.add_row("-", "-", "No results", "-", "[yellow]UNKNOWN[/yellow]", "-")
+        table.add_row("-", "-", "No results", "-", "-", "[yellow]UNKNOWN[/yellow]", "-")
 
     console.print(table)
 

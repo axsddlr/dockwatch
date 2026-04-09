@@ -39,8 +39,8 @@ class DisplayTests(unittest.TestCase):
 
         output = console.export_text()
         self.assertIn("latest (v3.39.0)", output)
-        self.assertIn("latest (v3.39.0)", output)
-        self.assertIn("digest changed behind same tag", output)
+        self.assertIn("digest", output)
+        self.assertIn("digest: digest changed behind same tag", output)
         self.assertIn("OUTDATED", output)
 
 

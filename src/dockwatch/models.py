@@ -132,6 +132,8 @@ def remote_display(result: UpdateResult) -> str:
 
 def comparison_summary(result: UpdateResult) -> str:
     if result.comparison_reason:
+        if result.comparison_basis:
+            return f"{result.comparison_basis}: {result.comparison_reason}"
         return result.comparison_reason
     if result.comparison_basis:
         return f"comparison by {result.comparison_basis}"

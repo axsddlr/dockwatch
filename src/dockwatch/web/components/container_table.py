@@ -101,6 +101,7 @@ class ContainerStatusTable:
                         "display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:12px;"
                     ):
                         _field("Image", result.container_info.image_ref or "-", mono=True)
+                        _field("Basis", result.comparison_basis or "-")
                         _field("Reason", reason_value or "-")
                         _field("Deployed", deployed_value or "-", mono=True)
                         _field("Remote", remote_value or "-", mono=True)

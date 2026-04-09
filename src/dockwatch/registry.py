@@ -150,6 +150,7 @@ def _build_comparison_result(
     info: ContainerInfo,
     *,
     latest_tag: str | None,
+    remote_tag: str | None,
     remote_digest: str | None,
     event: str | None,
     check_error: str | None = None,
@@ -160,16 +161,17 @@ def _build_comparison_result(
     comparison_basis: str | None = None
     comparison_reason: str | None = None
     is_outdated: bool | None = None
+    effective_remote_tag = remote_tag or latest_tag
 
     if latest_tag is not None:
         if local_digest and remote_digest:
             comparison_basis = "digest"
             is_outdated = local_digest != remote_digest
             if is_outdated:
-                if latest_tag == info.current_tag:
+                if effective_remote_tag == info.current_tag:
                     comparison_reason = "digest changed behind same tag"
                 else:
-                    comparison_reason = f"registry digest differs for {latest_tag}"
+                    comparison_reason = f"registry digest differs for {effective_remote_tag}"
             else:
                 comparison_reason = "digest matches"
         else:
@@ -184,9 +186,11 @@ def _build_comparison_result(
                     comparison_reason = "version matches latest candidate"
             else:
                 comparison_basis = "tag"
-                is_outdated = latest_tag != info.current_tag
+                is_outdated = effective_remote_tag != info.current_tag
                 if is_outdated:
-                    comparison_reason = f"remote tag {latest_tag} differs from deployed tag {info.current_tag}"
+                    comparison_reason = (
+                        f"remote tag {effective_remote_tag} differs from deployed tag {info.current_tag}"
+                    )
                 else:
                     comparison_reason = "tag matches latest candidate"
 
@@ -200,7 +204,7 @@ def _build_comparison_result(
         deployed_tag=info.current_tag,
         deployed_version=local_version,
         deployed_digest=local_digest,
-        remote_tag=latest_tag,
+        remote_tag=effective_remote_tag,
         remote_digest=remote_digest,
         comparison_basis=comparison_basis,
         comparison_reason=comparison_reason,
@@ -259,22 +263,32 @@ async def _check_repository_tags(
         return _build_comparison_result(
             info,
             latest_tag=None,
+            remote_tag=None,
             remote_digest=None,
             event=None,
             check_error="no tags matched configured tag filters",
             status="UNKNOWN",
         )
+    comparison_tag = latest_tag
+    if (
+        info.current_tag.lower() in FLOATING_TAGS
+        and comparison_tag != info.current_tag
+        and _safe_version(latest_tag) is None
+    ):
+        comparison_tag = info.current_tag
+
     remote_digest = await _fetch_manifest_digest(
         client,
         base_url=base_url,
         namespace=info.namespace,
         image_name=info.image_name,
-        tag=latest_tag,
+        tag=comparison_tag,
         headers=headers,
     )
     return _build_comparison_result(
         info,
         latest_tag=latest_tag,
+        remote_tag=comparison_tag,
         remote_digest=remote_digest,
         event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
     )
@@ -525,6 +539,7 @@ async def check_all(
                 _build_comparison_result(
                     container,
                     latest_tag=None,
+                    remote_tag=None,
                     remote_digest=None,
                     event=None,
                     status="PINNED",

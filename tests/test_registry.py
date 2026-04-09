@@ -358,6 +358,50 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.comparison_basis, "digest")
         self.assertEqual(result.comparison_reason, "digest changed behind same tag")
 
+    async def test_check_ghcr_floating_tag_prefers_same_tag_digest_for_non_semver_tags(self) -> None:
+        info = ContainerInfo(
+            name="byparr",
+            container_id="abc123",
+            image_ref="ghcr.io/thephaseless/byparr",
+            registry=RegistryType.GHCR,
+            namespace="thephaseless",
+            image_name="byparr",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "d4cf60e268281fae7db4556636bb55884d530960-amd64"},
+            compose_image_digest="sha256:deployed-digest",
+        )
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, {"token": "ghcr-token"}, url="https://ghcr.io/token"),
+                MockResponse(
+                    200,
+                    {
+                        "tags": [
+                            "latest",
+                            "d4cf60e268281fae7db4556636bb55884d530960-amd64",
+                            "7a7f4fd59ff9652545404a4a9f65031f5ba7f4d3-amd64",
+                        ]
+                    },
+                    url="https://ghcr.io/v2/thephaseless/byparr/tags/list",
+                ),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://ghcr.io/v2/thephaseless/byparr/manifests/latest",
+                    headers={"Docker-Content-Digest": "sha256:deployed-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_ghcr(info)
+
+        self.assertEqual(result.latest_tag, "d4cf60e268281fae7db4556636bb55884d530960-amd64")
+        self.assertEqual(result.remote_tag, "latest")
+        self.assertFalse(result.is_outdated)
+        self.assertEqual(result.comparison_basis, "digest")
+        self.assertEqual(result.comparison_reason, "digest matches")
+
     async def test_check_all_runs_concurrently(self) -> None:
         infos = [
             make_container(registry=RegistryType.UNKNOWN, current_tag="1.0.0"),

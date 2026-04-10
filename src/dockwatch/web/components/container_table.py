@@ -35,6 +35,8 @@ class ContainerStatusTable:
         results: list[UpdateResult],
         on_check: CheckHandler,
         on_pin_toggle: PinHandler,
+        *,
+        empty_message: str = "No containers to display.",
     ) -> None:
         self.container.clear()
 
@@ -45,6 +47,10 @@ class ContainerStatusTable:
                     ui.label("No containers to display.").style(
                         f"color:{TEXT_MUTED}; margin-top:8px; font-size:13px;"
                     )
+                    if empty_message != "No containers to display.":
+                        ui.label(empty_message).style(
+                            f"color:{TEXT_MUTED}; margin-top:4px; font-size:12px;"
+                        )
                 return
 
             with ui.element("div").classes("dw-table-wrap w-full"):

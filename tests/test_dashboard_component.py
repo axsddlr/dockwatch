@@ -118,6 +118,20 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertIn("Check", ui.buttons)
         self.assertIn("Pin", ui.buttons)
 
+    def test_container_status_table_renders_filter_empty_message(self) -> None:
+        ui = _TableUI()
+        with patch("dockwatch.web.components.container_table.ui", ui):
+            table = ContainerStatusTable()
+            table.render(
+                [],
+                on_check=lambda _name: None,
+                on_pin_toggle=lambda _name: None,
+                empty_message="No containers match the selected status filters.",
+            )
+
+        self.assertIn("No containers to display.", ui.labels)
+        self.assertIn("No containers match the selected status filters.", ui.labels)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@ from ..theme import (
     STATUS_BLUE,
     STATUS_GREEN,
     STATUS_RED,
+    STATUS_YELLOW,
     TEXT_MUTED,
     TEXT_PRIMARY,
     apply_theme,
@@ -39,6 +40,7 @@ def _summary_chip(label: str, value_ref: list[str], color: str) -> ui.label:
 class DashboardController:
     def __init__(self) -> None:
         self.results: list[UpdateResult] = []
+        self.selected_statuses: set[str] = set()
         self.last_checked: str = "Never"
         self.config = load_config()
         self.store = ManifestStore()
@@ -95,6 +97,9 @@ class DashboardController:
                         self.container_count_label = ui.label("0 containers").classes("mono-sm").style(
                             f"color:{TEXT_MUTED};"
                         )
+                self.filter_row = ui.row().classes("dw-toolbar-group").style(
+                    f"padding: 0 14px 12px; border-top:1px solid {BORDER};"
+                )
 
             self.error_banner = ui.card().classes("dw-panel w-full").style(
                 f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important; display:none;"
@@ -162,6 +167,71 @@ class DashboardController:
         )
         self.auto_refresh_switch.on_value_change(self._on_toggle_auto_refresh)
         self.interval_seconds.on_value_change(self._on_interval_change)
+        self._render_filter_controls()
+
+    def _status_text(self, result: UpdateResult) -> str:
+        if result.status == "PINNED":
+            return "PINNED"
+        if result.check_error:
+            return "UNKNOWN"
+        if result.is_outdated is True:
+            return "OUTDATED"
+        if result.is_outdated is False:
+            return "UP-TO-DATE"
+        return "UNKNOWN"
+
+    def _filtered_results(self) -> list[UpdateResult]:
+        if not self.selected_statuses:
+            return self.results
+        return [result for result in self.results if self._status_text(result) in self.selected_statuses]
+
+    def _render_table(self) -> None:
+        filtered = self._filtered_results()
+        if self.selected_statuses and not filtered:
+            empty_message = "No containers match the selected status filters."
+        else:
+            empty_message = "No containers to display."
+        self.table.render(
+            filtered,
+            self.check_one,
+            self.toggle_pin,
+            empty_message=empty_message,
+        )
+
+    def _filter_button_style(self, active: bool, color: str) -> str:
+        if active:
+            return (
+                f"background:{color}; color:#071014; border:1px solid {color}; "
+                "border-radius:999px; min-height:30px;"
+            )
+        return (
+            f"background:transparent; color:{TEXT_MUTED}; border:1px solid {BORDER}; "
+            "border-radius:999px; min-height:30px;"
+        )
+
+    def _render_filter_controls(self) -> None:
+        self.filter_row.clear()
+        statuses = [
+            ("OUTDATED", STATUS_RED),
+            ("UNKNOWN", STATUS_YELLOW),
+            ("UP-TO-DATE", STATUS_GREEN),
+            ("PINNED", STATUS_BLUE),
+        ]
+        with self.filter_row:
+            ui.label("Filter").classes("section-label")
+            ui.button(
+                "All",
+                on_click=self.clear_status_filters,
+            ).props("unelevated dense").style(
+                self._filter_button_style(not self.selected_statuses, PRIMARY)
+            )
+            for status, color in statuses:
+                ui.button(
+                    status,
+                    on_click=lambda _=None, s=status: self.toggle_status_filter(s),
+                ).props("unelevated dense").style(
+                    self._filter_button_style(status in self.selected_statuses, color)
+                )
 
     def _update_stats(self) -> None:
         total = len(self.results)
@@ -173,7 +243,11 @@ class DashboardController:
         self._stat_ok_val.set_text(str(ok))
         self._stat_outdated_val.set_text(str(outdated))
         self._stat_pinned_val.set_text(str(pinned))
-        self.container_count_label.set_text(f"{total} containers")
+        visible = len(self._filtered_results())
+        if self.selected_statuses:
+            self.container_count_label.set_text(f"{total} containers - {visible} shown")
+        else:
+            self.container_count_label.set_text(f"{total} containers")
 
     def _set_loading(self, loading: bool) -> None:
         self._loading = loading
@@ -213,6 +287,21 @@ class DashboardController:
     async def _timer_refresh(self) -> None:
         await self.refresh_all()
 
+    def clear_status_filters(self) -> None:
+        self.selected_statuses.clear()
+        self._render_filter_controls()
+        self._update_stats()
+        self._render_table()
+
+    def toggle_status_filter(self, status: str) -> None:
+        if status in self.selected_statuses:
+            self.selected_statuses.remove(status)
+        else:
+            self.selected_statuses.add(status)
+        self._render_filter_controls()
+        self._update_stats()
+        self._render_table()
+
     async def refresh_all(self) -> None:
         self._set_loading(True)
         try:
@@ -229,7 +318,7 @@ class DashboardController:
             )
             self._update_last_checked()
             self._update_stats()
-            self.table.render(self.results, self.check_one, self.toggle_pin)
+            self._render_table()
         except DockerConnectionError as exc:
             self.conn_label.set_text("disconnected")
             self.conn_meta.set_text("docker host offline")
@@ -242,7 +331,7 @@ class DashboardController:
             )
             self.results = []
             self._update_stats()
-            self.table.render(self.results, self.check_one, self.toggle_pin)
+            self._render_table()
         finally:
             self._set_loading(False)
 
@@ -282,7 +371,7 @@ class DashboardController:
 
         self._update_last_checked()
         self._update_stats()
-        self.table.render(self.results, self.check_one, self.toggle_pin)
+        self._render_table()
 
     async def toggle_pin(self, container_name: str) -> None:
         if not container_name:

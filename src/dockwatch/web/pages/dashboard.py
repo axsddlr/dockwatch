@@ -26,6 +26,12 @@ from ..theme import (
     apply_theme,
 )
 
+_DASHBOARD_CACHE: dict[str, object] = {
+    "results": [],
+    "selected_statuses": set(),
+    "last_checked": "Never",
+}
+
 
 def _summary_chip(label: str, value_ref: list[str], color: str) -> ui.label:
     with ui.card().classes("dw-summary-chip"):
@@ -39,9 +45,9 @@ def _summary_chip(label: str, value_ref: list[str], color: str) -> ui.label:
 
 class DashboardController:
     def __init__(self) -> None:
-        self.results: list[UpdateResult] = []
-        self.selected_statuses: set[str] = set()
-        self.last_checked: str = "Never"
+        self.results: list[UpdateResult] = list(_DASHBOARD_CACHE["results"])
+        self.selected_statuses: set[str] = set(_DASHBOARD_CACHE["selected_statuses"])
+        self.last_checked: str = str(_DASHBOARD_CACHE["last_checked"])
         self.config = load_config()
         self.store = ManifestStore()
         self._loading = False
@@ -131,6 +137,24 @@ class DashboardController:
         self.auto_refresh_switch.on_value_change(self._on_toggle_auto_refresh)
         self.interval_seconds.on_value_change(self._on_interval_change)
         self._render_filter_controls()
+        self._hydrate_view()
+
+    def _persist_state(self) -> None:
+        _DASHBOARD_CACHE["results"] = list(self.results)
+        _DASHBOARD_CACHE["selected_statuses"] = set(self.selected_statuses)
+        _DASHBOARD_CACHE["last_checked"] = self.last_checked
+
+    def _hydrate_view(self) -> None:
+        if self.last_checked != "Never":
+            self.last_checked_label.set_text(f"last check: {self.last_checked}")
+        self._update_stats()
+        self._render_table()
+        if self.results:
+            self.conn_label.set_text("connected")
+            self.conn_meta.set_text("docker host online")
+            self.table.container.set_visibility(True)
+        else:
+            self.table.container.set_visibility(False)
 
     def _status_text(self, result: UpdateResult) -> str:
         if result.status == "PINNED":
@@ -255,6 +279,7 @@ class DashboardController:
         self._render_filter_controls()
         self._update_stats()
         self._render_table()
+        self._persist_state()
 
     def toggle_status_filter(self, status: str) -> None:
         if status in self.selected_statuses:
@@ -264,6 +289,7 @@ class DashboardController:
         self._render_filter_controls()
         self._update_stats()
         self._render_table()
+        self._persist_state()
 
     async def refresh_all(self) -> None:
         self._set_loading(True)
@@ -282,6 +308,7 @@ class DashboardController:
             self._update_last_checked()
             self._update_stats()
             self._render_table()
+            self._persist_state()
         except DockerConnectionError as exc:
             self.conn_label.set_text("disconnected")
             self.conn_meta.set_text("docker host offline")
@@ -295,6 +322,7 @@ class DashboardController:
             self.results = []
             self._update_stats()
             self._render_table()
+            self._persist_state()
         finally:
             self._set_loading(False)
 
@@ -335,6 +363,7 @@ class DashboardController:
         self._update_last_checked()
         self._update_stats()
         self._render_table()
+        self._persist_state()
 
     async def toggle_pin(self, container_name: str) -> None:
         if not container_name:
@@ -356,4 +385,5 @@ def register_dashboard_page() -> None:
         apply_theme()
         with page_shell(active_route="/"):
             controller = DashboardController()
-            await controller.refresh_all()
+            if not controller.results and controller.last_checked == "Never":
+                await controller.refresh_all()

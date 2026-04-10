@@ -12,13 +12,25 @@ class _Ctx:
         self.owner = owner
 
     def __enter__(self):
-        return self.owner
+        return self
 
     def __exit__(self, exc_type, exc, tb):
         return False
 
     def classes(self, _value: str):
         return self
+
+    def style(self, _value: str):
+        return self
+
+    def props(self, _value: str | None = None, **_kwargs):
+        return self
+
+    def set_visibility(self, _value: bool):
+        return self
+
+    def clear(self):
+        return None
 
 
 class _Label(_Ctx):
@@ -31,11 +43,8 @@ class _TableUI:
     def __init__(self) -> None:
         self.links: list[tuple[str, str]] = []
         self.labels: list[str] = []
-        self.badges: list[tuple[str, str]] = []
         self.buttons: list[str] = []
-        self.cards: int = 0
-        self.rows: int = 0
-        self.cleared: int = 0
+        self.html_blocks: list[str] = []
 
     def column(self):
         return _Ctx(self)
@@ -44,16 +53,14 @@ class _TableUI:
         return _Ctx(self)
 
     def card(self):
-        self.cards += 1
+        return _Ctx(self)
+
+    def element(self, _tag: str):
         return _Ctx(self)
 
     def label(self, text: str):
         self.labels.append(text)
         return _Label(self, text)
-
-    def badge(self, text: str, color: str):
-        self.badges.append((text, color))
-        return _Ctx(self)
 
     def link(self, label: str, url: str):
         self.links.append((label, url))
@@ -63,13 +70,19 @@ class _TableUI:
         self.buttons.append(text)
         return _Ctx(self)
 
+    def html(self, markup: str):
+        self.html_blocks.append(markup)
+        return _Ctx(self)
+
+    def icon(self, *_args, **_kwargs):
+        return _Ctx(self)
+
 
 class DashboardComponentTests(unittest.TestCase):
     def test_container_status_table_renders_registry_link(self) -> None:
         ui = _TableUI()
         with patch("dockwatch.web.components.container_table.ui", ui):
             table = ContainerStatusTable()
-            table.rows_container = ui
             table.render(
                 [
                     UpdateResult(
@@ -100,7 +113,10 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertEqual(ui.links[0], ("Hub", "https://hub.docker.com/_/nginx"))
         self.assertIn("web", ui.labels)
         self.assertIn("version", ui.labels)
+        self.assertIn("1.0.0", ui.labels)
         self.assertIn("1.1.0 (sha256:abcdef123456)", ui.labels)
+        self.assertIn("Check", ui.buttons)
+        self.assertIn("Pin", ui.buttons)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Reusable container status table component for the dockwatch NiceGUI dashboard."""
+"""Reusable table-style container status component for the dockwatch dashboard."""
 
 from __future__ import annotations
 
@@ -8,49 +8,27 @@ from nicegui import ui
 
 from ...links import build_registry_link
 from ...models import UpdateResult, deployed_display_result, remote_display
-from ..theme import (
-    STATUS_BG,
-    STATUS_COLOR,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-)
+from ..theme import STATUS_BG, STATUS_COLOR, TEXT_MUTED, TEXT_PRIMARY
 
 CheckHandler = Callable[[str], Awaitable[None]]
 PinHandler = Callable[[str], Awaitable[None]]
 
-_DOT_CLASS: dict[str, str] = {
-    "UP-TO-DATE": "dot-green",
-    "OUTDATED": "dot-red",
-    "UNKNOWN": "dot-yellow",
-    "PINNED": "dot-blue",
-}
 
-_BORDER_CLASS: dict[str, str] = {
-    "UP-TO-DATE": "border-l-green",
-    "OUTDATED": "border-l-red",
-    "UNKNOWN": "border-l-yellow",
-    "PINNED": "border-l-blue",
-}
-
-
-def _status_info(result: UpdateResult) -> tuple[str, str, str, str]:
-    """Return (status_text, dot_class, border_class, pill_color)."""
+def _status_label(result: UpdateResult) -> str:
     if result.status == "PINNED":
-        s = "PINNED"
-    elif result.check_error:
-        s = "UNKNOWN"
-    elif result.is_outdated is True:
-        s = "OUTDATED"
-    elif result.is_outdated is False:
-        s = "UP-TO-DATE"
-    else:
-        s = "UNKNOWN"
-    return s, _DOT_CLASS[s], _BORDER_CLASS[s], STATUS_COLOR[s]
+        return "PINNED"
+    if result.check_error:
+        return "UNKNOWN"
+    if result.is_outdated is True:
+        return "OUTDATED"
+    if result.is_outdated is False:
+        return "UP-TO-DATE"
+    return "UNKNOWN"
 
 
 class ContainerStatusTable:
     def __init__(self) -> None:
-        self.container = ui.column().classes("w-full gap-2")
+        self.container = ui.column().classes("w-full")
 
     def render(
         self,
@@ -60,90 +38,93 @@ class ContainerStatusTable:
     ) -> None:
         self.container.clear()
 
-        if not results:
-            with self.container:
-                with ui.card().classes("dw-card w-full").style("padding:32px; text-align:center;"):
-                    ui.icon("inbox", size="40px").style(f"color:{TEXT_MUTED};")
-                    ui.label("No containers to display.").style(f"color:{TEXT_MUTED}; margin-top:8px;")
-            return
-
         with self.container:
-            for result in results:
-                status_text, dot_cls, border_cls, pill_color = _status_info(result)
-                pill_bg = STATUS_BG.get(status_text, "rgba(255,255,255,0.06)")
-                remote_value = remote_display(result)
-                deployed_value = deployed_display_result(result)
-                registry_link = build_registry_link(result.container_info)
-                pin_label = "Unpin" if result.status == "PINNED" else "Pin"
-                name = result.container_info.name or "-"
+            if not results:
+                with ui.card().classes("dw-panel w-full").style("padding:28px; text-align:center;"):
+                    ui.icon("inbox", size="34px").style(f"color:{TEXT_MUTED};")
+                    ui.label("No containers to display.").style(
+                        f"color:{TEXT_MUTED}; margin-top:8px; font-size:13px;"
+                    )
+                return
 
-                with ui.card().classes(f"dw-card {border_cls} w-full").style("padding:16px 20px;"):
+            with ui.element("div").classes("dw-table-wrap w-full"):
+                with ui.element("div").classes("dw-table-head"):
+                    _head("Name")
+                    _head("Status")
+                    _head("Basis")
+                    _head("Deployed")
+                    _head("Remote")
+                    _head("Actions")
 
-                    # ── Row 1: name + status pill ──────────────────────────────
-                    with ui.row().classes("w-full items-center justify-between gap-2"):
-                        with ui.row().classes("items-center gap-2 min-w-0"):
-                            ui.html(f'<span class="status-dot {dot_cls}"></span>')
-                            ui.label(name).classes("mono").style(
-                                f"font-size:15px; font-weight:600; color:{TEXT_PRIMARY}; "
-                                "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                for result in results:
+                    self._render_row(result, on_check, on_pin_toggle)
+
+    def _render_row(
+        self,
+        result: UpdateResult,
+        on_check: CheckHandler,
+        on_pin_toggle: PinHandler,
+    ) -> None:
+        status = _status_label(result)
+        pill_bg = STATUS_BG.get(status, "rgba(255,255,255,0.05)")
+        pill_color = STATUS_COLOR.get(status, TEXT_PRIMARY)
+        name = result.container_info.name or "-"
+        image_ref = result.container_info.image_ref or "-"
+        deployed_value = deployed_display_result(result) or "-"
+        remote_value = remote_display(result) or "-"
+        registry_link = build_registry_link(result.container_info)
+        pin_label = "Unpin" if result.status == "PINNED" else "Pin"
+        dot_class = {
+            "UP-TO-DATE": "dot-green",
+            "OUTDATED": "dot-red",
+            "UNKNOWN": "dot-yellow",
+            "PINNED": "dot-blue",
+        }[status]
+
+        with ui.element("div").classes("dw-table-row"):
+            with ui.element("div").classes("dw-name-cell"):
+                ui.html(f'<span class="status-dot {dot_class}"></span>')
+                with ui.element("div").classes("dw-name-stack"):
+                    ui.label(name).classes("dw-name-title")
+                    if registry_link:
+                        label, url = registry_link
+                        with ui.row().classes("items-center gap-2 no-wrap"):
+                            ui.link(label, url).props("target=_blank").style(
+                                f"font-size:11px; color:{TEXT_MUTED}; text-decoration:none;"
                             )
+                            ui.label(image_ref).classes("dw-name-subtitle")
+                    else:
+                        ui.label(image_ref).classes("dw-name-subtitle")
 
-                        # Status pill
-                        ui.html(
-                            f'<span class="status-pill" style="'
-                            f'background:{pill_bg}; color:{pill_color};">'
-                            f'{status_text}</span>'
-                        )
+            _status_cell(status, pill_bg, pill_color)
+            _cell(result.comparison_basis or "-", label="Basis")
+            _cell(deployed_value, label="Deployed", mono=True)
+            _cell(remote_value, label="Remote", mono=True)
 
-                    # ── Row 2: data fields (2-col grid on md+) ─────────────────
-                    with ui.element("div").style(
-                        "display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:12px;"
-                    ):
-                        _field("Image", result.container_info.image_ref or "-", mono=True)
-                        _field("Basis", result.comparison_basis or "-")
-                        _field("Deployed", deployed_value or "-", mono=True)
-                        _field("Remote", remote_value or "-", mono=True)
-
-                    # ── Row 3: actions ─────────────────────────────────────────
-                    with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap").style(
-                        "margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);"
-                    ):
-                        # Registry link (left)
-                        if registry_link:
-                            label_text, registry_url = registry_link
-                            ui.link(label_text, registry_url).props("target=_blank").style(
-                                f"font-size:12px; color:{TEXT_MUTED}; "
-                                "text-decoration:none; font-family:'Fira Code',monospace;"
-                                "transition:color 0.15s;"
-                            ).classes("hover:text-white")
-                        else:
-                            ui.element("div")  # spacer
-
-                        # Action buttons (right)
-                        with ui.row().classes("items-center gap-2"):
-                            ui.button(
-                                "Check",
-                                icon="sync",
-                                on_click=lambda _=None, n=name: on_check(n),
-                            ).props("size=sm outline").style(
-                                f"color:{TEXT_MUTED}; border-color:rgba(255,255,255,0.15);"
-                            )
-                            ui.button(
-                                pin_label,
-                                icon="push_pin",
-                                on_click=lambda _=None, n=name: on_pin_toggle(n),
-                            ).props("size=sm flat").style(f"color:{TEXT_MUTED};")
+            with ui.row().classes("items-center justify-end gap-2"):
+                ui.button(
+                    "Check",
+                    icon="refresh",
+                    on_click=lambda _=None, n=name: on_check(n),
+                ).props("unelevated size=sm").classes("dw-btn-secondary")
+                ui.button(
+                    pin_label,
+                    icon="push_pin",
+                    on_click=lambda _=None, n=name: on_pin_toggle(n),
+                ).props("outline size=sm").classes("dw-btn-ghost")
 
 
-def _field(label: str, value: str, *, mono: bool = False) -> None:
-    """Render a label+value data field pair."""
-    with ui.column().classes("gap-0 min-w-0"):
-        ui.label(label).style(
-            f"font-size:11px; font-weight:500; color:{TEXT_MUTED}; "
-            "text-transform:uppercase; letter-spacing:0.06em;"
+def _head(label: str) -> None:
+    ui.label(label).classes("dw-col-label")
+
+
+def _status_cell(text: str, bg: str, color: str) -> None:
+    with ui.element("div").classes("dw-data-cell").props('data-label="Status"'):
+        ui.html(
+            f'<span class="status-pill" style="background:{bg}; color:{color};">{text}</span>'
         )
-        font = "font-family:'Fira Code',monospace; font-size:13px;" if mono else "font-size:13px;"
-        ui.label(value).style(
-            f"color:{TEXT_PRIMARY}; {font} "
-            "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
-        )
+
+
+def _cell(value: str, *, label: str, mono: bool = False) -> None:
+    classes = "dw-data-cell mono" if mono else "dw-data-cell"
+    ui.label(value).classes(classes).props(f'data-label="{label}"')

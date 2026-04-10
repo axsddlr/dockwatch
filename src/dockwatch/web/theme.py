@@ -4,31 +4,34 @@ from __future__ import annotations
 
 from nicegui import ui
 
-# ── Color palette ──────────────────────────────────────────────────────────────
-BG_DEEP = "#0A0E1A"
-BG_SURFACE = "#111827"
-BG_CARD = "#1C2333"
+BG_PAGE = "#141416"
+BG_PANEL = "#1A1B1E"
+BG_PANEL_ALT = "#18191C"
+BG_TABLE_HEAD = "#114954"
+BG_INPUT = "#101114"
 BORDER = "rgba(255,255,255,0.08)"
-BORDER_HOVER = "rgba(255,255,255,0.16)"
+BORDER_STRONG = "rgba(255,255,255,0.14)"
 
-TEXT_PRIMARY = "#F1F5F9"
-TEXT_MUTED = "#94A3B8"
-TEXT_DIM = "#4B5563"
+TEXT_PRIMARY = "#EEF2F4"
+TEXT_MUTED = "#A4A9AE"
+TEXT_DIM = "#6F7780"
 
-PRIMARY = "#2563EB"
-ACCENT = "#F97316"
+PRIMARY = "#13C4F2"
+ACCENT = "#4ADE80"
+WARNING = "#F59E0B"
+DANGER = "#F87171"
+INFO = "#22D3EE"
 
-STATUS_GREEN = "#22C55E"
-STATUS_RED = "#EF4444"
-STATUS_YELLOW = "#EAB308"
-STATUS_BLUE = "#3B82F6"
+STATUS_GREEN = "#3FE17F"
+STATUS_RED = "#F87171"
+STATUS_YELLOW = "#FBBF24"
+STATUS_BLUE = "#38BDF8"
 
-STATUS_GREEN_BG = "rgba(34,197,94,0.12)"
-STATUS_RED_BG = "rgba(239,68,68,0.12)"
-STATUS_YELLOW_BG = "rgba(234,179,8,0.12)"
-STATUS_BLUE_BG = "rgba(59,130,246,0.12)"
+STATUS_GREEN_BG = "rgba(63,225,127,0.14)"
+STATUS_RED_BG = "rgba(248,113,113,0.14)"
+STATUS_YELLOW_BG = "rgba(251,191,36,0.14)"
+STATUS_BLUE_BG = "rgba(56,189,248,0.14)"
 
-# ── Status maps ────────────────────────────────────────────────────────────────
 STATUS_COLOR: dict[str, str] = {
     "UP-TO-DATE": STATUS_GREEN,
     "OUTDATED": STATUS_RED,
@@ -45,23 +48,18 @@ STATUS_BG: dict[str, str] = {
 
 
 def apply_theme() -> None:
-    """Inject dark theme, fonts, and global CSS into the NiceGUI app.
-
-    Must be called before ui.run(). Do not call ui.dark_mode() here —
-    dark mode is enabled via dark=True in ui.run() to avoid global scope conflicts.
-    """
+    """Inject the Tugtainer-inspired control-panel theme into NiceGUI."""
     ui.colors(
         primary=PRIMARY,
-        secondary="#1D4ED8",
+        secondary="#0EA5C6",
         accent=ACCENT,
-        dark=BG_DEEP,
+        dark=BG_PAGE,
         positive=STATUS_GREEN,
         negative=STATUS_RED,
         warning=STATUS_YELLOW,
         info=STATUS_BLUE,
     )
 
-    # Google Fonts: Fira Code + Fira Sans
     ui.add_head_html("""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,163 +67,306 @@ def apply_theme() -> None:
     """)
 
     ui.add_css(f"""
-    /* ── Reset & base ─────────────────────────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
 
     html, body {{
         margin: 0;
         padding: 0;
-        background: {BG_DEEP} !important;
+        background: {BG_PAGE} !important;
         color: {TEXT_PRIMARY};
         font-family: 'Fira Sans', sans-serif;
         font-size: 14px;
-        line-height: 1.6;
+        line-height: 1.5;
         min-height: 100vh;
         -webkit-font-smoothing: antialiased;
     }}
 
-    /* ── Scrollbar ───────────────────────────────────────────────────────── */
-    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-    ::-webkit-scrollbar-track {{ background: {BG_SURFACE}; }}
-    ::-webkit-scrollbar-thumb {{ background: #374151; border-radius: 3px; }}
-    ::-webkit-scrollbar-thumb:hover {{ background: #4B5563; }}
+    body {{
+        background-image:
+            linear-gradient(180deg, rgba(255,255,255,0.02), transparent 180px),
+            radial-gradient(circle at top right, rgba(19,196,242,0.09), transparent 34%),
+            radial-gradient(circle at top left, rgba(74,222,128,0.05), transparent 30%);
+    }}
 
-    /* ── Monospace utility ───────────────────────────────────────────────── */
+    ::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+    ::-webkit-scrollbar-track {{ background: {BG_PANEL_ALT}; }}
+    ::-webkit-scrollbar-thumb {{ background: rgba(255,255,255,0.18); border-radius: 999px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: rgba(255,255,255,0.28); }}
+
     .mono {{ font-family: 'Fira Code', monospace !important; }}
     .mono-sm {{ font-family: 'Fira Code', monospace !important; font-size: 12px !important; }}
 
-    /* ── Container cards ─────────────────────────────────────────────────── */
-    .dw-card {{
-        background: {BG_CARD} !important;
+    .dw-shell {{
+        width: 100%;
+        max-width: 1260px;
+        margin: 0 auto;
+        padding: 18px 16px 40px;
+        gap: 14px;
+    }}
+
+    .dw-nav {{
+        background: rgba(18, 19, 22, 0.96) !important;
+        border-bottom: 1px solid {BORDER} !important;
+        min-height: 58px !important;
+    }}
+
+    .dw-panel {{
+        background: {BG_PANEL} !important;
         border: 1px solid {BORDER} !important;
-        border-radius: 10px !important;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        border-radius: 8px !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.015);
+    }}
+
+    .dw-summary-strip {{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
+        gap: 10px;
+    }}
+
+    .dw-summary-chip {{
+        background: {BG_PANEL} !important;
+        border: 1px solid {BORDER} !important;
+        border-radius: 8px !important;
+        padding: 10px 12px;
+        min-height: 66px;
+    }}
+
+    .dw-controls {{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+    }}
+
+    .dw-toolbar-group {{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+    }}
+
+    .dw-btn-primary .q-btn__content {{
+        font-family: 'Fira Sans', sans-serif !important;
+        font-weight: 600 !important;
+        letter-spacing: 0 !important;
+    }}
+
+    .dw-btn-primary {{
+        background: {ACCENT} !important;
+        color: #08210e !important;
+        border-radius: 6px !important;
+        min-height: 38px !important;
+    }}
+
+    .dw-btn-secondary {{
+        background: {PRIMARY} !important;
+        color: #07212a !important;
+        border-radius: 6px !important;
+        min-height: 34px !important;
+    }}
+
+    .dw-btn-ghost {{
+        background: #111215 !important;
+        color: {TEXT_PRIMARY} !important;
+        border: 1px solid {BORDER_STRONG} !important;
+        border-radius: 6px !important;
+        min-height: 34px !important;
+    }}
+
+    .dw-btn-ghost .q-btn__content {{
+        font-size: 12px !important;
+        font-weight: 600 !important;
+    }}
+
+    .dw-input-shell {{
+        background: {BG_INPUT};
+        border: 1px solid {BORDER_STRONG};
+        border-radius: 6px;
+    }}
+
+    .dw-table-wrap {{
+        background: {BG_PANEL} !important;
+        border: 1px solid {BORDER} !important;
+        border-radius: 8px !important;
         overflow: hidden;
     }}
-    .dw-card:hover {{
-        border-color: {BORDER_HOVER} !important;
-        box-shadow: 0 0 0 1px rgba(37,99,235,0.2), 0 4px 20px rgba(0,0,0,0.4) !important;
+
+    .dw-table-head {{
+        display: grid;
+        grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding: 11px 16px;
+        background: {BG_TABLE_HEAD};
+        border-bottom: 1px solid rgba(255,255,255,0.08);
     }}
 
-    /* ── Stat cards ───────────────────────────────────────────────────────── */
-    .dw-stat-card {{
-        background: {BG_CARD} !important;
-        border: 1px solid {BORDER} !important;
-        border-radius: 10px !important;
-        transition: border-color 0.2s ease;
+    .dw-table-row {{
+        display: grid;
+        grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
+        gap: 12px;
+        align-items: center;
+        padding: 12px 16px;
+        background: {BG_PANEL};
+        border-bottom: 1px solid rgba(255,255,255,0.05);
     }}
 
-    /* ── Status pills ─────────────────────────────────────────────────────── */
+    .dw-table-row:last-child {{ border-bottom: 0; }}
+
+    .dw-col-label {{
+        font-family: 'Fira Code', monospace;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255,255,255,0.92);
+        text-transform: none;
+    }}
+
+    .dw-name-cell {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }}
+
+    .dw-name-stack {{
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        gap: 3px;
+    }}
+
+    .dw-name-title {{
+        color: {TEXT_PRIMARY};
+        font-size: 15px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    .dw-name-subtitle {{
+        color: {TEXT_MUTED};
+        font-family: 'Fira Code', monospace;
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    .dw-data-cell {{
+        color: {TEXT_PRIMARY};
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    .dw-data-cell.mono {{
+        font-size: 11px;
+    }}
+
     .status-pill {{
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 3px 10px;
-        border-radius: 999px;
+        justify-content: center;
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 6px;
         font-size: 11px;
         font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        font-family: 'Fira Code', monospace;
-        white-space: nowrap;
-    }}
-
-    /* ── Pulsing status dot ───────────────────────────────────────────────── */
-    @keyframes pulse-ring {{
-        0%   {{ transform: scale(0.8); opacity: 1; }}
-        70%  {{ transform: scale(1.4); opacity: 0; }}
-        100% {{ transform: scale(1.4); opacity: 0; }}
+        letter-spacing: 0.02em;
+        text-transform: none;
+        font-family: 'Fira Sans', sans-serif;
+        border: 1px solid rgba(255,255,255,0.05);
     }}
 
     .status-dot {{
         display: inline-block;
         width: 8px;
         height: 8px;
-        border-radius: 50%;
-        position: relative;
+        border-radius: 999px;
         flex-shrink: 0;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.04);
     }}
-    .status-dot::after {{
-        content: '';
-        position: absolute;
-        inset: -3px;
-        border-radius: 50%;
-        border: 2px solid currentColor;
-        animation: pulse-ring 2s ease-out infinite;
-    }}
-    .dot-green  {{ color: {STATUS_GREEN};  background: {STATUS_GREEN}; }}
-    .dot-red    {{ color: {STATUS_RED};    background: {STATUS_RED}; }}
-    .dot-yellow {{ color: {STATUS_YELLOW}; background: {STATUS_YELLOW}; }}
-    .dot-blue   {{ color: {STATUS_BLUE};   background: {STATUS_BLUE}; }}
+    .dot-green  {{ background: {STATUS_GREEN}; }}
+    .dot-red    {{ background: {STATUS_RED}; }}
+    .dot-yellow {{ background: {STATUS_YELLOW}; }}
+    .dot-blue   {{ background: {STATUS_BLUE}; }}
 
-    /* Suppress pulse for stable states */
-    .dot-green::after, .dot-blue::after {{ animation: none; }}
-
-    /* ── Nav header ───────────────────────────────────────────────────────── */
-    .dw-nav {{
-        background: rgba(10,14,26,0.85) !important;
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border-bottom: 1px solid {BORDER} !important;
-        position: sticky;
-        top: 0;
-        z-index: 100;
-    }}
-
-    /* ── Section labels ───────────────────────────────────────────────────── */
     .section-label {{
         font-size: 11px;
         font-weight: 600;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: {TEXT_MUTED};
         font-family: 'Fira Code', monospace;
     }}
 
-    /* ── Ghost action buttons ─────────────────────────────────────────────── */
-    .dw-btn-ghost .q-btn__content {{ color: {TEXT_MUTED} !important; }}
-    .dw-btn-ghost:hover .q-btn__content {{ color: {TEXT_PRIMARY} !important; }}
-
-    /* ── Left accent border by status ────────────────────────────────────── */
-    .border-l-green  {{ border-left: 3px solid {STATUS_GREEN} !important; }}
-    .border-l-red    {{ border-left: 3px solid {STATUS_RED} !important; }}
-    .border-l-yellow {{ border-left: 3px solid {STATUS_YELLOW} !important; }}
-    .border-l-blue   {{ border-left: 3px solid {STATUS_BLUE} !important; }}
-
-    /* ── Input fields ─────────────────────────────────────────────────────── */
-    .q-field__native, .q-field__input {{
-        color: {TEXT_PRIMARY} !important;
-        font-family: 'Fira Sans', sans-serif !important;
+    .dw-expansion {{
+        background: {BG_PANEL} !important;
+        border: 1px solid {BORDER} !important;
+        border-radius: 8px !important;
     }}
+
+    .dw-expansion .q-expansion-item__header,
+    .q-field__native,
+    .q-field__input {{
+        color: {TEXT_PRIMARY} !important;
+    }}
+
     .q-field--dark .q-field__label {{ color: {TEXT_MUTED} !important; }}
 
-    /* ── Expansion panel ─────────────────────────────────────────────────── */
-    .dw-expansion {{
-        background: {BG_CARD} !important;
-        border: 1px solid {BORDER} !important;
-        border-radius: 10px !important;
-    }}
-    .dw-expansion .q-expansion-item__header {{
-        color: {TEXT_PRIMARY} !important;
-    }}
-
-    /* ── Footer ───────────────────────────────────────────────────────────── */
     .dw-footer {{
         border-top: 1px solid {BORDER};
         color: {TEXT_DIM};
         font-size: 12px;
     }}
 
-    /* ── Focus states ─────────────────────────────────────────────────────── */
     *:focus-visible {{
         outline: 2px solid {PRIMARY};
         outline-offset: 2px;
         border-radius: 4px;
     }}
 
-    /* ── Reduced motion ───────────────────────────────────────────────────── */
+    @media (max-width: 980px) {{
+        .dw-summary-strip {{
+            grid-template-columns: repeat(2, minmax(120px, 1fr));
+        }}
+
+        .dw-table-head {{
+            display: none;
+        }}
+
+        .dw-table-row {{
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }}
+
+        .dw-data-cell::before {{
+            content: attr(data-label);
+            display: block;
+            color: {TEXT_MUTED};
+            font-family: 'Fira Code', monospace;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }}
+    }}
+
+    @media (max-width: 640px) {{
+        .dw-summary-strip {{
+            grid-template-columns: 1fr 1fr;
+        }}
+
+        .dw-shell {{
+            padding: 12px 10px 28px;
+        }}
+    }}
+
     @media (prefers-reduced-motion: reduce) {{
-        .status-dot::after {{ animation: none; }}
         * {{ transition: none !important; }}
     }}
     """)

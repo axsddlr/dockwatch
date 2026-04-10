@@ -14,37 +14,26 @@ from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ...registry import check_all
 from ..components.container_table import ContainerStatusTable
-from ..theme import apply_theme
 from ..theme import (
-    ACCENT,
-    BG_CARD,
-    BG_DEEP,
-    BG_SURFACE,
     BORDER,
     PRIMARY,
     STATUS_BLUE,
     STATUS_GREEN,
     STATUS_RED,
-    STATUS_YELLOW,
     TEXT_MUTED,
     TEXT_PRIMARY,
+    apply_theme,
 )
 
 
-def _stat_card(label: str, value_ref: list[str], color: str) -> ui.label:
-    """Render a single stat card. Returns the value label for later updates."""
-    with ui.card().classes("dw-stat-card flex-1 min-w-28").style(
-        f"border-left: 3px solid {color} !important; padding: 14px 18px;"
-    ):
-        ui.label(label).style(
-            f"font-size:11px; font-weight:600; letter-spacing:0.08em; "
-            f"text-transform:uppercase; color:{TEXT_MUTED}; font-family:'Fira Code',monospace;"
+def _summary_chip(label: str, value_ref: list[str], color: str) -> ui.label:
+    with ui.card().classes("dw-summary-chip"):
+        ui.label(label).classes("section-label")
+        value = ui.label(value_ref[0]).style(
+            f"font-size:26px; line-height:1.1; font-weight:700; color:{color}; margin-top:6px;"
+            "font-family:'Fira Code', monospace;"
         )
-        val = ui.label(value_ref[0]).style(
-            f"font-size:28px; font-weight:700; color:{color}; "
-            f"font-family:'Fira Code',monospace; line-height:1.2; margin-top:4px;"
-        )
-    return val
+    return value
 
 
 class DashboardController:
@@ -55,115 +44,113 @@ class DashboardController:
         self.store = ManifestStore()
         self._loading = False
 
-        # ── Top nav bar ────────────────────────────────────────────────────────
-        with ui.header().classes("dw-nav").style("padding: 0 24px; min-height: 56px;"):
-            with ui.row().classes("w-full items-center justify-between").style("max-width:1200px; margin:0 auto; height:56px;"):
-                # Brand
+        with ui.header().classes("dw-nav").style("padding: 0 16px;"):
+            with ui.row().classes("w-full items-center justify-between").style(
+                "max-width:1260px; margin:0 auto; min-height:58px;"
+            ):
                 with ui.row().classes("items-center gap-3"):
-                    ui.label("dockwatch").classes("mono").style(
-                        f"font-size:20px; font-weight:700; color:{TEXT_PRIMARY}; "
-                        f"letter-spacing:-0.02em; text-shadow: 0 0 20px rgba(37,99,235,0.4);"
-                    )
-                    ui.badge(f"v{__version__}", color="blue-grey").props("outline").style(
-                        "font-family:'Fira Code',monospace; font-size:10px;"
+                    ui.button(icon="menu").props("flat round dense").style(f"color:{TEXT_MUTED};")
+                    ui.label("dockwatch").style(
+                        f"font-size:22px; font-weight:700; color:{TEXT_PRIMARY}; "
+                        "letter-spacing:-0.03em;"
                     )
 
-                # Right side: connection status + last checked
-                with ui.row().classes("items-center gap-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        self.conn_dot = ui.html('<span class="status-dot dot-green"></span>')
-                        self.conn_label = ui.label("connected").style(
-                            f"font-size:12px; color:{TEXT_MUTED};"
+                with ui.row().classes("items-center gap-3"):
+                    self.conn_label = ui.label("connected").style(
+                        f"font-size:12px; color:{TEXT_MUTED};"
+                    )
+                    ui.label(f"v{__version__}").classes("mono-sm").style(
+                        "padding:4px 8px; background:#F5F7F8; color:#111315; border-radius:6px;"
+                    )
+
+        with ui.column().classes("dw-shell"):
+            with ui.row().classes("dw-summary-strip w-full"):
+                self._stat_total_val = _summary_chip("Containers", ["0"], TEXT_PRIMARY)
+                self._stat_ok_val = _summary_chip("Up To Date", ["0"], STATUS_GREEN)
+                self._stat_outdated_val = _summary_chip("Outdated", ["0"], STATUS_RED)
+                self._stat_pinned_val = _summary_chip("Pinned", ["0"], STATUS_BLUE)
+
+            with ui.card().classes("dw-panel w-full"):
+                with ui.row().classes("dw-controls"):
+                    with ui.row().classes("dw-toolbar-group"):
+                        self.refresh_btn = (
+                            ui.button("Refresh", on_click=self.refresh_all, icon="refresh")
+                            .props("unelevated")
+                            .classes("dw-btn-primary")
                         )
-                    self.last_checked_label = ui.label("last check: never").style(
-                        f"font-size:12px; color:{TEXT_MUTED}; font-family:'Fira Code',monospace;"
-                    )
-
-        # ── Page body ──────────────────────────────────────────────────────────
-        with ui.column().classes("w-full mx-auto gap-6").style(
-            f"max-width:1200px; padding: 24px 24px 48px; background:{BG_DEEP};"
-        ):
-            # ── Stats summary row ──────────────────────────────────────────────
-            with ui.row().classes("w-full gap-3 flex-wrap"):
-                self._stat_total_val = _stat_card("Containers", ["0"], TEXT_MUTED)
-                self._stat_ok_val = _stat_card("Up to Date", ["0"], STATUS_GREEN)
-                self._stat_outdated_val = _stat_card("Outdated", ["0"], STATUS_RED)
-                self._stat_pinned_val = _stat_card("Pinned", ["0"], STATUS_BLUE)
-
-            # ── Controls bar ───────────────────────────────────────────────────
-            with ui.card().classes("dw-card w-full").style("padding: 14px 18px;"):
-                with ui.row().classes("w-full items-center gap-4 flex-wrap"):
-                    self.refresh_btn = ui.button(
-                        "Refresh",
-                        on_click=self.refresh_all,
-                        icon="refresh",
-                    ).props("unelevated").style(
-                        f"background:{ACCENT} !important; color:#fff !important; "
-                        f"font-family:'Fira Sans',sans-serif; font-weight:600;"
-                    )
-                    with ui.row().classes("items-center gap-2"):
                         self.auto_refresh_switch = ui.switch("Auto refresh", value=False).style(
                             f"color:{TEXT_MUTED};"
                         )
-                        self.auto_refresh_icon = ui.icon("sync", size="18px").style(
-                            f"color:{STATUS_GREEN}; display:none;"
+                        self.interval_seconds = (
+                            ui.number("Interval (s)", value=30, min=10, max=3600, step=5)
+                            .classes("dw-input-shell")
+                            .style("width:140px;")
+                            .props("dark dense borderless")
                         )
-                    self.interval_seconds = ui.number(
-                        "Interval (s)", value=30, min=10, max=3600, step=5
-                    ).style("width:130px;").props("dark dense outlined")
 
-            # ── Error / info banner ────────────────────────────────────────────
-            self.error_banner = ui.card().classes("dw-card w-full").style(
-                f"border-left: 3px solid {STATUS_RED} !important; padding: 14px 18px; display:none;"
+                    with ui.row().classes("dw-toolbar-group"):
+                        self.last_checked_label = ui.label("last check: never").classes("mono-sm").style(
+                            f"color:{TEXT_MUTED};"
+                        )
+                        self.container_count_label = ui.label("0 containers").classes("mono-sm").style(
+                            f"color:{TEXT_MUTED};"
+                        )
+
+            self.error_banner = ui.card().classes("dw-panel w-full").style(
+                f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important; display:none;"
             )
             with self.error_banner:
                 with ui.row().classes("items-center gap-2"):
-                    ui.icon("error_outline", size="20px").style(f"color:{STATUS_RED};")
-                    self.message_label = ui.label("").style(f"color:{STATUS_RED}; font-weight:500;")
+                    ui.icon("error_outline", size="18px").style(f"color:{STATUS_RED};")
+                    self.message_label = ui.label("").style(f"color:{STATUS_RED}; font-weight:600;")
                 self.error_help = ui.markdown("").style(f"color:{TEXT_MUTED}; margin-top:6px;")
 
-            # ── Containers section ─────────────────────────────────────────────
-            with ui.column().classes("w-full gap-3"):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.label("Containers").classes("section-label")
-                    self.container_count_label = ui.label("").style(
-                        f"font-size:12px; color:{TEXT_MUTED}; font-family:'Fira Code',monospace;"
+            with ui.card().classes("dw-panel w-full").style("padding: 10px 10px 4px;"):
+                with ui.row().classes("w-full items-center justify-between").style(
+                    f"padding: 0 6px 10px; border-bottom:1px solid {BORDER};"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("inventory_2", size="18px").style(f"color:{PRIMARY};")
+                        ui.label("Local Containers").classes("section-label")
+                    self.conn_meta = ui.label("docker host online").classes("mono-sm").style(
+                        f"color:{TEXT_MUTED};"
                     )
 
-                # Loading indicator
-                self.loading_row = ui.row().classes("w-full justify-center").style("padding:40px 0;")
+                self.loading_row = ui.row().classes("w-full justify-center").style("padding:26px 0;")
                 with self.loading_row:
-                    ui.spinner("dots", size="40px", color="primary")
+                    ui.spinner("dots", size="34px", color="primary")
 
                 self.table = ContainerStatusTable()
 
-            # ── Notification settings (collapsible) ────────────────────────────
             with ui.expansion("Notification Settings", icon="notifications").classes(
                 "dw-expansion w-full"
-            ).props("dark"):
-                with ui.column().classes("w-full gap-3").style("padding: 8px 0;"):
-                    self.webhook_input = ui.input(
-                        "Webhook URL", value=self.config.webhook_url
-                    ).classes("w-full").props("dark dense outlined")
-                    self.discord_input = ui.input(
-                        "Discord Webhook", value=self.config.discord_webhook
-                    ).classes("w-full").props("dark dense outlined")
-                    self.ntfy_input = ui.input(
-                        "ntfy Topic URL", value=self.config.ntfy_url
-                    ).classes("w-full").props("dark dense outlined")
+            ).props("dark dense"):
+                with ui.column().classes("w-full gap-3").style("padding: 10px 12px 12px;"):
+                    self.webhook_input = (
+                        ui.input("Webhook URL", value=self.config.webhook_url)
+                        .classes("w-full dw-input-shell")
+                        .props("dark dense borderless")
+                    )
+                    self.discord_input = (
+                        ui.input("Discord Webhook", value=self.config.discord_webhook)
+                        .classes("w-full dw-input-shell")
+                        .props("dark dense borderless")
+                    )
+                    self.ntfy_input = (
+                        ui.input("ntfy Topic URL", value=self.config.ntfy_url)
+                        .classes("w-full dw-input-shell")
+                        .props("dark dense borderless")
+                    )
                     with ui.row().classes("gap-3"):
                         ui.button("Save Settings", on_click=self.save_notification_settings).props(
                             "unelevated"
-                        ).style(
-                            f"background:{PRIMARY} !important; color:#fff !important;"
-                        )
+                        ).classes("dw-btn-secondary")
                         ui.button(
                             "Send Test Notification", on_click=self.send_test_notification
-                        ).props("outline").style(f"color:{TEXT_MUTED};")
+                        ).props("outline").classes("dw-btn-ghost")
 
-            # ── Footer ─────────────────────────────────────────────────────────
             with ui.row().classes("dw-footer w-full justify-center").style("padding:16px 0;"):
-                ui.label(f"dockwatch {__version__}  ·  docker image update monitor").classes("mono-sm")
+                ui.label(f"dockwatch {__version__} - image monitoring dashboard").classes("mono-sm")
 
         self.loading_row.set_visibility(False)
         self.table.container.set_visibility(False)
@@ -176,8 +163,6 @@ class DashboardController:
         self.auto_refresh_switch.on_value_change(self._on_toggle_auto_refresh)
         self.interval_seconds.on_value_change(self._on_interval_change)
 
-    # ── Internal helpers ───────────────────────────────────────────────────────
-
     def _update_stats(self) -> None:
         total = len(self.results)
         ok = sum(1 for r in self.results if r.is_outdated is False and r.status != "PINNED")
@@ -188,9 +173,7 @@ class DashboardController:
         self._stat_ok_val.set_text(str(ok))
         self._stat_outdated_val.set_text(str(outdated))
         self._stat_pinned_val.set_text(str(pinned))
-
-        plural = "container" if total == 1 else "containers"
-        self.container_count_label.set_text(f"{total} {plural}")
+        self.container_count_label.set_text(f"{total} containers")
 
     def _set_loading(self, loading: bool) -> None:
         self._loading = loading
@@ -208,42 +191,34 @@ class DashboardController:
 
     def _show_error(self, msg: str, detail: str = "") -> None:
         self.error_banner.style(
-            f"border-left: 3px solid {STATUS_RED} !important; padding: 14px 18px;"
+            f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important;"
         )
         self.message_label.set_text(msg)
         self.error_help.set_content(detail)
 
     def _clear_error(self) -> None:
         self.error_banner.style(
-            f"border-left: 3px solid {STATUS_RED} !important; padding: 14px 18px; display:none;"
+            f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important; display:none;"
         )
         self.message_label.set_text("")
         self.error_help.set_content("")
 
     def _on_toggle_auto_refresh(self, event) -> None:
-        active = bool(event.value)
-        self.timer.active = active
-        self.auto_refresh_icon.style(
-            f"color:{STATUS_GREEN}; display:{'inline' if active else 'none'};"
-        )
+        self.timer.active = bool(event.value)
 
     def _on_interval_change(self, event) -> None:
         new_value = float(event.value or self.config.schedule_interval_seconds)
-        if new_value < 10:
-            new_value = 10
-        self.timer.interval = new_value
+        self.timer.interval = max(10, new_value)
 
     async def _timer_refresh(self) -> None:
         await self.refresh_all()
-
-    # ── Public actions ─────────────────────────────────────────────────────────
 
     async def refresh_all(self) -> None:
         self._set_loading(True)
         try:
             containers = get_running_containers()
-            self.conn_dot.set_content('<span class="status-dot dot-green"></span>')
             self.conn_label.set_text("connected")
+            self.conn_meta.set_text("docker host online")
             self._clear_error()
             self.config = load_config()
             self.results = await check_all(
@@ -256,8 +231,8 @@ class DashboardController:
             self._update_stats()
             self.table.render(self.results, self.check_one, self.toggle_pin)
         except DockerConnectionError as exc:
-            self.conn_dot.set_content('<span class="status-dot dot-red"></span>')
             self.conn_label.set_text("disconnected")
+            self.conn_meta.set_text("docker host offline")
             self._show_error(
                 str(exc),
                 "**Fixes to try:**\n"

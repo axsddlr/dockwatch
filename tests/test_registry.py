@@ -279,6 +279,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(latest_result.deployed_version, "v1.5.4-ls334")
         self.assertEqual(latest_result.latest_version, "v1.5.5-ls335")
         self.assertEqual(latest_result.version_status, "behind")
+        self.assertIsNotNone(latest_result.version_diff)
+        self.assertEqual(latest_result.version_diff.bump_type, "PATCH")
 
     async def test_check_container_skips_digest(self) -> None:
         digest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="DIGEST_PINNED")
@@ -336,6 +338,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.comparison_reason, "digest matches (v1.5.4-ls334)")
         self.assertEqual(result.latest_version, "v1.5.4-ls334")
         self.assertEqual(result.version_status, "equal")
+        self.assertIsNotNone(result.version_diff)
 
     async def test_check_container_reports_same_tag_digest_drift(self) -> None:
         info = ContainerInfo(
@@ -396,6 +399,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.latest_version, "1.2.3")
         self.assertEqual(result.version_status, "behind")
         self.assertIn("1.0.0 -> 1.2.3", result.comparison_reason or "")
+        self.assertIsNotNone(result.version_diff)
+        self.assertEqual(result.version_diff.bump_type, "MINOR")
 
     async def test_check_ghcr_floating_tag_prefers_same_tag_digest_for_non_semver_tags(self) -> None:
         info = ContainerInfo(

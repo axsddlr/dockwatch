@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from enum import Enum
 
+from .semver import VersionDiff
+
 
 class RegistryType(str, Enum):
     DOCKERHUB = "dockerhub"
@@ -88,6 +90,7 @@ class UpdateResult:
     comparison_basis: str | None = None
     comparison_reason: str | None = None
     version_status: str | None = None
+    version_diff: VersionDiff | None = None
 
 
 def resolved_deployed_version(result: UpdateResult) -> str | None:

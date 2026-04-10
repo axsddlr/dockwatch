@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
+from dockwatch.semver import compare_versions
 from dockwatch.web.pages.settings import build_sample_notification_results
 from dockwatch.web.shell import NAV_ITEMS
 from dockwatch.web.components.container_table import ContainerStatusTable
@@ -33,6 +34,9 @@ class _Ctx:
 
     def clear(self):
         return None
+
+    def tooltip(self, _value: str):
+        return self
 
 
 class _Label(_Ctx):
@@ -118,6 +122,7 @@ class DashboardComponentTests(unittest.TestCase):
                         remote_digest="sha256:abcdef1234567890",
                         comparison_basis="version",
                         comparison_reason="remote version 1.1.0 is newer than deployed 1.0.0",
+                        version_diff=compare_versions("1.0.0", "1.1.0"),
                     )
                 ],
                 on_check=lambda _name: None,
@@ -131,6 +136,7 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertIn("1.1.0 (sha256:abcdef123456)", ui.labels)
         self.assertIn("Check", ui.buttons)
         self.assertIn("Pin", ui.buttons)
+        self.assertTrue(any("MINOR" in block for block in ui.html_blocks))
 
     def test_container_status_table_renders_filter_empty_message(self) -> None:
         ui = _TableUI()

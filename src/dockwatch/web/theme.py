@@ -408,6 +408,20 @@ def apply_theme() -> None:
         border: 1px solid rgba(255,255,255,0.05);
     }}
 
+    .dw-bump-badge {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 20px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+    }}
+
     .status-dot {{
         display: inline-block;
         width: 8px;

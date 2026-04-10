@@ -7,6 +7,7 @@ from rich.console import Console
 
 from dockwatch.display import render_update_table
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
+from dockwatch.semver import compare_versions
 
 
 class DisplayTests(unittest.TestCase):
@@ -31,6 +32,7 @@ class DisplayTests(unittest.TestCase):
             event="update",
             comparison_basis="digest",
             comparison_reason="digest changed behind same tag",
+            version_diff=compare_versions("v3.39.0", "v4.0.0"),
         )
         console = Console(record=True, width=160)
 
@@ -39,6 +41,7 @@ class DisplayTests(unittest.TestCase):
 
         output = console.export_text()
         self.assertIn("latest (v3.39.0)", output)
+        self.assertIn("MAJOR", output)
         self.assertIn("digest", output)
         self.assertIn("digest changed behind same tag", output)
         self.assertIn("latest (sha256:remote-diges)", output)

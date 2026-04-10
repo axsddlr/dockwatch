@@ -20,6 +20,7 @@ from .models import (
     deployed_display,
     deployed_version_hint,
 )
+from .semver import compare_versions
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 # Multi-arch manifest types listed first so registries return manifest list digests
@@ -164,9 +165,11 @@ def _build_comparison_result(
     comparison_reason: str | None = None
     is_outdated: bool | None = None
     version_status: str | None = None
+    version_diff = None
     effective_remote_tag = remote_tag or latest_tag
 
     if deployed_version is not None and latest_version is not None:
+        version_diff = compare_versions(deployed_version, latest_version)
         deployed_parsed = _safe_version(deployed_version)
         latest_parsed = _safe_version(latest_version)
         if deployed_parsed is not None and latest_parsed is not None:
@@ -236,6 +239,7 @@ def _build_comparison_result(
         comparison_basis=comparison_basis,
         comparison_reason=comparison_reason,
         version_status=version_status,
+        version_diff=version_diff,
     )
 
 

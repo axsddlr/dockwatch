@@ -8,6 +8,7 @@ from dataclasses import asdict
 from enum import Enum
 
 import typer
+from packaging.version import Version
 
 from . import __version__
 from .config import DockwatchConfig, load_config, save_config
@@ -54,6 +55,7 @@ def check_updates(
     notify: bool = typer.Option(False, "--notify", help="Send configured notifications after checking."),
     json_output: bool = typer.Option(False, "--json", help="Print check output as JSON."),
     outdated_only: bool = typer.Option(False, "--outdated-only", help="Show only outdated containers."),
+    major_only: bool = typer.Option(False, "--major-only", help="Show only outdated containers with MAJOR semver bumps."),
 ) -> None:
     """Check running containers for newer image tags."""
     try:
@@ -73,11 +75,21 @@ def check_updates(
     results = asyncio.run(check_all(containers, config, store=store, max_concurrency=config.max_concurrent_checks))
     if outdated_only:
         results = [result for result in results if result.is_outdated is True]
+    if major_only:
+        results = [
+            result
+            for result in results
+            if result.is_outdated is True
+            and result.version_diff is not None
+            and result.version_diff.bump_type == "MAJOR"
+        ]
 
     if json_output:
         def _serialize(value):  # noqa: ANN001
             if isinstance(value, Enum):
                 return value.value
+            if isinstance(value, Version):
+                return str(value)
             return value
 
         payload = [asdict(result, dict_factory=dict) for result in results]

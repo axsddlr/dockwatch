@@ -8,7 +8,7 @@ from nicegui import ui
 
 from ...links import build_registry_link
 from ...models import UpdateResult, deployed_display_result, remote_display
-from ..theme import STATUS_BG, STATUS_COLOR, TEXT_MUTED, TEXT_PRIMARY
+from ..theme import PRIMARY, STATUS_BG, STATUS_COLOR, TEXT_MUTED, TEXT_PRIMARY
 
 CheckHandler = Callable[[str], Awaitable[None]]
 PinHandler = Callable[[str], Awaitable[None]]
@@ -24,6 +24,21 @@ def _status_label(result: UpdateResult) -> str:
     if result.is_outdated is False:
         return "UP-TO-DATE"
     return "UNKNOWN"
+
+
+def _bump_meta(result: UpdateResult) -> tuple[str, str] | None:
+    if result.version_diff is None:
+        return None
+    bump_type = result.version_diff.bump_type
+    if bump_type == "UNKNOWN":
+        return None
+    color = {
+        "MAJOR": "#F87171",
+        "MINOR": "#FBBF24",
+        "PATCH": "#3FE17F",
+        "PRE-RELEASE": PRIMARY,
+    }.get(bump_type, PRIMARY)
+    return bump_type, color
 
 
 class ContainerStatusTable:
@@ -104,7 +119,7 @@ class ContainerStatusTable:
             _status_cell(status, pill_bg, pill_color)
             _cell(result.comparison_basis or "-", label="Basis")
             _cell(deployed_value, label="Deployed", mono=True)
-            _cell(remote_value, label="Remote", mono=True)
+            _remote_cell(remote_value, result)
 
             with ui.row().classes("dw-actions"):
                 ui.button(
@@ -133,3 +148,17 @@ def _status_cell(text: str, bg: str, color: str) -> None:
 def _cell(value: str, *, label: str, mono: bool = False) -> None:
     classes = "dw-data-cell mono" if mono else "dw-data-cell"
     ui.label(value).classes(classes).props(f'data-label="{label}"')
+
+
+def _remote_cell(value: str, result: UpdateResult) -> None:
+    with ui.element("div").classes("dw-data-cell").props('data-label="Remote"'):
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            remote_label = ui.label(value).classes("dw-data-cell mono")
+            if result.version_diff is not None:
+                remote_label.tooltip(f"{result.version_diff.current_raw} -> {result.version_diff.latest_raw} ({result.version_diff.bump_type})")
+            bump_meta = _bump_meta(result)
+            if bump_meta and result.is_outdated:
+                bump_type, color = bump_meta
+                ui.html(
+                    f'<span class="dw-bump-badge" style="background:{color}1F; color:{color}; border-color:{color}55;">{bump_type}</span>'
+                )

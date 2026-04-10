@@ -48,11 +48,26 @@ def _status_label(result: UpdateResult) -> tuple[str, str]:
     return "UNKNOWN", "yellow"
 
 
+def _bump_label(result: UpdateResult) -> str:
+    if result.version_diff is None:
+        return "[dim]-[/dim]"
+    bump_type = result.version_diff.bump_type
+    color = {
+        "MAJOR": "red",
+        "MINOR": "yellow",
+        "PATCH": "green",
+        "PRE-RELEASE": "cyan",
+        "UNKNOWN": "dim",
+    }.get(bump_type, "dim")
+    return f"[{color}]{bump_type}[/{color}]"
+
+
 def render_update_table(results: list[UpdateResult]) -> None:
     table = Table(title="Container Update Status")
     table.add_column("Name", style="cyan")
     table.add_column("Deployed")
     table.add_column("Remote")
+    table.add_column("Bump")
     table.add_column("Basis")
     table.add_column("Why")
     table.add_column("Status")
@@ -68,6 +83,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
             result.container_info.name or "-",
             deployed_display_result(result),
             remote_value,
+            _bump_label(result),
             result.comparison_basis or "-",
             reason_display,
             f"[{color}]{status}[/{color}]",
@@ -75,7 +91,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
         )
 
     if not results:
-        table.add_row("-", "-", "No results", "-", "-", "[yellow]UNKNOWN[/yellow]", "-")
+        table.add_row("-", "-", "No results", "[dim]-[/dim]", "-", "-", "[yellow]UNKNOWN[/yellow]", "-")
 
     console.print(table)
 

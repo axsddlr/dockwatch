@@ -69,6 +69,36 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result_entry["remote_display"], "1.1.0")
         self.assertEqual(result_entry["comparison_reason"], "remote version 1.1.0 is newer than deployed 1.0.0")
 
+    async def test_ntfy_uses_publish_headers(self) -> None:
+        config = DockwatchConfig(ntfy_url="https://ntfy.test/topic")
+        captured: list[dict] = []
+
+        class CaptureResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+        class CaptureClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def post(self, url: str, content=None, headers=None, **kwargs):  # noqa: ANN001
+                captured.append({"url": url, "content": content, "headers": headers, "kwargs": kwargs})
+                return CaptureResponse()
+
+        with patch("dockwatch.notifiers.ntfy.httpx.AsyncClient", return_value=CaptureClient()):
+            await send_configured_notifications(self._sample_results(), config, apply_filters=False)
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["url"], "https://ntfy.test/topic")
+        self.assertEqual(captured[0]["headers"]["X-Title"], "web: update")
+        self.assertEqual(captured[0]["headers"]["X-Priority"], "3")
+        self.assertEqual(captured[0]["headers"]["X-Tags"], "whale,arrow_up")
+        self.assertEqual(captured[0]["headers"]["Content-Type"], "text/plain; charset=utf-8")
+        self.assertIsInstance(captured[0]["content"], bytes)
+
     async def test_notify_only_filters_results(self) -> None:
         sent: list[list[UpdateResult]] = []
         config = DockwatchConfig(

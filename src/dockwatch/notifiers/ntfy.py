@@ -54,9 +54,10 @@ class NtfyNotifier(BaseNotifier):
                 self.url,
                 content=message.encode(),
                 headers={
-                    "Title": title,
-                    "Priority": "default",
-                    "Tags": "whale,arrow_up",
+                    "X-Title": title,
+                    "X-Priority": "3",
+                    "X-Tags": "whale,arrow_up",
+                    "Content-Type": "text/plain; charset=utf-8",
                 },
             )
             response.raise_for_status()

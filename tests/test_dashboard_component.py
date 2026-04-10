@@ -124,7 +124,7 @@ class DashboardComponentTests(unittest.TestCase):
                 on_pin_toggle=lambda _name: None,
             )
 
-        self.assertEqual(ui.links[0], ("Hub", "https://hub.docker.com/_/nginx"))
+        self.assertEqual(ui.links[0], ("Docker Hub", "https://hub.docker.com/_/nginx"))
         self.assertIn("web", ui.labels)
         self.assertIn("version", ui.labels)
         self.assertIn("1.0.0", ui.labels)

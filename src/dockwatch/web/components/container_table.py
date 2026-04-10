@@ -95,10 +95,9 @@ class ContainerStatusTable:
                     if registry_link:
                         label, url = registry_link
                         with ui.row().classes("items-center gap-2 no-wrap"):
-                            ui.link(label, url).props("target=_blank").style(
-                                f"font-size:11px; color:{TEXT_MUTED}; text-decoration:none;"
-                            )
-                            ui.label(image_ref).classes("dw-name-subtitle")
+                            ui.link(label, url).props("target=_blank").classes("dw-registry-link")
+                            ui.icon("open_in_new", size="12px").classes("dw-registry-link-icon")
+                        ui.label(image_ref).classes("dw-name-subtitle")
                     else:
                         ui.label(image_ref).classes("dw-name-subtitle")
 

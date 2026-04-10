@@ -43,8 +43,8 @@ def build_registry_link(info: ContainerInfo) -> tuple[str, str] | None:
     if not url:
         return None
     if info.registry == RegistryType.DOCKERHUB:
-        return "Hub", url
+        return "Docker Hub", url
     source_url = _source_url(info)
     if source_url:
-        return "Source", url
-    return "Repo", url
+        return "Source Repo", url
+    return "Registry Repo", url

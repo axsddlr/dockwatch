@@ -348,6 +348,32 @@ def apply_theme() -> None:
         text-overflow: ellipsis;
     }}
 
+    .dw-registry-link {{
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(19,196,242,0.14);
+        border: 1px solid rgba(19,196,242,0.24);
+        color: {PRIMARY} !important;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-decoration: none !important;
+        text-transform: uppercase;
+    }}
+
+    .dw-registry-link:hover {{
+        background: rgba(19,196,242,0.22);
+        border-color: rgba(19,196,242,0.34);
+    }}
+
+    .dw-registry-link-icon {{
+        color: {PRIMARY};
+        opacity: 0.95;
+    }}
+
     .dw-data-cell {{
         color: {TEXT_PRIMARY};
         font-size: 11px;

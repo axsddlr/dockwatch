@@ -41,7 +41,7 @@ class SettingsController:
     def __init__(self) -> None:
         self.config = load_config()
 
-        with ui.column().classes("w-full").style("max-width: 760px; margin: 0 auto; gap: 14px;"):
+        with ui.column().classes("w-full").style("max-width: 760px; margin: 0; gap: 14px;"):
             with ui.row().classes("w-full items-center justify-between").style("padding: 2px 2px 0;"):
                 with ui.column().classes("gap-0"):
                     ui.label("Settings").classes("section-label")

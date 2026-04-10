@@ -97,11 +97,12 @@ def apply_theme() -> None:
     .mono-sm {{ font-family: 'Fira Code', monospace !important; font-size: 12px !important; }}
 
     .dw-shell {{
-        width: 100%;
-        max-width: 1260px;
-        margin: 0 auto;
-        padding: 18px 16px 40px;
+        width: min(1260px, 100%);
+        max-width: none;
+        margin: 0;
+        padding: 18px 18px 40px;
         gap: 14px;
+        align-self: flex-start;
     }}
 
     .dw-nav {{
@@ -114,6 +115,7 @@ def apply_theme() -> None:
         background: {BG_PANEL_ALT} !important;
         border-right: 1px solid {BORDER} !important;
         color: {TEXT_PRIMARY} !important;
+        width: 248px !important;
     }}
 
     .dw-drawer-link {{
@@ -358,6 +360,10 @@ def apply_theme() -> None:
     }}
 
     @media (max-width: 980px) {{
+        .dw-drawer {{
+            width: 248px !important;
+        }}
+
         .dw-summary-strip {{
             grid-template-columns: repeat(2, minmax(120px, 1fr));
         }}

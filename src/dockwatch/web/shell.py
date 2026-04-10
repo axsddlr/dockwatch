@@ -39,6 +39,7 @@ def page_shell(*, active_route: str) -> Iterator[None]:
             )
 
     drawer = ui.left_drawer(value=False)
+    drawer.props("show-if-above bordered")
     drawer.classes("dw-drawer")
     with drawer:
         ui.label("Navigation").classes("section-label").style("padding: 16px 16px 8px;")

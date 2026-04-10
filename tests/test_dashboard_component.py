@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
+from dockwatch.web.pages.settings import build_sample_notification_results
+from dockwatch.web.shell import NAV_ITEMS
 from dockwatch.web.components.container_table import ContainerStatusTable
 
 
@@ -79,6 +81,18 @@ class _TableUI:
 
 
 class DashboardComponentTests(unittest.TestCase):
+    def test_navigation_items_include_dashboard_and_settings(self) -> None:
+        self.assertEqual(NAV_ITEMS[0][:2], ("Dashboard", "/"))
+        self.assertEqual(NAV_ITEMS[1][:2], ("Settings", "/settings"))
+
+    def test_settings_page_uses_sample_notification_result(self) -> None:
+        sample = build_sample_notification_results()
+
+        self.assertEqual(len(sample), 1)
+        self.assertEqual(sample[0].container_info.name, "sample")
+        self.assertEqual(sample[0].comparison_basis, "version")
+        self.assertEqual(sample[0].remote_tag, "1.1.0")
+
     def test_container_status_table_renders_registry_link(self) -> None:
         ui = _TableUI()
         with patch("dockwatch.web.components.container_table.ui", ui):

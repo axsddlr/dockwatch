@@ -110,6 +110,33 @@ def apply_theme() -> None:
         min-height: 58px !important;
     }}
 
+    .dw-drawer {{
+        background: {BG_PANEL_ALT} !important;
+        border-right: 1px solid {BORDER} !important;
+        color: {TEXT_PRIMARY} !important;
+    }}
+
+    .dw-drawer-link {{
+        width: 100%;
+        justify-content: flex-start;
+        border-radius: 8px;
+        color: {TEXT_PRIMARY} !important;
+        border: 1px solid transparent;
+        background: transparent !important;
+        min-height: 42px !important;
+    }}
+
+    .dw-drawer-link .q-btn__content {{
+        justify-content: flex-start !important;
+        font-weight: 600 !important;
+        gap: 10px;
+    }}
+
+    .dw-drawer-link.active {{
+        background: rgba(19,196,242,0.12) !important;
+        border-color: rgba(19,196,242,0.2) !important;
+    }}
+
     .dw-panel {{
         background: {BG_PANEL} !important;
         border: 1px solid {BORDER} !important;

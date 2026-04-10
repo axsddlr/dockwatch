@@ -527,6 +527,8 @@ async def check_container(
     if info.registry == RegistryType.GHCR:
         return await check_ghcr(info, store, config, client=client)
 
+    if info.registry == RegistryType.UNKNOWN:
+        return _skip_result(info, "local-only or unsupported image reference")
     return _skip_result(info, "unsupported registry")
 
 

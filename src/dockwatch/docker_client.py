@@ -89,6 +89,22 @@ def _build_container_info(
     )
 
 
+def _infer_default_registry(
+    parts: list[str],
+    *,
+    repo_digest: str | None,
+) -> RegistryType:
+    """Infer registry for refs without an explicit host component.
+
+    Single-segment refs like ``dockwatch-local:dev`` are often locally built
+    images. If Docker has no repo digest for them, treat them as local/unknown
+    instead of assuming Docker Hub.
+    """
+    if len(parts) == 1 and not repo_digest:
+        return RegistryType.UNKNOWN
+    return RegistryType.DOCKERHUB
+
+
 def parse_image_ref(
     image_str: str,
     *,
@@ -146,7 +162,7 @@ def parse_image_ref(
     first = parts[0]
     has_explicit_registry = "." in first or ":" in first or first == "localhost"
 
-    registry = RegistryType.DOCKERHUB
+    registry = _infer_default_registry(parts, repo_digest=repo_digest)
     path_parts = parts
 
     if has_explicit_registry:

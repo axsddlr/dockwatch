@@ -288,6 +288,14 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(digest_result.is_outdated)
         self.assertIn("skipped", digest_result.check_error or "")
 
+    async def test_check_container_skips_local_unknown_images(self) -> None:
+        local_info = make_container(registry=RegistryType.UNKNOWN, current_tag="dev")
+
+        result = await check_container(local_info)
+
+        self.assertIsNone(result.is_outdated)
+        self.assertEqual(result.check_error, "local-only or unsupported image reference")
+
     async def test_check_lscr_uses_digest_for_exact_match(self) -> None:
         info = ContainerInfo(
             name="bazarr",

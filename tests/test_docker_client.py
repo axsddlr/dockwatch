@@ -53,6 +53,14 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(info.include_tags_override, [r"^1\.", r"^2\."])
         self.assertEqual(info.exclude_tags_override, [r"-rc$", r"-beta$"])
 
+    def test_parse_image_ref_treats_single_segment_local_images_as_unknown(self) -> None:
+        info = parse_image_ref("dockwatch-local:dev")
+
+        self.assertEqual(info.registry, RegistryType.UNKNOWN)
+        self.assertEqual(info.namespace, "library")
+        self.assertEqual(info.image_name, "dockwatch-local")
+        self.assertEqual(info.current_tag, "dev")
+
     def test_get_running_containers_uses_docker_metadata(self) -> None:
         fake_client = FakeDockerClient()
         with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):

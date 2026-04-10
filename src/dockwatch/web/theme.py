@@ -5,11 +5,11 @@ from __future__ import annotations
 from nicegui import ui
 
 BG_PAGE = "#141416"
-BG_PANEL = "#1A1B1E"
-BG_PANEL_ALT = "#18191C"
-BG_TABLE_HEAD = "#114954"
+BG_PANEL = "#1B1C1F"
+BG_PANEL_ALT = "#17181B"
+BG_TABLE_HEAD = "#134A54"
 BG_INPUT = "#101114"
-BORDER = "rgba(255,255,255,0.08)"
+BORDER = "rgba(255,255,255,0.07)"
 BORDER_STRONG = "rgba(255,255,255,0.14)"
 
 TEXT_PRIMARY = "#EEF2F4"
@@ -97,10 +97,10 @@ def apply_theme() -> None:
     .mono-sm {{ font-family: 'Fira Code', monospace !important; font-size: 12px !important; }}
 
     .dw-shell {{
-        width: min(1260px, 100%);
+        width: min(1240px, 100%);
         max-width: none;
-        padding: 18px 18px 40px;
-        gap: 14px;
+        padding: 20px 20px 40px;
+        gap: 12px;
         transition: margin 140ms ease;
     }}
 
@@ -115,26 +115,26 @@ def apply_theme() -> None:
     }}
 
     .dw-nav {{
-        background: rgba(18, 19, 22, 0.96) !important;
+        background: rgba(20, 21, 24, 0.98) !important;
         border-bottom: 1px solid {BORDER} !important;
-        min-height: 58px !important;
+        min-height: 46px !important;
     }}
 
     .dw-drawer {{
         background: {BG_PANEL_ALT} !important;
         border-right: 1px solid {BORDER} !important;
         color: {TEXT_PRIMARY} !important;
-        width: 248px !important;
+        width: 246px !important;
     }}
 
     .dw-drawer-link {{
         width: 100%;
         justify-content: flex-start;
-        border-radius: 8px;
+        border-radius: 6px;
         color: {TEXT_PRIMARY} !important;
         border: 1px solid transparent;
         background: transparent !important;
-        min-height: 42px !important;
+        min-height: 36px !important;
     }}
 
     .dw-drawer-link .q-btn__content {{
@@ -144,77 +144,123 @@ def apply_theme() -> None:
     }}
 
     .dw-drawer-link.active {{
-        background: rgba(19,196,242,0.12) !important;
-        border-color: rgba(19,196,242,0.2) !important;
+        background: rgba(19,196,242,0.14) !important;
+        border-color: rgba(19,196,242,0.18) !important;
+    }}
+
+    .dw-top-brand {{
+        font-size: 17px;
+        font-weight: 700;
+        color: {TEXT_PRIMARY};
+        letter-spacing: -0.03em;
+    }}
+
+    .dw-version-badge {{
+        padding: 3px 8px;
+        background: #F5F7F8;
+        color: #111315;
+        border-radius: 6px;
+        font-family: 'Fira Code', monospace;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1;
     }}
 
     .dw-panel {{
         background: {BG_PANEL} !important;
         border: 1px solid {BORDER} !important;
-        border-radius: 8px !important;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.015);
+        border-radius: 7px !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }}
 
     .dw-summary-strip {{
         display: grid;
         grid-template-columns: repeat(4, minmax(120px, 1fr));
-        gap: 10px;
+        gap: 8px;
     }}
 
     .dw-summary-chip {{
         background: {BG_PANEL} !important;
         border: 1px solid {BORDER} !important;
-        border-radius: 8px !important;
-        padding: 10px 12px;
-        min-height: 66px;
+        border-radius: 7px !important;
+        padding: 10px 12px 9px;
+        min-height: 60px;
+    }}
+
+    .dw-summary-chip .section-label {{
+        margin-bottom: 6px;
+    }}
+
+    .dw-page-meta {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 2px 2px 4px;
     }}
 
     .dw-controls {{
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 12px;
-        padding: 12px 14px;
+        padding: 14px 14px 10px;
     }}
 
     .dw-toolbar-group {{
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 10px;
+        gap: 9px;
+    }}
+
+    .dw-toolbar-meta {{
+        margin-left: auto;
+    }}
+
+    .dw-filter-row {{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px 12px;
+        border-top: 1px solid {BORDER};
     }}
 
     .dw-btn-primary .q-btn__content {{
         font-family: 'Fira Sans', sans-serif !important;
         font-weight: 600 !important;
-        letter-spacing: 0 !important;
+        letter-spacing: 0.01em !important;
+        font-size: 12px !important;
     }}
 
     .dw-btn-primary {{
-        background: {ACCENT} !important;
-        color: #08210e !important;
+        background: {PRIMARY} !important;
+        color: #04161d !important;
         border-radius: 6px !important;
-        min-height: 38px !important;
+        min-height: 34px !important;
     }}
 
     .dw-btn-secondary {{
         background: {PRIMARY} !important;
-        color: #07212a !important;
+        color: #051820 !important;
         border-radius: 6px !important;
-        min-height: 34px !important;
+        min-height: 30px !important;
+        padding: 0 10px !important;
     }}
 
     .dw-btn-ghost {{
-        background: #111215 !important;
+        background: #101114 !important;
         color: {TEXT_PRIMARY} !important;
         border: 1px solid {BORDER_STRONG} !important;
         border-radius: 6px !important;
-        min-height: 34px !important;
+        min-height: 30px !important;
+        padding: 0 10px !important;
     }}
 
     .dw-btn-ghost .q-btn__content {{
-        font-size: 12px !important;
+        font-size: 11px !important;
         font-weight: 600 !important;
     }}
 
@@ -224,10 +270,19 @@ def apply_theme() -> None:
         border-radius: 6px;
     }}
 
+    .dw-section-head {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 6px 10px;
+        border-bottom: 1px solid {BORDER};
+    }}
+
     .dw-table-wrap {{
         background: {BG_PANEL} !important;
         border: 1px solid {BORDER} !important;
-        border-radius: 8px !important;
+        border-radius: 7px !important;
         overflow: hidden;
     }}
 
@@ -236,7 +291,7 @@ def apply_theme() -> None:
         grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
         gap: 12px;
         align-items: center;
-        padding: 11px 16px;
+        padding: 10px 16px;
         background: {BG_TABLE_HEAD};
         border-bottom: 1px solid rgba(255,255,255,0.08);
     }}
@@ -246,7 +301,7 @@ def apply_theme() -> None:
         grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
         gap: 12px;
         align-items: center;
-        padding: 12px 16px;
+        padding: 10px 16px;
         background: {BG_PANEL};
         border-bottom: 1px solid rgba(255,255,255,0.05);
     }}
@@ -255,7 +310,7 @@ def apply_theme() -> None:
 
     .dw-col-label {{
         font-family: 'Fira Code', monospace;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: rgba(255,255,255,0.92);
         text-transform: none;
@@ -277,7 +332,7 @@ def apply_theme() -> None:
 
     .dw-name-title {{
         color: {TEXT_PRIMARY};
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
@@ -295,7 +350,7 @@ def apply_theme() -> None:
 
     .dw-data-cell {{
         color: {TEXT_PRIMARY};
-        font-size: 12px;
+        font-size: 11px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -305,14 +360,21 @@ def apply_theme() -> None:
         font-size: 11px;
     }}
 
+    .dw-actions {{
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+    }}
+
     .status-pill {{
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 28px;
-        padding: 4px 10px;
+        min-height: 24px;
+        padding: 3px 9px;
         border-radius: 6px;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.02em;
         text-transform: none;
@@ -362,6 +424,30 @@ def apply_theme() -> None:
         font-size: 12px;
     }}
 
+    .dw-settings-wrap {{
+        width: min(920px, 100%);
+        gap: 12px;
+    }}
+
+    .dw-settings-grid {{
+        display: grid;
+        grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+    }}
+
+    .dw-settings-side {{
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }}
+
+    .dw-settings-main {{
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }}
+
     *:focus-visible {{
         outline: 2px solid {PRIMARY};
         outline-offset: 2px;
@@ -384,6 +470,14 @@ def apply_theme() -> None:
         .dw-table-row {{
             grid-template-columns: 1fr;
             gap: 8px;
+        }}
+
+        .dw-toolbar-meta {{
+            margin-left: 0;
+        }}
+
+        .dw-settings-grid {{
+            grid-template-columns: 1fr;
         }}
 
         .dw-data-cell::before {{

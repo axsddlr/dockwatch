@@ -107,7 +107,7 @@ class ContainerStatusTable:
             _cell(deployed_value, label="Deployed", mono=True)
             _cell(remote_value, label="Remote", mono=True)
 
-            with ui.row().classes("items-center justify-end gap-2"):
+            with ui.row().classes("dw-actions"):
                 ui.button(
                     "Check",
                     icon="refresh",

@@ -46,7 +46,7 @@ class DashboardController:
         self.store = ManifestStore()
         self._loading = False
 
-        with ui.row().classes("w-full items-center justify-between").style("padding: 2px 2px 0;"):
+        with ui.row().classes("dw-page-meta w-full"):
             with ui.column().classes("gap-0"):
                 ui.label("Monitoring").classes("section-label")
                 ui.label("Container Update Dashboard").style(
@@ -84,16 +84,14 @@ class DashboardController:
                         .props("dark dense borderless")
                     )
 
-                with ui.row().classes("dw-toolbar-group"):
+                with ui.row().classes("dw-toolbar-group dw-toolbar-meta"):
                     self.last_checked_label = ui.label("last check: never").classes("mono-sm").style(
                         f"color:{TEXT_MUTED};"
                     )
                     self.container_count_label = ui.label("0 containers").classes("mono-sm").style(
                         f"color:{TEXT_MUTED};"
                     )
-            self.filter_row = ui.row().classes("dw-toolbar-group").style(
-                f"padding: 0 14px 12px; border-top:1px solid {BORDER};"
-            )
+            self.filter_row = ui.row().classes("dw-filter-row")
 
         self.error_banner = ui.card().classes("dw-panel w-full").style(
             f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important; display:none;"
@@ -105,9 +103,7 @@ class DashboardController:
             self.error_help = ui.markdown("").style(f"color:{TEXT_MUTED}; margin-top:6px;")
 
         with ui.card().classes("dw-panel w-full").style("padding: 10px 10px 4px;"):
-            with ui.row().classes("w-full items-center justify-between").style(
-                f"padding: 0 6px 10px; border-bottom:1px solid {BORDER};"
-            ):
+            with ui.row().classes("dw-section-head"):
                 with ui.row().classes("items-center gap-2"):
                     ui.icon("inventory_2", size="18px").style(f"color:{PRIMARY};")
                     ui.label("Local Containers").classes("section-label")
@@ -212,7 +208,7 @@ class DashboardController:
         self._stat_pinned_val.set_text(str(pinned))
         visible = len(self._filtered_results())
         if self.selected_statuses:
-            self.container_count_label.set_text(f"{total} containers - {visible} shown")
+            self.container_count_label.set_text(f"{total} containers  {visible} shown")
         else:
             self.container_count_label.set_text(f"{total} containers")
 

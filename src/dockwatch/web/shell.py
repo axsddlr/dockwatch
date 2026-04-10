@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from nicegui import ui
 
 from .. import __version__
-from .theme import TEXT_MUTED, TEXT_PRIMARY
+from .theme import TEXT_MUTED
 
 NAV_ITEMS: tuple[tuple[str, str, str], ...] = (
     ("Dashboard", "/", "dashboard"),
@@ -24,26 +24,21 @@ def page_shell(*, active_route: str) -> Iterator[None]:
 
     with ui.header().classes("dw-nav").style("padding: 0 16px;"):
         with ui.row().classes("w-full items-center justify-between").style(
-            "max-width:1260px; margin:0 auto; min-height:58px;"
+            "max-width:1260px; margin:0 auto; min-height:46px;"
         ):
             with ui.row().classes("items-center gap-3"):
                 menu_button = ui.button(icon="menu").props("flat round dense").style(
-                    f"color:{TEXT_MUTED};"
+                    "color:#13C4F2;"
                 )
-                ui.label("dockwatch").style(
-                    f"font-size:22px; font-weight:700; color:{TEXT_PRIMARY}; "
-                    "letter-spacing:-0.03em;"
-                )
+                ui.label("dockwatch").classes("dw-top-brand")
 
-            ui.label(f"v{__version__}").classes("mono-sm").style(
-                "padding:4px 8px; background:#F5F7F8; color:#111315; border-radius:6px;"
-            )
+            ui.label(f"v{__version__}").classes("dw-version-badge")
 
     drawer = ui.left_drawer(value=False)
     drawer.props("show-if-above bordered")
     drawer.classes("dw-drawer")
     with drawer:
-        ui.label("Navigation").classes("section-label").style("padding: 16px 16px 8px;")
+        ui.label("Navigation").classes("section-label").style("padding: 28px 18px 10px;")
         with ui.column().classes("w-full gap-2").style("padding: 0 10px 16px;"):
             for label, route, icon in NAV_ITEMS:
                 classes = "dw-drawer-link active" if route == active_route else "dw-drawer-link"

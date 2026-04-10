@@ -99,9 +99,18 @@ def apply_theme() -> None:
     .dw-shell {{
         width: min(1260px, 100%);
         max-width: none;
-        margin: 0;
         padding: 18px 18px 40px;
         gap: 14px;
+        transition: margin 140ms ease;
+    }}
+
+    .dw-shell--centered {{
+        margin: 0 auto;
+        align-self: center;
+    }}
+
+    .dw-shell--anchored {{
+        margin: 0;
         align-self: flex-start;
     }}
 

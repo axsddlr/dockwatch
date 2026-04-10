@@ -20,6 +20,7 @@ NAV_ITEMS: tuple[tuple[str, str, str], ...] = (
 def page_shell(*, active_route: str) -> Iterator[None]:
     """Render the shared top bar and hamburger drawer, then yield page content."""
     menu_button = None
+    shell_container = None
 
     with ui.header().classes("dw-nav").style("padding: 0 16px;"):
         with ui.row().classes("w-full items-center justify-between").style(
@@ -52,8 +53,21 @@ def page_shell(*, active_route: str) -> Iterator[None]:
                     on_click=lambda _=None, path=route: ui.navigate.to(path),
                 ).props("flat no-caps align=left").classes(classes)
 
-    if menu_button is not None:
-        menu_button.on("click", lambda: drawer.toggle())
+    def sync_shell_layout(*_args) -> None:
+        if shell_container is None:
+            return
+        if drawer.value:
+            shell_container.classes(add="dw-shell--anchored")
+            shell_container.classes(remove="dw-shell--centered")
+        else:
+            shell_container.classes(add="dw-shell--centered")
+            shell_container.classes(remove="dw-shell--anchored")
 
-    with ui.column().classes("dw-shell"):
+    if menu_button is not None:
+        menu_button.on("click", lambda: (drawer.toggle(), sync_shell_layout()))
+
+    shell_container = ui.column().classes("dw-shell")
+    with shell_container:
+        sync_shell_layout()
+        drawer.on_value_change(lambda _event: sync_shell_layout())
         yield

@@ -197,10 +197,10 @@ def parse_image_ref(
 
 
 def get_running_containers() -> list[ContainerInfo]:
-    """Return running Docker containers with normalized image metadata."""
+    """Return Docker containers, including non-running ones, with normalized image metadata."""
     try:
         client = docker.from_env()
-        raw_containers = client.containers.list()
+        raw_containers = client.containers.list(all=True)
     except DockerException as exc:
         raise DockerConnectionError(
             "Could not connect to Docker. Ensure the Docker daemon is running "

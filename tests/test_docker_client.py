@@ -32,8 +32,10 @@ class FakeContainer:
 class FakeDockerClient:
     def __init__(self) -> None:
         self.containers = self
+        self.list_kwargs: dict[str, object] | None = None
 
-    def list(self) -> list[FakeContainer]:
+    def list(self, **kwargs) -> list[FakeContainer]:
+        self.list_kwargs = kwargs
         return [FakeContainer()]
 
 
@@ -52,7 +54,8 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(info.exclude_tags_override, [r"-rc$", r"-beta$"])
 
     def test_get_running_containers_uses_docker_metadata(self) -> None:
-        with patch("dockwatch.docker_client.docker.from_env", return_value=FakeDockerClient()):
+        fake_client = FakeDockerClient()
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
             containers = get_running_containers()
 
         self.assertEqual(len(containers), 1)
@@ -62,6 +65,7 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(container.registry, RegistryType.DOCKERHUB)
         self.assertTrue(container.watch_enabled)
         self.assertEqual(container.repo_digest, "example@sha256:abc123")
+        self.assertEqual(fake_client.list_kwargs, {"all": True})
 
 
 if __name__ == "__main__":

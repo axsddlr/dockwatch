@@ -21,6 +21,7 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 - Supports Docker label overrides for enable/pin/ignore/notify behavior
 - Supports label-based tag regex overrides via `dockwatch.include_tags` and `dockwatch.exclude_tags`
 - Adds registry links to notification payloads when a registry page can be derived
+- Supports optional Portainer-backed discovery/checks across Portainer-managed environments
 - Provides web dashboard actions:
   - refresh all
   - check per-row
@@ -30,11 +31,12 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 
 Implemented:
 - Docker Hub + GHCR check pipeline
-- CLI commands: `list`, `check`, `version`, `serve`, `pin`, `ignore`, `config list`
+- CLI commands: `list`, `check`, `version`, `serve`, `pin`, `ignore`, `config list`, `environments`
 - CLI command: `daemon`
-- CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`
+- CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`, `--source`, `--environment`
 - NiceGUI dashboard with dark mode + responsive layout
 - Config persistence and notification settings UI
+- Read-only Portainer integration via API key
 - Dockerfile + docker-compose scaffolding
 - CI workflow (`ruff`, `mypy`, `pytest`)
 
@@ -69,10 +71,28 @@ Dashboard default URL:
 dockwatch list
 ```
 
+### List Portainer-managed containers
+
+```bash
+dockwatch list --source portainer
+```
+
 ### Check for updates
 
 ```bash
 dockwatch check
+```
+
+### Check Portainer-managed containers
+
+```bash
+dockwatch check --source portainer
+```
+
+### Check both local Docker and Portainer sources
+
+```bash
+dockwatch check --source all
 ```
 
 ### Check only one container
@@ -114,7 +134,9 @@ dockwatch serve --host 0.0.0.0 --port 8080
 ## CLI Reference
 
 - `dockwatch list`
-- `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify]`
+- `dockwatch list [--source local|portainer|all] [--environment ID]`
+- `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify] [--source local|portainer|all] [--environment ID]`
+- `dockwatch environments`
 - `dockwatch version`
 - `dockwatch serve [--host 0.0.0.0] [--port 8080]`
 - `dockwatch daemon [--notify/--no-notify]`
@@ -146,6 +168,12 @@ max_concurrent_checks = 5
 webhook_url = ""
 discord_webhook = ""
 ntfy_url = ""
+
+[portainer]
+enabled = false
+url = ""
+api_key = ""
+environments = []
 ```
 
 Notes:
@@ -156,7 +184,57 @@ Notes:
 - `exclude_tags`: optional regex denylist applied after include filtering
 - `notify_on`: event filter for `new` and `update`
 - `first_check_notify`: controls whether first discovery (`new`) is allowed to notify
-- notifier URLs can be managed from CLI config file or dashboard settings card
+- notifier URLs can be managed from CLI config file or dashboard settings page
+- `portainer.enabled`: turns Portainer discovery on for CLI and dashboard source selection
+- `portainer.url`: base Portainer URL such as `https://portainer.local:9443`
+- `portainer.api_key`: Portainer API key used with the `X-API-Key` header
+- `portainer.environments`: optional environment ID allowlist; empty means all visible environments
+
+## Portainer Integration
+
+`dockwatch` can use Portainer as an additional container source. This lets you inspect and check containers that live in Portainer-managed Docker environments without talking to those remote Docker daemons directly.
+
+What it does today:
+- lists available Portainer environments
+- discovers containers from one or more Portainer environments
+- runs the normal registry check pipeline against those discovered containers
+- exposes Portainer as a source in both CLI and dashboard
+- lets you narrow checks to a specific environment
+
+How it works:
+- `dockwatch` calls the Portainer API using an API key and the `X-API-Key` header
+- it reads environments from `GET /api/endpoints`
+- it reads containers from `GET /api/endpoints/{id}/docker/containers/json?all=true`
+- discovered Portainer containers are normalized into the same internal model used for local Docker checks
+- once normalized, the existing digest/version/tag comparison logic runs the same way as local checks
+
+Current limits:
+- Portainer support is read-only in the current release
+- `dockwatch` does not yet trigger Portainer-native pull, recreate, or update actions
+- API key auth is supported; username/password login is not implemented
+- Portainer-sourced rows may have less local image digest evidence than direct local Docker inspection, so some results rely more on available version/tag metadata
+
+CLI examples:
+
+```bash
+# show Portainer environments
+dockwatch environments
+
+# list containers from all configured Portainer environments
+dockwatch list --source portainer
+
+# check a single Portainer environment
+dockwatch check --source portainer --environment 2
+
+# combine local Docker and Portainer results
+dockwatch check --source all
+```
+
+Dashboard behavior:
+- the Settings page includes Portainer URL, API key, environment filtering, and a `Test Portainer Connection` action
+- the dashboard includes a source toggle for `Local Docker`, `Portainer`, and `All`
+- when Portainer is active and multiple environments are available, an environment selector appears
+- Portainer rows are labeled with their environment so they can be distinguished from local Docker rows
 
 ## Registry Support
 

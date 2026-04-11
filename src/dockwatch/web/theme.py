@@ -223,9 +223,41 @@ def apply_theme() -> None:
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         padding: 0 14px 12px;
         border-top: 1px solid {BORDER};
+    }}
+
+    .dw-filter-rail {{
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px;
+        background: {BG_PANEL_ALT};
+        border: 1px solid {BORDER};
+        border-radius: 12px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    }}
+
+    .dw-filter-segment {{
+        min-height: 34px !important;
+        padding: 0 12px !important;
+        background: transparent !important;
+        border-radius: 10px !important;
+    }}
+
+    .dw-filter-segment .q-btn__content {{
+        gap: 0 !important;
+        font-family: 'Fira Sans', sans-serif !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.01em !important;
+        white-space: nowrap;
+    }}
+
+    .dw-filter-segment:hover {{
+        border-color: {BORDER_STRONG} !important;
     }}
 
     .dw-btn-primary .q-btn__content {{

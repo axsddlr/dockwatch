@@ -205,6 +205,9 @@ class DashboardController:
             return self.results
         return [result for result in self.results if self._status_text(result) in self.selected_statuses]
 
+    def _status_count(self, status: str) -> int:
+        return sum(1 for result in self.results if self._status_text(result) == status)
+
     def _render_table(self) -> None:
         filtered = self._filtered_results()
         if self.selected_statuses and not filtered:
@@ -221,12 +224,12 @@ class DashboardController:
     def _filter_button_style(self, active: bool, color: str) -> str:
         if active:
             return (
-                f"background:{color}; color:#071014; border:1px solid {color}; "
-                "border-radius:999px; min-height:30px;"
+                f"background:{color}26; color:{TEXT_PRIMARY}; border:1px solid {color}59; "
+                "border-radius:10px; min-height:34px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);"
             )
         return (
             f"background:transparent; color:{TEXT_MUTED}; border:1px solid {BORDER}; "
-            "border-radius:999px; min-height:30px;"
+            "border-radius:10px; min-height:34px;"
         )
 
     def _render_filter_controls(self) -> None:
@@ -239,19 +242,21 @@ class DashboardController:
         ]
         with self.filter_row:
             ui.label("Filter").classes("section-label")
-            ui.button(
-                "All",
-                on_click=self.clear_status_filters,
-            ).props("unelevated dense").style(
-                self._filter_button_style(not self.selected_statuses, PRIMARY)
-            )
-            for status, color in statuses:
+            with ui.row().classes("dw-filter-rail"):
                 ui.button(
-                    status,
-                    on_click=lambda _=None, s=status: self.toggle_status_filter(s),
-                ).props("unelevated dense").style(
-                    self._filter_button_style(status in self.selected_statuses, color)
+                    f"All {len(self.results)}",
+                    on_click=self.clear_status_filters,
+                ).props("unelevated dense no-caps").classes("dw-filter-segment").style(
+                    self._filter_button_style(not self.selected_statuses, PRIMARY)
                 )
+                for status, color in statuses:
+                    count = self._status_count(status)
+                    ui.button(
+                        f"{status} {count}",
+                        on_click=lambda _=None, s=status: self.toggle_status_filter(s),
+                    ).props("unelevated dense no-caps").classes("dw-filter-segment").style(
+                        self._filter_button_style(status in self.selected_statuses, color)
+                    )
 
     def _update_stats(self) -> None:
         total = len(self.results)

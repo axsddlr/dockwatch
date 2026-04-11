@@ -85,6 +85,8 @@ def _build_container_info(
         pinned_override=_parse_label_flag(labels, "dockwatch.pin"),
         ignored_override=_parse_label_flag(labels, "dockwatch.ignore"),
         notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
+        compose_project=labels.get("com.docker.compose.project"),
+        compose_service=labels.get("com.docker.compose.service"),
         **_tag_override_kwargs(labels),
     )
 

@@ -8,10 +8,12 @@ from nicegui import ui
 
 from ...links import build_registry_link
 from ...models import UpdateResult, deployed_display_result, remote_display
+from ...updater import UpdatePlan
 from ..theme import PRIMARY, STATUS_BG, STATUS_COLOR, TEXT_MUTED, TEXT_PRIMARY
 
 CheckHandler = Callable[[str], Awaitable[None]]
 PinHandler = Callable[[str], Awaitable[None]]
+UpdateHandler = Callable[[str], Awaitable[None]]
 
 
 def _status_label(result: UpdateResult) -> str:
@@ -50,6 +52,8 @@ class ContainerStatusTable:
         results: list[UpdateResult],
         on_check: CheckHandler,
         on_pin_toggle: PinHandler,
+        on_update: UpdateHandler,
+        update_plans: dict[str, UpdatePlan],
         *,
         empty_message: str = "No containers to display.",
     ) -> None:
@@ -78,13 +82,15 @@ class ContainerStatusTable:
                     _head("Actions")
 
                 for result in results:
-                    self._render_row(result, on_check, on_pin_toggle)
+                    self._render_row(result, on_check, on_pin_toggle, on_update, update_plans)
 
     def _render_row(
         self,
         result: UpdateResult,
         on_check: CheckHandler,
         on_pin_toggle: PinHandler,
+        on_update: UpdateHandler,
+        update_plans: dict[str, UpdatePlan],
     ) -> None:
         status = _status_label(result)
         pill_bg = STATUS_BG.get(status, "rgba(255,255,255,0.05)")
@@ -95,6 +101,7 @@ class ContainerStatusTable:
         remote_value = remote_display(result) or "-"
         registry_link = build_registry_link(result.container_info)
         pin_label = "Unpin" if result.status == "PINNED" else "Pin"
+        update_plan = update_plans.get(name)
         dot_class = {
             "UP-TO-DATE": "dot-green",
             "OUTDATED": "dot-red",
@@ -128,6 +135,15 @@ class ContainerStatusTable:
                     icon="refresh",
                     on_click=lambda _=None, n=name: on_check(n),
                 ).props("unelevated size=sm").classes("dw-btn-secondary")
+                update_button = ui.button(
+                    "Update",
+                    icon="upgrade",
+                    on_click=lambda _=None, n=name: on_update(n),
+                ).props("unelevated size=sm").classes("dw-btn-ghost")
+                if update_plan is not None and not update_plan.allowed:
+                    update_button.props("disable")
+                    if update_plan.reason:
+                        update_button.tooltip(update_plan.reason)
                 ui.button(
                     pin_label,
                     icon="push_pin",

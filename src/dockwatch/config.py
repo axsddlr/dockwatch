@@ -20,6 +20,13 @@ class PortainerConfig:
 
 
 @dataclass(slots=True)
+class ComposeProjectConfig:
+    workdir: str = ""
+    files: list[str] = field(default_factory=list)
+    project_name: str = ""
+
+
+@dataclass(slots=True)
 class DockwatchConfig:
     pinned: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
@@ -36,6 +43,7 @@ class DockwatchConfig:
     run_on_startup: bool = True
     max_concurrent_checks: int = 5
     portainer: PortainerConfig = field(default_factory=PortainerConfig)
+    compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
@@ -130,7 +138,35 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"api_key = {_toml_string(config.portainer.api_key)}\n"
         f"environments = {_toml_array(config.portainer.environments)}\n"
     )
-    return base + notifications + portainer
+    compose_projects = ""
+    if config.compose_projects:
+        compose_projects = "\n[compose_projects]\n"
+        for project, project_cfg in config.compose_projects.items():
+            compose_projects += (
+                f"\n[compose_projects.{project}]\n"
+                f"workdir = {_toml_string(project_cfg.workdir)}\n"
+                f"files = {_toml_array(project_cfg.files)}\n"
+                f"project_name = {_toml_string(project_cfg.project_name)}\n"
+            )
+    return base + notifications + portainer + compose_projects
+
+
+def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
+    if not isinstance(data, dict):
+        return {}
+    projects: dict[str, ComposeProjectConfig] = {}
+    for name, raw_cfg in data.items():
+        if not isinstance(raw_cfg, dict):
+            continue
+        key = str(name).strip()
+        if not key:
+            continue
+        projects[key] = ComposeProjectConfig(
+            workdir=str(raw_cfg.get("workdir", "")).strip(),
+            files=_parse_list(raw_cfg.get("files")),
+            project_name=str(raw_cfg.get("project_name", "")).strip(),
+        )
+    return projects
 
 
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
@@ -156,6 +192,15 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             api_key=config.portainer.api_key.strip(),
             environments=_unique_ordered(config.portainer.environments),
         ),
+        compose_projects={
+            key: ComposeProjectConfig(
+                workdir=value.workdir.strip(),
+                files=_unique_ordered(value.files),
+                project_name=value.project_name.strip(),
+            )
+            for key, value in config.compose_projects.items()
+            if key.strip()
+        },
     )
     path.write_text(_to_toml(normalized), encoding="utf-8")
 
@@ -170,6 +215,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     data = tomllib.loads(content) if content.strip() else {}
     notifications = data.get("notifications", {}) if isinstance(data, dict) else {}
     portainer = data.get("portainer", {}) if isinstance(data, dict) else {}
+    compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
         pinned=_parse_list(data.get("pinned")),
         ignored=_parse_list(data.get("ignored")),
@@ -191,5 +237,6 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
             api_key=str(portainer.get("api_key", "")) if isinstance(portainer, dict) else "",
             environments=_parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
         ),
+        compose_projects=_parse_compose_projects(compose_projects),
     )
     return config

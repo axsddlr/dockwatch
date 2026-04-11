@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.semver import compare_versions
+from dockwatch.updater import UpdatePlan
 from dockwatch.web.pages.settings import build_sample_notification_results
 from dockwatch.web.shell import NAV_ITEMS
 from dockwatch.web.components.container_table import ContainerStatusTable
@@ -127,6 +128,19 @@ class DashboardComponentTests(unittest.TestCase):
                 ],
                 on_check=lambda _name: None,
                 on_pin_toggle=lambda _name: None,
+                on_update=lambda _name: None,
+                update_plans={
+                    "web": UpdatePlan(
+                        container_name="web",
+                        container_id="1",
+                        source="local",
+                        mode="plain",
+                        allowed=True,
+                        image_ref="nginx:1.0.0",
+                        deployed_display="1.0.0",
+                        remote_display="1.1.0",
+                    )
+                },
             )
 
         self.assertEqual(ui.links[0], ("Docker Hub", "https://hub.docker.com/_/nginx"))
@@ -135,6 +149,7 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertIn("1.0.0", ui.labels)
         self.assertIn("1.1.0 (sha256:abcdef123456)", ui.labels)
         self.assertIn("Check", ui.buttons)
+        self.assertIn("Update", ui.buttons)
         self.assertIn("Pin", ui.buttons)
         self.assertTrue(any("MINOR" in block for block in ui.html_blocks))
 
@@ -146,6 +161,8 @@ class DashboardComponentTests(unittest.TestCase):
                 [],
                 on_check=lambda _name: None,
                 on_pin_toggle=lambda _name: None,
+                on_update=lambda _name: None,
+                update_plans={},
                 empty_message="No containers match the selected status filters.",
             )
 

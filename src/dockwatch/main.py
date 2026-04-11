@@ -14,11 +14,13 @@ from . import __version__
 from .config import DockwatchConfig, load_config, save_config
 from .db import ManifestStore
 from .display import render_containers_table, render_summary, render_update_table
+from .docker_client import get_running_containers
 from .models import ContainerInfo, RegistryType, UpdateResult
 from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
 from .sources import discover_containers, discover_environments
+from .updater import build_update_plan, describe_update_plan, execute_update
 from .web import run_web_app
 
 app = typer.Typer(
@@ -28,6 +30,7 @@ app = typer.Typer(
         "  dockwatch list\n"
         "  dockwatch check\n"
         "  dockwatch check --container nginx\n"
+        "  dockwatch update nginx --dry-run\n"
         "  dockwatch version"
     )
 )
@@ -138,6 +141,60 @@ def list_environments() -> None:
 
     for environment in environments:
         typer.echo(f"{environment.id}: {environment.name}")
+
+
+@app.command("update")
+def update_container(
+    container: str,
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation and execute immediately."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the update plan without executing."),
+    source: str = typer.Option("local", "--source", help="Update source. Only local is supported in this phase."),
+) -> None:
+    """Update one container using dockwatch's safe local workflow."""
+    if source != "local":
+        typer.echo("Only local Docker updates are supported in this phase.", err=True)
+        raise typer.Exit(code=1)
+
+    config = load_config()
+    discovery = asyncio.run(discover_containers(config, source="local"))
+    containers = [item for item in discovery.containers if item.name == container]
+    if not containers:
+        typer.echo(f"Container '{container}' was not found in local Docker discovery.", err=True)
+        raise typer.Exit(code=1)
+
+    store = ManifestStore()
+    results = asyncio.run(check_all(containers, config, store=store, max_concurrency=1))
+    if not results:
+        typer.echo(f"Container '{container}' is currently ignored or unavailable.", err=True)
+        raise typer.Exit(code=1)
+
+    plan = build_update_plan(results[0], config)
+    for line in describe_update_plan(plan):
+        typer.echo(line)
+    if not plan.allowed:
+        raise typer.Exit(code=1)
+    if dry_run:
+        typer.echo("Dry run complete.")
+        return
+    if not yes and not typer.confirm(f"Proceed with updating '{container}'?"):
+        typer.echo("Update cancelled.")
+        raise typer.Exit(code=1)
+
+    execution = execute_update(plan, config)
+    typer.echo(execution.message)
+    for line in execution.details:
+        if line:
+            typer.echo(f"  - {line}")
+    if execution.rollback_message:
+        typer.echo(f"Rollback: {execution.rollback_message}")
+    if not execution.success:
+        raise typer.Exit(code=1)
+
+    refreshed = [item for item in get_running_containers() if item.name == container]
+    refreshed_results = asyncio.run(check_all(refreshed, config, store=store, max_concurrency=1)) if refreshed else []
+    if refreshed_results:
+        render_update_table(refreshed_results)
+        render_summary(refreshed_results)
 
 
 @app.command("version")
@@ -267,6 +324,15 @@ def list_config() -> None:
         "  environments: "
         + (", ".join(config.portainer.environments) if config.portainer.environments else "(all)")
     )
+    typer.echo("Compose projects:")
+    if config.compose_projects:
+        for name, project in config.compose_projects.items():
+            typer.echo(f"  {name}:")
+            typer.echo(f"    workdir: {project.workdir or '(not set)'}")
+            typer.echo(f"    files: {', '.join(project.files) if project.files else '(default)'}")
+            typer.echo(f"    project_name: {project.project_name or '(auto)'}")
+    else:
+        typer.echo("  (none)")
 
 
 @notify_app.command("test")

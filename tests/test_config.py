@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from dockwatch.config import DockwatchConfig, PortainerConfig, load_config, save_config
+from dockwatch.config import ComposeProjectConfig, DockwatchConfig, PortainerConfig, load_config, save_config
 from dockwatch.main import app
-from dockwatch.models import ContainerInfo, RegistryType
+from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.registry import check_all
 from dockwatch.sources import SourceDiscoveryResult
 
@@ -46,6 +46,13 @@ class ConfigTests(unittest.TestCase):
                     api_key="secret-token",
                     environments=["1", "2"],
                 ),
+                compose_projects={
+                    "media": ComposeProjectConfig(
+                        workdir="/srv/media",
+                        files=["compose.yml", "compose.override.yml"],
+                        project_name="media-stack",
+                    )
+                },
             )
             save_config(source, config_path)
             loaded = load_config(config_path)
@@ -67,6 +74,10 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.portainer.url, "https://portainer.example.test:9443")
             self.assertEqual(loaded.portainer.api_key, "secret-token")
             self.assertEqual(loaded.portainer.environments, ["1", "2"])
+            self.assertIn("media", loaded.compose_projects)
+            self.assertEqual(loaded.compose_projects["media"].workdir, "/srv/media")
+            self.assertEqual(loaded.compose_projects["media"].files, ["compose.yml", "compose.override.yml"])
+            self.assertEqual(loaded.compose_projects["media"].project_name, "media-stack")
 
 
 class UnpinUnignoreTests(unittest.TestCase):
@@ -200,6 +211,44 @@ class UnpinUnignoreTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("1: local", result.stdout)
         self.assertIn("2: prod", result.stdout)
+
+    def test_update_dry_run_prints_plan(self) -> None:
+        runner = CliRunner()
+        container = ContainerInfo(
+            name="web",
+            container_id="1",
+            image_ref="nginx:1.0.0",
+            registry=RegistryType.DOCKERHUB,
+            namespace="library",
+            image_name="nginx",
+            current_tag="1.0.0",
+        )
+        check_result = UpdateResult(
+            container_info=container,
+            is_outdated=True,
+            deployed_tag="1.0.0",
+            remote_tag="1.1.0",
+            comparison_basis="version",
+        )
+        with patch("dockwatch.main.load_config", return_value=DockwatchConfig()), patch(
+            "dockwatch.main.discover_containers",
+            new=AsyncMock(return_value=SourceDiscoveryResult(containers=[container])),
+        ), patch(
+            "dockwatch.main.check_all",
+            new=AsyncMock(return_value=[check_result]),
+        ):
+            result = runner.invoke(app, ["update", "web", "--dry-run"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Mode: plain", result.stdout)
+        self.assertIn("Dry run complete.", result.stdout)
+
+    def test_update_blocked_for_portainer_source(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(app, ["update", "web", "--source", "portainer"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Only local Docker updates are supported", result.stdout)
 
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):

@@ -38,6 +38,8 @@ class ContainerInfo:
     source: str = "local"
     environment_id: str | None = None
     environment_name: str | None = None
+    compose_project: str | None = None
+    compose_service: str | None = None
 
 
 def deployed_version_hint(info: ContainerInfo) -> str | None:

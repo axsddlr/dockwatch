@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from nicegui import ui
@@ -14,6 +15,7 @@ from ...integrations import PortainerEnvironment
 from ...models import UpdateResult
 from ...registry import check_all
 from ...sources import discover_containers
+from ...updater import build_update_plan, describe_update_plan, execute_update
 from ..components.container_table import ContainerStatusTable
 from ..shell import page_shell
 from ..theme import (
@@ -224,6 +226,10 @@ class DashboardController:
 
     def _render_table(self) -> None:
         filtered = self._filtered_results()
+        plans = {
+            result.container_info.name: build_update_plan(result, self.config)
+            for result in filtered
+        }
         if self.selected_statuses and not filtered:
             empty_message = "No containers match the selected status filters."
         else:
@@ -232,6 +238,8 @@ class DashboardController:
             filtered,
             self.check_one,
             self.toggle_pin,
+            self.update_one,
+            plans,
             empty_message=empty_message,
         )
 
@@ -456,6 +464,49 @@ class DashboardController:
             self.config.pinned.append(container_name)
             ui.notify(f"Pinned '{container_name}'.", type="positive")
         save_config(self.config)
+        await self.refresh_all()
+
+    async def update_one(self, container_name: str) -> None:
+        target = next((item for item in self.results if item.container_info.name == container_name), None)
+        if target is None:
+            ui.notify(f"Container '{container_name}' is no longer available.", type="warning")
+            return
+
+        self.config = load_config()
+        plan = build_update_plan(target, self.config)
+        if not plan.allowed:
+            ui.notify(plan.reason or "Update is blocked.", type="warning")
+            return
+
+        with ui.dialog() as dialog, ui.card().classes("dw-panel").style("padding:16px; min-width:460px;"):
+            ui.label(f"Update {container_name}?").style(
+                f"font-size:17px; font-weight:700; color:{TEXT_PRIMARY};"
+            )
+            ui.label("This will pull the newer image and replace the current container safely.").style(
+                f"color:{TEXT_MUTED}; font-size:12px;"
+            )
+            with ui.column().classes("w-full").style("gap:6px; margin-top:8px;"):
+                for line in describe_update_plan(plan):
+                    ui.label(line).classes("mono-sm").style(f"color:{TEXT_PRIMARY};")
+            with ui.row().classes("justify-end w-full").style("margin-top:12px; gap:8px;"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).classes("dw-btn-ghost")
+                ui.button("Update", on_click=lambda: dialog.submit(True)).classes("dw-btn-secondary")
+
+        confirmed = await dialog
+        if not confirmed:
+            return
+
+        self._set_loading(True)
+        try:
+            result = await asyncio.to_thread(execute_update, plan, self.config)
+            if result.success:
+                ui.notify(result.message, type="positive")
+            else:
+                detail = result.rollback_message or (result.details[0] if result.details else "")
+                ui.notify(f"{result.message}{': ' + detail if detail else ''}", type="negative")
+        finally:
+            self._set_loading(False)
+
         await self.refresh_all()
 
 def register_dashboard_page() -> None:

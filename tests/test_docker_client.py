@@ -23,6 +23,8 @@ class FakeContainer:
                 "Labels": {
                     "dockwatch.enable": "true",
                     "dockwatch.include_tags": "^1\\.;^2\\.",
+                    "com.docker.compose.project": "media",
+                    "com.docker.compose.service": "web",
                 },
             }
         }
@@ -73,6 +75,8 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(container.registry, RegistryType.DOCKERHUB)
         self.assertTrue(container.watch_enabled)
         self.assertEqual(container.repo_digest, "example@sha256:abc123")
+        self.assertEqual(container.compose_project, "media")
+        self.assertEqual(container.compose_service, "web")
         self.assertEqual(fake_client.list_kwargs, {"all": True})
 
 

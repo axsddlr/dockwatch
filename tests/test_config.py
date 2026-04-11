@@ -79,6 +79,24 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.compose_projects["media"].files, ["compose.yml", "compose.override.yml"])
             self.assertEqual(loaded.compose_projects["media"].project_name, "media-stack")
 
+    def test_save_normalizes_empty_notify_events_and_scheduler_mins(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                notify_on=[],
+                schedule_interval_seconds=1,
+                schedule_jitter_seconds=-4,
+                max_concurrent_checks=0,
+            )
+
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+
+            self.assertEqual(loaded.notify_on, ["update"])
+            self.assertEqual(loaded.schedule_interval_seconds, 10)
+            self.assertEqual(loaded.schedule_jitter_seconds, 0)
+            self.assertEqual(loaded.max_concurrent_checks, 1)
+
 
 class UnpinUnignoreTests(unittest.TestCase):
     def setUp(self) -> None:

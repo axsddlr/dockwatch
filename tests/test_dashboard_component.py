@@ -3,10 +3,16 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from dockwatch.config import ComposeProjectConfig, DockwatchConfig
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.semver import compare_versions
 from dockwatch.updater import UpdatePlan
-from dockwatch.web.pages.settings import build_sample_notification_results
+from dockwatch.web.pages.settings import (
+    SettingsFormData,
+    build_config_from_form,
+    build_sample_notification_results,
+    build_settings_form_data,
+)
 from dockwatch.web.shell import NAV_ITEMS
 from dockwatch.web.components.container_table import ContainerStatusTable
 
@@ -97,6 +103,94 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertEqual(sample[0].container_info.name, "sample")
         self.assertEqual(sample[0].comparison_basis, "version")
         self.assertEqual(sample[0].remote_tag, "1.1.0")
+
+    def test_build_settings_form_data_reflects_config_values(self) -> None:
+        config = DockwatchConfig(
+            pinned=["plex"],
+            ignored=["db"],
+            notify_only=["web"],
+            include_tags=[r"^1\."],
+            exclude_tags=[r"-rc$"],
+            notify_on=["new", "update"],
+            first_check_notify=True,
+            webhook_url="https://example.test/webhook",
+            discord_webhook="https://discord.test/hook",
+            ntfy_url="https://ntfy.test/topic",
+            schedule_interval_seconds=300,
+            schedule_jitter_seconds=30,
+            run_on_startup=False,
+            max_concurrent_checks=7,
+            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media")},
+        )
+        config.portainer.enabled = True
+        config.portainer.url = "https://portainer.example.test"
+        config.portainer.api_key = "secret"
+        config.portainer.environments = ["1", "2"]
+
+        form = build_settings_form_data(config)
+
+        self.assertEqual(form.pinned, "plex")
+        self.assertEqual(form.ignored, "db")
+        self.assertEqual(form.notify_only, "web")
+        self.assertEqual(form.include_tags, r"^1\.")
+        self.assertEqual(form.exclude_tags, r"-rc$")
+        self.assertTrue(form.notify_on_new)
+        self.assertTrue(form.notify_on_update)
+        self.assertTrue(form.first_check_notify)
+        self.assertEqual(form.schedule_interval_seconds, 300)
+        self.assertEqual(form.schedule_jitter_seconds, 30)
+        self.assertFalse(form.run_on_startup)
+        self.assertEqual(form.max_concurrent_checks, 7)
+        self.assertTrue(form.portainer_enabled)
+        self.assertEqual(form.portainer_environments, "1, 2")
+
+    def test_build_config_from_form_maps_all_fields_and_preserves_compose_projects(self) -> None:
+        existing = DockwatchConfig(
+            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media", files=["compose.yml"])}
+        )
+        form = SettingsFormData(
+            pinned="plex, plex, jellyfin",
+            ignored="db",
+            notify_only="api",
+            include_tags=r"^1\., ^2\.",
+            exclude_tags=r"-rc$, -beta$",
+            webhook_url=" https://example.test/webhook ",
+            discord_webhook=" https://discord.test/hook ",
+            ntfy_url=" https://ntfy.test/topic ",
+            notify_on_new=False,
+            notify_on_update=False,
+            first_check_notify=True,
+            schedule_interval_seconds=5,
+            schedule_jitter_seconds=-10,
+            run_on_startup=True,
+            max_concurrent_checks=0,
+            portainer_enabled=True,
+            portainer_url=" https://portainer.example.test ",
+            portainer_api_key=" secret-token ",
+            portainer_environments="1, 2, 2",
+        )
+
+        config = build_config_from_form(existing, form)
+
+        self.assertEqual(config.pinned, ["plex", "plex", "jellyfin"])
+        self.assertEqual(config.ignored, ["db"])
+        self.assertEqual(config.notify_only, ["api"])
+        self.assertEqual(config.include_tags, [r"^1\.", r"^2\."])
+        self.assertEqual(config.exclude_tags, [r"-rc$", r"-beta$"])
+        self.assertEqual(config.notify_on, [])
+        self.assertTrue(config.first_check_notify)
+        self.assertEqual(config.webhook_url, " https://example.test/webhook ")
+        self.assertEqual(config.discord_webhook, " https://discord.test/hook ")
+        self.assertEqual(config.ntfy_url, " https://ntfy.test/topic ")
+        self.assertEqual(config.schedule_interval_seconds, 5)
+        self.assertEqual(config.schedule_jitter_seconds, -10)
+        self.assertTrue(config.run_on_startup)
+        self.assertEqual(config.max_concurrent_checks, 0)
+        self.assertTrue(config.portainer.enabled)
+        self.assertEqual(config.portainer.url, " https://portainer.example.test ")
+        self.assertEqual(config.portainer.api_key, " secret-token ")
+        self.assertEqual(config.portainer.environments, ["1", "2", "2"])
+        self.assertIn("media", config.compose_projects)
 
     def test_container_status_table_renders_registry_link(self) -> None:
         ui = _TableUI()

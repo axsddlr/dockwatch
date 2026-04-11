@@ -168,7 +168,7 @@ def apply_theme() -> None:
 
     .dw-panel {{
         background: {BG_PANEL} !important;
-        border: 1px solid {BORDER} !important;
+        border: 1px solid rgba(255,255,255,0.06) !important;
         border-radius: 7px !important;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }}
@@ -181,14 +181,20 @@ def apply_theme() -> None:
 
     .dw-summary-chip {{
         background: {BG_PANEL} !important;
-        border: 1px solid {BORDER} !important;
+        border: 1px solid rgba(255,255,255,0.05) !important;
         border-radius: 7px !important;
-        padding: 10px 12px 9px;
-        min-height: 60px;
+        padding: 9px 12px 8px;
+        min-height: 56px;
     }}
 
-    .dw-summary-chip .section-label {{
-        margin-bottom: 6px;
+    .dw-summary-label {{
+        margin-bottom: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: {TEXT_DIM};
+        font-family: 'Fira Code', monospace;
     }}
 
     .dw-page-meta {{
@@ -199,13 +205,11 @@ def apply_theme() -> None:
         padding: 2px 2px 4px;
     }}
 
-    .dw-controls {{
+    .dw-toolbar-stack {{
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 12px;
-        padding: 14px 14px 10px;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
     }}
 
     .dw-toolbar-group {{
@@ -215,8 +219,20 @@ def apply_theme() -> None:
         gap: 9px;
     }}
 
+    .dw-toolbar-row-secondary {{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }}
+
     .dw-toolbar-meta {{
         margin-left: auto;
+        gap: 12px;
+        color: {TEXT_DIM};
     }}
 
     .dw-filter-row {{
@@ -224,8 +240,7 @@ def apply_theme() -> None:
         flex-wrap: wrap;
         align-items: center;
         gap: 10px;
-        padding: 0 14px 12px;
-        border-top: 1px solid {BORDER};
+        min-height: 40px;
     }}
 
     .dw-filter-rail {{
@@ -233,9 +248,9 @@ def apply_theme() -> None:
         flex-wrap: wrap;
         align-items: center;
         gap: 6px;
-        padding: 6px;
+        padding: 5px;
         background: {BG_PANEL_ALT};
-        border: 1px solid {BORDER};
+        border: 1px solid rgba(255,255,255,0.06);
         border-radius: 12px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }}
@@ -260,6 +275,34 @@ def apply_theme() -> None:
         border-color: {BORDER_STRONG} !important;
     }}
 
+    .dw-source-toggle {{
+        background: {BG_PANEL_ALT};
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px;
+        padding: 4px;
+    }}
+
+    .dw-source-toggle .q-btn {{
+        min-height: 34px !important;
+        border-radius: 8px !important;
+        color: {TEXT_MUTED} !important;
+        background: transparent !important;
+        padding: 0 12px !important;
+        border: 1px solid transparent !important;
+    }}
+
+    .dw-source-toggle .q-btn .q-btn__content {{
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.01em !important;
+    }}
+
+    .dw-source-toggle .q-btn.q-btn--active {{
+        color: {TEXT_PRIMARY} !important;
+        background: rgba(19,196,242,0.16) !important;
+        border-color: rgba(19,196,242,0.26) !important;
+    }}
+
     .dw-btn-primary .q-btn__content {{
         font-family: 'Fira Sans', sans-serif !important;
         font-weight: 600 !important;
@@ -272,14 +315,15 @@ def apply_theme() -> None:
         color: #04161d !important;
         border-radius: 6px !important;
         min-height: 34px !important;
+        padding: 0 12px !important;
     }}
 
     .dw-btn-secondary {{
         background: {PRIMARY} !important;
         color: #051820 !important;
         border-radius: 6px !important;
-        min-height: 30px !important;
-        padding: 0 10px !important;
+        min-height: 28px !important;
+        padding: 0 9px !important;
     }}
 
     .dw-btn-ghost {{
@@ -287,8 +331,8 @@ def apply_theme() -> None:
         color: {TEXT_PRIMARY} !important;
         border: 1px solid {BORDER_STRONG} !important;
         border-radius: 6px !important;
-        min-height: 30px !important;
-        padding: 0 10px !important;
+        min-height: 28px !important;
+        padding: 0 9px !important;
     }}
 
     .dw-btn-ghost .q-btn__content {{
@@ -307,8 +351,8 @@ def apply_theme() -> None:
         align-items: center;
         justify-content: space-between;
         gap: 10px;
-        padding: 0 6px 10px;
-        border-bottom: 1px solid {BORDER};
+        padding: 2px 8px 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
     }}
 
     .dw-table-wrap {{
@@ -323,7 +367,7 @@ def apply_theme() -> None:
         grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
         gap: 12px;
         align-items: center;
-        padding: 10px 16px;
+        padding: 10px 14px;
         background: {BG_TABLE_HEAD};
         border-bottom: 1px solid rgba(255,255,255,0.08);
     }}
@@ -333,9 +377,9 @@ def apply_theme() -> None:
         grid-template-columns: minmax(250px, 2.4fr) minmax(100px, .9fr) minmax(110px, .8fr) minmax(180px, 1.25fr) minmax(180px, 1.35fr) minmax(170px, 1fr);
         gap: 12px;
         align-items: center;
-        padding: 10px 16px;
+        padding: 11px 14px;
         background: {BG_PANEL};
-        border-bottom: 1px solid rgba(255,255,255,0.05);
+        border-bottom: 1px solid rgba(255,255,255,0.04);
     }}
 
     .dw-table-row:last-child {{ border-bottom: 0; }}
@@ -359,7 +403,7 @@ def apply_theme() -> None:
         display: flex;
         flex-direction: column;
         min-width: 0;
-        gap: 3px;
+        gap: 4px;
     }}
 
     .dw-name-title {{
@@ -372,12 +416,20 @@ def apply_theme() -> None:
     }}
 
     .dw-name-subtitle {{
-        color: {TEXT_MUTED};
+        color: {TEXT_DIM};
         font-family: 'Fira Code', monospace;
         font-size: 11px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }}
+
+    .dw-meta-row {{
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
     }}
 
     .dw-source-pill {{
@@ -387,8 +439,8 @@ def apply_theme() -> None:
         min-height: 18px;
         padding: 1px 6px;
         border-radius: 999px;
-        background: rgba(255,255,255,0.06);
-        color: {TEXT_PRIMARY};
+        background: rgba(255,255,255,0.05);
+        color: {TEXT_MUTED};
         font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.04em;
@@ -398,22 +450,22 @@ def apply_theme() -> None:
     .dw-registry-link {{
         display: inline-flex;
         align-items: center;
-        min-height: 22px;
-        padding: 2px 8px;
+        min-height: 18px;
+        padding: 1px 6px;
         border-radius: 999px;
-        background: rgba(19,196,242,0.14);
-        border: 1px solid rgba(19,196,242,0.24);
-        color: {PRIMARY} !important;
+        background: rgba(19,196,242,0.08);
+        border: 1px solid rgba(19,196,242,0.16);
+        color: rgba(19,196,242,0.92) !important;
         font-size: 10px;
-        font-weight: 700;
+        font-weight: 600;
         letter-spacing: 0.04em;
         text-decoration: none !important;
         text-transform: uppercase;
     }}
 
     .dw-registry-link:hover {{
-        background: rgba(19,196,242,0.22);
-        border-color: rgba(19,196,242,0.34);
+        background: rgba(19,196,242,0.14);
+        border-color: rgba(19,196,242,0.24);
     }}
 
     .dw-registry-link-icon {{
@@ -437,15 +489,15 @@ def apply_theme() -> None:
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: 8px;
+        gap: 6px;
     }}
 
     .status-pill {{
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 24px;
-        padding: 3px 9px;
+        min-height: 22px;
+        padding: 2px 8px;
         border-radius: 6px;
         font-size: 10px;
         font-weight: 600;
@@ -459,11 +511,11 @@ def apply_theme() -> None:
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 20px;
-        padding: 2px 7px;
+        min-height: 18px;
+        padding: 1px 6px;
         border-radius: 999px;
         border: 1px solid transparent;
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
         letter-spacing: 0.04em;
         white-space: nowrap;
@@ -471,11 +523,12 @@ def apply_theme() -> None:
 
     .status-dot {{
         display: inline-block;
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         border-radius: 999px;
         flex-shrink: 0;
-        box-shadow: 0 0 0 2px rgba(255,255,255,0.04);
+        opacity: 0.85;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.02);
     }}
     .dot-green  {{ background: {STATUS_GREEN}; }}
     .dot-red    {{ background: {STATUS_RED}; }}
@@ -561,6 +614,10 @@ def apply_theme() -> None:
 
         .dw-toolbar-meta {{
             margin-left: 0;
+        }}
+
+        .dw-toolbar-row-secondary {{
+            justify-content: flex-start;
         }}
 
         .dw-settings-grid {{

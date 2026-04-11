@@ -39,9 +39,9 @@ _DASHBOARD_CACHE: dict[str, object] = {
 
 def _summary_chip(label: str, value_ref: list[str], color: str) -> ui.label:
     with ui.card().classes("dw-summary-chip"):
-        ui.label(label).classes("section-label")
+        ui.label(label).classes("dw-summary-label")
         value = ui.label(value_ref[0]).style(
-            f"font-size:26px; line-height:1.1; font-weight:700; color:{color}; margin-top:6px;"
+            f"font-size:24px; line-height:1.1; font-weight:700; color:{color}; margin-top:4px;"
             "font-family:'Fira Code', monospace;"
         )
     return value
@@ -84,7 +84,7 @@ class DashboardController:
             self._stat_pinned_val = _summary_chip("Pinned", ["0"], STATUS_BLUE)
 
         with ui.card().classes("dw-panel w-full"):
-            with ui.row().classes("dw-controls"):
+            with ui.column().classes("dw-toolbar-stack w-full"):
                 with ui.row().classes("dw-toolbar-group"):
                     self.refresh_btn = (
                         ui.button("Refresh", on_click=self.refresh_all, icon="refresh")
@@ -104,7 +104,7 @@ class DashboardController:
                         {"local": "Local Docker", "portainer": "Portainer", "all": "All"},
                         value=self.selected_source,
                         on_change=self._on_source_change,
-                    ).props("unelevated")
+                    ).props("unelevated").classes("dw-source-toggle")
                     self.environment_select = (
                         ui.select({}, value=self.selected_environment)
                         .classes("dw-input-shell")
@@ -113,14 +113,15 @@ class DashboardController:
                     )
                     self.environment_select.on_value_change(self._on_environment_change)
 
-                with ui.row().classes("dw-toolbar-group dw-toolbar-meta"):
-                    self.last_checked_label = ui.label("last check: never").classes("mono-sm").style(
-                        f"color:{TEXT_MUTED};"
-                    )
-                    self.container_count_label = ui.label("0 containers").classes("mono-sm").style(
-                        f"color:{TEXT_MUTED};"
-                    )
-            self.filter_row = ui.row().classes("dw-filter-row")
+                with ui.row().classes("dw-toolbar-row-secondary"):
+                    self.filter_row = ui.row().classes("dw-filter-row")
+                    with ui.row().classes("dw-toolbar-group dw-toolbar-meta"):
+                        self.last_checked_label = ui.label("last check: never").classes("mono-sm").style(
+                            f"color:{TEXT_MUTED};"
+                        )
+                        self.container_count_label = ui.label("0 containers").classes("mono-sm").style(
+                            f"color:{TEXT_MUTED};"
+                        )
 
         self.error_banner = ui.card().classes("dw-panel w-full").style(
             f"padding: 12px 14px; border-left: 3px solid {STATUS_RED} !important; display:none;"
@@ -135,7 +136,7 @@ class DashboardController:
             with ui.row().classes("dw-section-head"):
                 with ui.row().classes("items-center gap-2"):
                     ui.icon("inventory_2", size="18px").style(f"color:{PRIMARY};")
-                    ui.label("Local Containers").classes("section-label")
+                    self.table_section_label = ui.label("Local Containers").classes("section-label")
                 self.conn_meta = ui.label("docker host online").classes("mono-sm").style(
                     f"color:{TEXT_MUTED};"
                 )
@@ -171,13 +172,14 @@ class DashboardController:
 
     def _hydrate_view(self) -> None:
         self._update_environment_selector()
+        self._update_source_meta()
         if self.last_checked != "Never":
             self.last_checked_label.set_text(f"last check: {self.last_checked}")
         self._update_stats()
         self._render_table()
         if self.results:
             self.conn_label.set_text("connected")
-            self.conn_meta.set_text("docker host online")
+            self._update_source_meta()
             self.table.container.set_visibility(True)
         else:
             self.table.container.set_visibility(False)
@@ -188,6 +190,18 @@ class DashboardController:
         self.environment_select.value = self.selected_environment
         visible = self.selected_source in {"portainer", "all"} and bool(options)
         self.environment_select.set_visibility(visible)
+
+    def _update_source_meta(self) -> None:
+        if self.selected_source == "portainer":
+            self.table_section_label.set_text("Portainer Containers")
+            self.conn_meta.set_text("portainer source active")
+            return
+        if self.selected_source == "all":
+            self.table_section_label.set_text("All Containers")
+            self.conn_meta.set_text("local docker and portainer")
+            return
+        self.table_section_label.set_text("Local Containers")
+        self.conn_meta.set_text("docker host online")
 
     def _status_text(self, result: UpdateResult) -> str:
         if result.status == "PINNED":
@@ -358,9 +372,7 @@ class DashboardController:
             else:
                 self._clear_error()
             self.conn_label.set_text("connected" if containers or not discovery.errors else "disconnected")
-            self.conn_meta.set_text(
-                "portainer source active" if self.selected_source == "portainer" else "docker host online"
-            )
+            self._update_source_meta()
             self.results = await check_all(
                 containers,
                 self.config,

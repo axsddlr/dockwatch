@@ -14,11 +14,11 @@ from . import __version__
 from .config import DockwatchConfig, load_config, save_config
 from .db import ManifestStore
 from .display import render_containers_table, render_summary, render_update_table
-from .docker_client import DockerConnectionError, get_running_containers
 from .models import ContainerInfo, RegistryType, UpdateResult
 from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
+from .sources import discover_containers, discover_environments
 from .web import run_web_app
 
 app = typer.Typer(
@@ -38,13 +38,18 @@ app.add_typer(notify_app, name="notify")
 
 
 @app.command("list")
-def list_containers() -> None:
+def list_containers(
+    source: str = typer.Option("local", "--source", help="Container source: local, portainer, or all."),
+    environment: str | None = typer.Option(None, "--environment", help="Portainer environment ID."),
+) -> None:
     """List running containers and their image metadata."""
-    try:
-        containers = get_running_containers()
-    except DockerConnectionError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
+    config = load_config()
+    discovery = asyncio.run(discover_containers(config, source=source, selected_environment=environment))
+    containers = discovery.containers
+    for error in discovery.errors:
+        typer.echo(error, err=True)
+    if source == "portainer" and discovery.errors and not containers:
+        raise typer.Exit(code=1)
 
     render_containers_table(containers)
 
@@ -56,13 +61,17 @@ def check_updates(
     json_output: bool = typer.Option(False, "--json", help="Print check output as JSON."),
     outdated_only: bool = typer.Option(False, "--outdated-only", help="Show only outdated containers."),
     major_only: bool = typer.Option(False, "--major-only", help="Show only outdated containers with MAJOR semver bumps."),
+    source: str = typer.Option("local", "--source", help="Container source: local, portainer, or all."),
+    environment: str | None = typer.Option(None, "--environment", help="Portainer environment ID."),
 ) -> None:
     """Check running containers for newer image tags."""
-    try:
-        containers = get_running_containers()
-    except DockerConnectionError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
+    config = load_config()
+    discovery = asyncio.run(discover_containers(config, source=source, selected_environment=environment))
+    containers = discovery.containers
+    for error in discovery.errors:
+        typer.echo(error, err=True)
+    if source == "portainer" and discovery.errors and not containers:
+        raise typer.Exit(code=1)
 
     if container:
         containers = [item for item in containers if item.name == container]
@@ -70,7 +79,6 @@ def check_updates(
             typer.echo(f"Container '{container}' is not running.", err=True)
             raise typer.Exit(code=1)
 
-    config = load_config()
     store = ManifestStore()
     results = asyncio.run(check_all(containers, config, store=store, max_concurrency=config.max_concurrent_checks))
     if outdated_only:
@@ -112,6 +120,24 @@ def check_updates(
                 typer.echo(f"Notifier error: {error}", err=True)
         else:
             typer.echo("Notifications sent.")
+
+
+@app.command("environments")
+def list_environments() -> None:
+    """List Portainer environments available to the configured API key."""
+    config = load_config()
+    try:
+        environments = asyncio.run(discover_environments(config))
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not environments:
+        typer.echo("No Portainer environments available.")
+        return
+
+    for environment in environments:
+        typer.echo(f"{environment.id}: {environment.name}")
 
 
 @app.command("version")
@@ -233,6 +259,14 @@ def list_config() -> None:
     typer.echo(f"  schedule_jitter_seconds: {config.schedule_jitter_seconds}")
     typer.echo(f"  run_on_startup: {config.run_on_startup}")
     typer.echo(f"  max_concurrent_checks: {config.max_concurrent_checks}")
+    typer.echo("Portainer:")
+    typer.echo(f"  enabled: {config.portainer.enabled}")
+    typer.echo(f"  url: {config.portainer.url or '(not set)'}")
+    typer.echo(f"  api_key: {'(set)' if config.portainer.api_key else '(not set)'}")
+    typer.echo(
+        "  environments: "
+        + (", ".join(config.portainer.environments) if config.portainer.environments else "(all)")
+    )
 
 
 @notify_app.command("test")

@@ -10,8 +10,10 @@ from ... import __version__
 from ...config import load_config, save_config
 from ...db import ManifestStore
 from ...docker_client import DockerConnectionError, get_running_containers
+from ...integrations import PortainerEnvironment
 from ...models import UpdateResult
 from ...registry import check_all
+from ...sources import discover_containers
 from ..components.container_table import ContainerStatusTable
 from ..shell import page_shell
 from ..theme import (
@@ -30,6 +32,8 @@ _DASHBOARD_CACHE: dict[str, object] = {
     "results": [],
     "selected_statuses": set(),
     "last_checked": "Never",
+    "selected_source": "local",
+    "selected_environment": None,
 }
 
 
@@ -48,9 +52,16 @@ class DashboardController:
         self.results: list[UpdateResult] = list(_DASHBOARD_CACHE["results"])
         self.selected_statuses: set[str] = set(_DASHBOARD_CACHE["selected_statuses"])
         self.last_checked: str = str(_DASHBOARD_CACHE["last_checked"])
+        self.selected_source: str = str(_DASHBOARD_CACHE["selected_source"])
+        self.selected_environment: str | None = (
+            str(_DASHBOARD_CACHE["selected_environment"])
+            if _DASHBOARD_CACHE["selected_environment"] is not None
+            else None
+        )
         self.config = load_config()
         self.store = ManifestStore()
         self._loading = False
+        self.available_environments: list[PortainerEnvironment] = []
 
         with ui.row().classes("dw-page-meta w-full"):
             with ui.column().classes("gap-0"):
@@ -89,6 +100,18 @@ class DashboardController:
                         .style("width:140px;")
                         .props("dark dense borderless")
                     )
+                    self.source_toggle = ui.toggle(
+                        {"local": "Local Docker", "portainer": "Portainer", "all": "All"},
+                        value=self.selected_source,
+                        on_change=self._on_source_change,
+                    ).props("unelevated")
+                    self.environment_select = (
+                        ui.select({}, value=self.selected_environment)
+                        .classes("dw-input-shell")
+                        .style("min-width:180px;")
+                        .props("dark dense borderless")
+                    )
+                    self.environment_select.on_value_change(self._on_environment_change)
 
                 with ui.row().classes("dw-toolbar-group dw-toolbar-meta"):
                     self.last_checked_label = ui.label("last check: never").classes("mono-sm").style(
@@ -143,8 +166,11 @@ class DashboardController:
         _DASHBOARD_CACHE["results"] = list(self.results)
         _DASHBOARD_CACHE["selected_statuses"] = set(self.selected_statuses)
         _DASHBOARD_CACHE["last_checked"] = self.last_checked
+        _DASHBOARD_CACHE["selected_source"] = self.selected_source
+        _DASHBOARD_CACHE["selected_environment"] = self.selected_environment
 
     def _hydrate_view(self) -> None:
+        self._update_environment_selector()
         if self.last_checked != "Never":
             self.last_checked_label.set_text(f"last check: {self.last_checked}")
         self._update_stats()
@@ -155,6 +181,13 @@ class DashboardController:
             self.table.container.set_visibility(True)
         else:
             self.table.container.set_visibility(False)
+
+    def _update_environment_selector(self) -> None:
+        options = {str(environment.id): environment.name for environment in self.available_environments}
+        self.environment_select.options = options
+        self.environment_select.value = self.selected_environment
+        visible = self.selected_source in {"portainer", "all"} and bool(options)
+        self.environment_select.set_visibility(visible)
 
     def _status_text(self, result: UpdateResult) -> str:
         if result.status == "PINNED":
@@ -271,6 +304,18 @@ class DashboardController:
         new_value = float(event.value or self.config.schedule_interval_seconds)
         self.timer.interval = max(10, new_value)
 
+    async def _on_source_change(self, event) -> None:
+        self.selected_source = str(event.value or "local")
+        if self.selected_source == "local":
+            self.selected_environment = None
+        self._persist_state()
+        await self.refresh_all()
+
+    async def _on_environment_change(self, event) -> None:
+        self.selected_environment = str(event.value) if event.value else None
+        self._persist_state()
+        await self.refresh_all()
+
     async def _timer_refresh(self) -> None:
         await self.refresh_all()
 
@@ -294,11 +339,23 @@ class DashboardController:
     async def refresh_all(self) -> None:
         self._set_loading(True)
         try:
-            containers = get_running_containers()
-            self.conn_label.set_text("connected")
-            self.conn_meta.set_text("docker host online")
-            self._clear_error()
             self.config = load_config()
+            discovery = await discover_containers(
+                self.config,
+                source=self.selected_source,
+                selected_environment=self.selected_environment,
+            )
+            self.available_environments = discovery.environments
+            self._update_environment_selector()
+            containers = discovery.containers
+            if discovery.errors:
+                self._show_error(discovery.errors[0])
+            else:
+                self._clear_error()
+            self.conn_label.set_text("connected" if containers or not discovery.errors else "disconnected")
+            self.conn_meta.set_text(
+                "portainer source active" if self.selected_source == "portainer" else "docker host online"
+            )
             self.results = await check_all(
                 containers,
                 self.config,
@@ -328,6 +385,11 @@ class DashboardController:
 
     async def check_one(self, container_name: str) -> None:
         if not container_name:
+            return
+
+        existing = next((item for item in self.results if item.container_info.name == container_name), None)
+        if existing is not None and existing.container_info.source != "local":
+            await self.refresh_all()
             return
 
         try:

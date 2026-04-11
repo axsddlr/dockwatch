@@ -3,13 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from dockwatch.config import DockwatchConfig, load_config, save_config
+from dockwatch.config import DockwatchConfig, PortainerConfig, load_config, save_config
 from dockwatch.main import app
 from dockwatch.models import ContainerInfo, RegistryType
 from dockwatch.registry import check_all
+from dockwatch.sources import SourceDiscoveryResult
 
 
 class ConfigTests(unittest.TestCase):
@@ -38,6 +40,12 @@ class ConfigTests(unittest.TestCase):
                 schedule_jitter_seconds=45,
                 run_on_startup=False,
                 max_concurrent_checks=8,
+                portainer=PortainerConfig(
+                    enabled=True,
+                    url="https://portainer.example.test:9443",
+                    api_key="secret-token",
+                    environments=["1", "2"],
+                ),
             )
             save_config(source, config_path)
             loaded = load_config(config_path)
@@ -55,6 +63,10 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.schedule_jitter_seconds, 45)
             self.assertFalse(loaded.run_on_startup)
             self.assertEqual(loaded.max_concurrent_checks, 8)
+            self.assertTrue(loaded.portainer.enabled)
+            self.assertEqual(loaded.portainer.url, "https://portainer.example.test:9443")
+            self.assertEqual(loaded.portainer.api_key, "secret-token")
+            self.assertEqual(loaded.portainer.environments, ["1", "2"])
 
 
 class UnpinUnignoreTests(unittest.TestCase):
@@ -70,7 +82,6 @@ class UnpinUnignoreTests(unittest.TestCase):
 
     def _run(self, *args: str):  # noqa: ANN202
         runner = CliRunner()
-        from unittest.mock import patch
         with patch("dockwatch.main.load_config", lambda: load_config(self._config_path)), \
              patch("dockwatch.main.save_config", lambda cfg: save_config(cfg, self._config_path)):
             return runner.invoke(app, list(args))
@@ -98,7 +109,10 @@ class UnpinUnignoreTests(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
 
     def test_check_notify_reports_filtered_out_notifications(self) -> None:
-        with patch("dockwatch.main.get_running_containers", return_value=[]), patch(
+        with patch(
+            "dockwatch.main.discover_containers",
+            new=AsyncMock(return_value=SourceDiscoveryResult()),
+        ), patch(
             "dockwatch.main.send_configured_notifications", return_value=[]
         ) as notify_mock:
             result = self._run("check", "--notify")
@@ -134,6 +148,58 @@ class UnpinUnignoreTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         build_mock.assert_called_once()
         notify_mock.assert_called_once()
+
+    def test_list_source_portainer_uses_discovery(self) -> None:
+        runner = CliRunner()
+        portainer_container = ContainerInfo(
+            name="web",
+            container_id="1",
+            image_ref="nginx:1.0.0",
+            registry=RegistryType.DOCKERHUB,
+            namespace="library",
+            image_name="nginx",
+            current_tag="1.0.0",
+            source="portainer",
+            environment_id="5",
+            environment_name="prod",
+        )
+        with patch("dockwatch.main.load_config", return_value=DockwatchConfig()), patch(
+            "dockwatch.main.discover_containers",
+            new=AsyncMock(return_value=SourceDiscoveryResult(containers=[portainer_container])),
+        ):
+            result = runner.invoke(app, ["list", "--source", "portainer"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Portainer:prod", result.stdout)
+
+    def test_check_source_portainer_handles_discovery_error(self) -> None:
+        runner = CliRunner()
+        with patch("dockwatch.main.load_config", return_value=DockwatchConfig()), patch(
+            "dockwatch.main.discover_containers",
+            new=AsyncMock(return_value=SourceDiscoveryResult(errors=["portainer environments request failed"])),
+        ):
+            result = runner.invoke(app, ["check", "--source", "portainer"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("portainer environments request failed", result.stdout)
+
+    def test_environments_command_lists_portainer_environments(self) -> None:
+        runner = CliRunner()
+
+        class _Env:
+            def __init__(self, id: int, name: str) -> None:
+                self.id = id
+                self.name = name
+
+        with patch("dockwatch.main.load_config", return_value=DockwatchConfig()), patch(
+            "dockwatch.main.discover_environments",
+            new=AsyncMock(return_value=[_Env(1, "local"), _Env(2, "prod")]),
+        ):
+            result = runner.invoke(app, ["environments"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("1: local", result.stdout)
+        self.assertIn("2: prod", result.stdout)
 
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):

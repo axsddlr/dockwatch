@@ -11,9 +11,20 @@ from .models import ContainerInfo, UpdateResult, comparison_summary, deployed_di
 console = Console()
 
 
+def _source_label(info: ContainerInfo) -> str:
+    if info.source == "portainer":
+        if info.environment_name:
+            return f"Portainer:{info.environment_name}"
+        if info.environment_id:
+            return f"Portainer:{info.environment_id}"
+        return "Portainer"
+    return "Local"
+
+
 def render_containers_table(containers: list[ContainerInfo]) -> None:
     table = Table(title="Running Containers")
     table.add_column("Name", style="cyan")
+    table.add_column("Source")
     table.add_column("Image")
     table.add_column("Deployed")
     table.add_column("Registry")
@@ -24,6 +35,7 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
         link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             container.name or "-",
+            _source_label(container),
             container.image_ref or "-",
             deployed_display(container),
             container.registry.value,
@@ -31,7 +43,7 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
         )
 
     if not containers:
-        table.add_row("-", "No running containers", "-", "-", "-")
+        table.add_row("-", "-", "No running containers", "-", "-", "-")
 
     console.print(table)
 
@@ -65,6 +77,7 @@ def _bump_label(result: UpdateResult) -> str:
 def render_update_table(results: list[UpdateResult]) -> None:
     table = Table(title="Container Update Status")
     table.add_column("Name", style="cyan")
+    table.add_column("Source")
     table.add_column("Deployed")
     table.add_column("Remote")
     table.add_column("Bump")
@@ -81,6 +94,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
         link_text = registry_link[1] if registry_link else "-"
         table.add_row(
             result.container_info.name or "-",
+            _source_label(result.container_info),
             deployed_display_result(result),
             remote_value,
             _bump_label(result),
@@ -91,7 +105,7 @@ def render_update_table(results: list[UpdateResult]) -> None:
         )
 
     if not results:
-        table.add_row("-", "-", "No results", "[dim]-[/dim]", "-", "-", "[yellow]UNKNOWN[/yellow]", "-")
+        table.add_row("-", "-", "-", "No results", "[dim]-[/dim]", "-", "-", "[yellow]UNKNOWN[/yellow]", "-")
 
     console.print(table)
 

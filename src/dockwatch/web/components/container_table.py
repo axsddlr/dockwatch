@@ -107,6 +107,8 @@ class ContainerStatusTable:
                 ui.html(f'<span class="status-dot {dot_class}"></span>')
                 with ui.element("div").classes("dw-name-stack"):
                     ui.label(name).classes("dw-name-title")
+                    if result.container_info.source == "portainer":
+                        ui.label(result.container_info.environment_name or "Portainer").classes("dw-source-pill")
                     if registry_link:
                         label, url = registry_link
                         with ui.row().classes("items-center gap-2 no-wrap"):

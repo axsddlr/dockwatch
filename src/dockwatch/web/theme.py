@@ -348,6 +348,21 @@ def apply_theme() -> None:
         text-overflow: ellipsis;
     }}
 
+    .dw-source-pill {{
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        min-height: 18px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.06);
+        color: {TEXT_PRIMARY};
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }}
+
     .dw-registry-link {{
         display: inline-flex;
         align-items: center;

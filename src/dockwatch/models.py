@@ -35,6 +35,9 @@ class ContainerInfo:
     notify_enabled: bool | None = None
     include_tags_override: list[str] | None = None
     exclude_tags_override: list[str] | None = None
+    source: str = "local"
+    environment_id: str | None = None
+    environment_name: str | None = None
 
 
 def deployed_version_hint(info: ContainerInfo) -> str | None:

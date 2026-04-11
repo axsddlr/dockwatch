@@ -5,7 +5,8 @@ from __future__ import annotations
 from nicegui import ui
 
 from ... import __version__
-from ...config import load_config, save_config
+from ...config import PortainerConfig, load_config, save_config
+from ...integrations import PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ..shell import page_shell
@@ -59,6 +60,11 @@ class SettingsController:
                     ui.label("Test sends use a sample outdated container event.").style(
                         f"color:{TEXT_DIM}; font-size:12px; line-height:1.45;"
                     )
+                    ui.separator()
+                    ui.label("Portainer").classes("section-label")
+                    ui.label("Optional read-only source for Portainer-managed environments.").style(
+                        f"color:{TEXT_DIM}; font-size:12px; line-height:1.45;"
+                    )
 
                 with ui.column().classes("dw-settings-main"):
                     with ui.card().classes("dw-panel w-full").style("padding: 16px;"):
@@ -78,6 +84,34 @@ class SettingsController:
                                 .classes("w-full dw-input-shell")
                                 .props("dark dense borderless")
                             )
+                    with ui.card().classes("dw-panel w-full").style("padding: 16px;"):
+                        with ui.column().classes("w-full gap-3"):
+                            self.portainer_enabled = ui.switch(
+                                "Enable Portainer", value=self.config.portainer.enabled
+                            )
+                            self.portainer_url = (
+                                ui.input("Portainer URL", value=self.config.portainer.url)
+                                .classes("w-full dw-input-shell")
+                                .props("dark dense borderless")
+                            )
+                            self.portainer_api_key = (
+                                ui.input(
+                                    "Portainer API Key",
+                                    value=self.config.portainer.api_key,
+                                    password=True,
+                                )
+                                .classes("w-full dw-input-shell")
+                                .props("dark dense borderless")
+                            )
+                            self.portainer_environments = (
+                                ui.input(
+                                    "Portainer Environments",
+                                    value=", ".join(self.config.portainer.environments),
+                                    placeholder="empty = all, or comma-separated environment IDs",
+                                )
+                                .classes("w-full dw-input-shell")
+                                .props("dark dense borderless")
+                            )
                     with ui.card().classes("dw-panel w-full").style("padding: 14px 16px;"):
                         with ui.row().classes("items-center gap-3"):
                             ui.button("Save Settings", on_click=self.save_notification_settings).props(
@@ -85,6 +119,9 @@ class SettingsController:
                             ).classes("dw-btn-secondary")
                             ui.button(
                                 "Send Test Notification", on_click=self.send_test_notification
+                            ).props("outline").classes("dw-btn-ghost")
+                            ui.button(
+                                "Test Portainer Connection", on_click=self.test_portainer_connection
                             ).props("outline").classes("dw-btn-ghost")
 
             with ui.row().classes("dw-footer w-full justify-center").style("padding:16px 0;"):
@@ -95,6 +132,16 @@ class SettingsController:
         self.config.webhook_url = (self.webhook_input.value or "").strip()
         self.config.discord_webhook = (self.discord_input.value or "").strip()
         self.config.ntfy_url = (self.ntfy_input.value or "").strip()
+        self.config.portainer = PortainerConfig(
+            enabled=bool(self.portainer_enabled.value),
+            url=(self.portainer_url.value or "").strip(),
+            api_key=(self.portainer_api_key.value or "").strip(),
+            environments=[
+                item.strip()
+                for item in str(self.portainer_environments.value or "").split(",")
+                if item.strip()
+            ],
+        )
         save_config(self.config)
         ui.notify("Notification settings saved.", type="positive")
 
@@ -109,6 +156,18 @@ class SettingsController:
             ui.notify("Test notification failed: " + "; ".join(errors), type="negative")
         else:
             ui.notify("Test notification sent.", type="positive")
+
+    async def test_portainer_connection(self) -> None:
+        try:
+            client = PortainerClient(
+                base_url=(self.portainer_url.value or "").strip(),
+                api_key=(self.portainer_api_key.value or "").strip(),
+            )
+            environments = await client.test_connection()
+        except (PortainerError, Exception) as exc:  # noqa: BLE001
+            ui.notify(f"Portainer connection failed: {exc}", type="negative")
+            return
+        ui.notify(f"Connected to Portainer ({len(environments)} environment(s)).", type="positive")
 
 
 def register_settings_page() -> None:

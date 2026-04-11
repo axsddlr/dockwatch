@@ -12,6 +12,14 @@ VALID_NOTIFY_EVENTS = {"new", "update"}
 
 
 @dataclass(slots=True)
+class PortainerConfig:
+    enabled: bool = False
+    url: str = ""
+    api_key: str = ""
+    environments: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class DockwatchConfig:
     pinned: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
@@ -27,6 +35,7 @@ class DockwatchConfig:
     schedule_jitter_seconds: int = 30
     run_on_startup: bool = True
     max_concurrent_checks: int = 5
+    portainer: PortainerConfig = field(default_factory=PortainerConfig)
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
@@ -114,7 +123,14 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"discord_webhook = {_toml_string(config.discord_webhook)}\n"
         f"ntfy_url = {_toml_string(config.ntfy_url)}\n"
     )
-    return base + notifications
+    portainer = (
+        "\n[portainer]\n"
+        f"enabled = {_bool_toml(config.portainer.enabled)}\n"
+        f"url = {_toml_string(config.portainer.url)}\n"
+        f"api_key = {_toml_string(config.portainer.api_key)}\n"
+        f"environments = {_toml_array(config.portainer.environments)}\n"
+    )
+    return base + notifications + portainer
 
 
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
@@ -134,6 +150,12 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
         schedule_jitter_seconds=max(0, int(config.schedule_jitter_seconds)),
         run_on_startup=bool(config.run_on_startup),
         max_concurrent_checks=max(1, int(config.max_concurrent_checks)),
+        portainer=PortainerConfig(
+            enabled=bool(config.portainer.enabled),
+            url=config.portainer.url.strip(),
+            api_key=config.portainer.api_key.strip(),
+            environments=_unique_ordered(config.portainer.environments),
+        ),
     )
     path.write_text(_to_toml(normalized), encoding="utf-8")
 
@@ -147,6 +169,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     content = path.read_text(encoding="utf-8")
     data = tomllib.loads(content) if content.strip() else {}
     notifications = data.get("notifications", {}) if isinstance(data, dict) else {}
+    portainer = data.get("portainer", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
         pinned=_parse_list(data.get("pinned")),
         ignored=_parse_list(data.get("ignored")),
@@ -162,5 +185,11 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         schedule_jitter_seconds=_parse_int(data.get("schedule_jitter_seconds"), 30, minimum=0),
         run_on_startup=_parse_bool(data.get("run_on_startup"), True),
         max_concurrent_checks=_parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
+        portainer=PortainerConfig(
+            enabled=_parse_bool(portainer.get("enabled"), False) if isinstance(portainer, dict) else False,
+            url=str(portainer.get("url", "")) if isinstance(portainer, dict) else "",
+            api_key=str(portainer.get("api_key", "")) if isinstance(portainer, dict) else "",
+            environments=_parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
+        ),
     )
     return config

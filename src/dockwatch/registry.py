@@ -485,6 +485,12 @@ async def check_lscr(
     tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
 
     async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        probe = await _request_with_retry(lambda: client.get(tags_url))
+        if probe.status_code == 404:
+            return _skip_result(info, "lscr image not found")
+        headers: dict[str, str] | None = None
+        if probe.status_code == 401:
+            headers = await _resolve_bearer_headers(client, probe)
         return await _check_repository_tags(
             client,
             info=info,
@@ -495,6 +501,7 @@ async def check_lscr(
             error_prefix="lscr",
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
+            headers=headers,
         )
 
     try:

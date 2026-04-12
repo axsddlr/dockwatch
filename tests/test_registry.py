@@ -422,6 +422,45 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.version_status, "equal")
         self.assertIsNotNone(result.version_diff)
 
+    async def test_check_lscr_follows_bearer_challenge(self) -> None:
+        info = make_container(registry=RegistryType.LSCR, current_tag="1.0.0")
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(
+                    401,
+                    {},
+                    url="https://lscr.io/v2/owner/image/tags/list",
+                    headers={
+                        "Www-Authenticate": 'Bearer realm="https://lscr.io/token",service="lscr.io",scope="repository:owner/image:pull"'
+                    },
+                ),
+                MockResponse(
+                    200,
+                    {"token": "lscr-token"},
+                    url="https://lscr.io/token?service=lscr.io&scope=repository:owner/image:pull",
+                ),
+                MockResponse(
+                    200,
+                    {"tags": ["latest", "1.2.0"]},
+                    url="https://lscr.io/v2/owner/image/tags/list",
+                ),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://lscr.io/v2/owner/image/manifests/1.2.0",
+                    headers={"Docker-Content-Digest": "sha256:lscr-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_lscr(info)
+
+        self.assertEqual(result.latest_tag, "1.2.0")
+        self.assertTrue(result.is_outdated)
+        _, third_headers = mock_client.calls[2]
+        self.assertEqual(third_headers, {"Authorization": "Bearer lscr-token"})
+
     async def test_check_container_reports_same_tag_digest_drift(self) -> None:
         info = ContainerInfo(
             name="gluetun",

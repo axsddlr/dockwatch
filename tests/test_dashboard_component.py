@@ -263,6 +263,57 @@ class DashboardComponentTests(unittest.TestCase):
         self.assertIn("No containers to display.", ui.labels)
         self.assertIn("No containers match the selected status filters.", ui.labels)
 
+    def test_container_status_table_hides_update_for_missing_compose_mapping(self) -> None:
+        ui = _TableUI()
+        with patch("dockwatch.web.components.container_table.ui", ui):
+            table = ContainerStatusTable()
+            table.render(
+                [
+                    UpdateResult(
+                        container_info=ContainerInfo(
+                            name="web",
+                            container_id="1",
+                            image_ref="nginx:1.0.0",
+                            registry=RegistryType.DOCKERHUB,
+                            namespace="library",
+                            image_name="nginx",
+                            current_tag="1.0.0",
+                            compose_project="media",
+                            compose_service="web",
+                        ),
+                        latest_tag="1.1.0",
+                        is_outdated=True,
+                        status=None,
+                        event="update",
+                        deployed_tag="1.0.0",
+                        remote_tag="1.1.0",
+                        comparison_basis="version",
+                    )
+                ],
+                on_check=lambda _name: None,
+                on_pin_toggle=lambda _name: None,
+                on_update=lambda _name: None,
+                update_plans={
+                    "web": UpdatePlan(
+                        container_name="web",
+                        container_id="1",
+                        source="local",
+                        mode="compose",
+                        allowed=False,
+                        image_ref="nginx:1.0.0",
+                        deployed_display="1.0.0",
+                        remote_display="1.1.0",
+                        compose_project="media",
+                        compose_service="web",
+                        reason="compose project 'media' is missing from config.compose_projects",
+                    )
+                },
+            )
+
+        self.assertIn("Check", ui.buttons)
+        self.assertIn("Pin", ui.buttons)
+        self.assertNotIn("Update", ui.buttons)
+
 
 if __name__ == "__main__":
     unittest.main()

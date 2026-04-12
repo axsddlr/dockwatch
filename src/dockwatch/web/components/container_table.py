@@ -43,6 +43,12 @@ def _bump_meta(result: UpdateResult) -> tuple[str, str] | None:
     return bump_type, color
 
 
+def _should_hide_update_button(plan: UpdatePlan | None) -> bool:
+    if plan is None or plan.allowed or not plan.reason:
+        return False
+    return "missing from config.compose_projects" in plan.reason
+
+
 class ContainerStatusTable:
     def __init__(self) -> None:
         self.container = ui.column().classes("w-full")
@@ -135,15 +141,16 @@ class ContainerStatusTable:
                     icon="refresh",
                     on_click=lambda _=None, n=name: on_check(n),
                 ).props("unelevated size=sm").classes("dw-btn-secondary")
-                update_button = ui.button(
-                    "Update",
-                    icon="upgrade",
-                    on_click=lambda _=None, n=name: on_update(n),
-                ).props("unelevated size=sm").classes("dw-btn-ghost")
-                if update_plan is not None and not update_plan.allowed:
-                    update_button.props("disable")
-                    if update_plan.reason:
-                        update_button.tooltip(update_plan.reason)
+                if not _should_hide_update_button(update_plan):
+                    update_button = ui.button(
+                        "Update",
+                        icon="upgrade",
+                        on_click=lambda _=None, n=name: on_update(n),
+                    ).props("unelevated size=sm").classes("dw-btn-ghost")
+                    if update_plan is not None and not update_plan.allowed:
+                        update_button.props("disable")
+                        if update_plan.reason:
+                            update_button.tooltip(update_plan.reason)
                 ui.button(
                     pin_label,
                     icon="push_pin",

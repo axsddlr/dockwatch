@@ -21,8 +21,11 @@ exclude_tags = [
   # "-rc$",
 ]
 
+# Valid values: "new", "update"
 notify_on = ["update"]
 first_check_notify = false
+
+# Scheduler
 schedule_interval_seconds = 300
 schedule_jitter_seconds = 30
 run_on_startup = true
@@ -37,6 +40,33 @@ discord_webhook = ""
 
 # ntfy topic URL
 ntfy_url = ""
+
+[portainer]
+# Optional read-only Portainer discovery/check source
+enabled = false
+url = "https://portainer.local:9443"
+api_key = ""
+
+# Empty = all environments visible to the API key
+environments = [
+  # "1",
+  # "2",
+]
+
+[compose_projects]
+# Optional strict mappings for compose-managed container updates.
+# dockwatch will only run compose updates when the discovered
+# com.docker.compose.project label matches one of these entries.
+
+[compose_projects.media]
+workdir = "/srv/media"
+files = ["compose.yml"]
+project_name = "media"
+
+[compose_projects.downloads]
+workdir = "/srv/downloads"
+files = ["compose.yml", "compose.override.yml"]
+project_name = "downloads"
 
 # Optional container labels can override tag filters:
 # dockwatch.include_tags = "^1\\.;^2\\."

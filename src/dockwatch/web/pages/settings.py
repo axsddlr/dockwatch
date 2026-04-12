@@ -249,7 +249,7 @@ class SettingsController:
                                     step=5,
                                 )
                                 .classes("w-full dw-input-shell")
-                                .props("dark dense borderless")
+                                .props("dark dense borderless stack-label")
                             )
                             self.schedule_jitter_input = (
                                 ui.number(
@@ -259,7 +259,7 @@ class SettingsController:
                                     step=1,
                                 )
                                 .classes("w-full dw-input-shell")
-                                .props("dark dense borderless")
+                                .props("dark dense borderless stack-label")
                             )
                             self.max_concurrent_checks_input = (
                                 ui.number(
@@ -269,7 +269,7 @@ class SettingsController:
                                     step=1,
                                 )
                                 .classes("w-full dw-input-shell")
-                                .props("dark dense borderless")
+                                .props("dark dense borderless stack-label")
                             )
                             self.run_on_startup = ui.switch(
                                 "Run checks on startup",

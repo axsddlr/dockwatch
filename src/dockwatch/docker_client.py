@@ -174,6 +174,8 @@ def parse_image_ref(
             registry = RegistryType.GHCR
         elif host == "lscr.io":
             registry = RegistryType.LSCR
+        elif host == "codeberg.org":
+            registry = RegistryType.CODEBERG
         elif host in {"docker.io", "index.docker.io", "registry-1.docker.io"}:
             registry = RegistryType.DOCKERHUB
         else:

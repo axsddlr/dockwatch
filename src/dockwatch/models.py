@@ -13,6 +13,7 @@ class RegistryType(str, Enum):
     DOCKERHUB = "dockerhub"
     LSCR = "lscr"
     GHCR = "ghcr"
+    CODEBERG = "codeberg"
     UNKNOWN = "unknown"
 
 

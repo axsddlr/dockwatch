@@ -30,6 +30,11 @@ def build_registry_url(info: ContainerInfo) -> str | None:
             return f"https://github.com/{info.namespace}/{info.image_name}"
         return None
 
+    if info.registry == RegistryType.CODEBERG:
+        if info.namespace:
+            return f"https://codeberg.org/{info.namespace}/-/packages/container/{info.image_name}/versions"
+        return None
+
     if info.registry == RegistryType.LSCR:
         if info.namespace:
             return f"https://github.com/{info.namespace}/docker-{info.image_name}"
@@ -44,6 +49,8 @@ def build_registry_link(info: ContainerInfo) -> tuple[str, str] | None:
         return None
     if info.registry == RegistryType.DOCKERHUB:
         return "Docker Hub", url
+    if info.registry == RegistryType.CODEBERG:
+        return "Codeberg", url
     source_url = _source_url(info)
     if source_url:
         return "Source Repo", url

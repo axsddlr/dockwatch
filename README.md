@@ -9,7 +9,7 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 ## What It Does
 
 - Discovers running Docker containers
-- Parses image references (Docker Hub + GHCR, including digest-pinned images)
+- Parses image references (Docker Hub, GHCR, and Codeberg, including digest-pinned images)
 - Checks registries for newer tags
 - Marks containers as `OUTDATED`, `UP-TO-DATE`, `UNKNOWN`, or `PINNED`
 - Supports opt-in notifications (`--notify`) via:
@@ -30,7 +30,7 @@ It is designed as a practical Watchtower-style replacement where **you are infor
 ## Current Status
 
 Implemented:
-- Docker Hub + GHCR check pipeline
+- Docker Hub + GHCR + Codeberg check pipeline
 - CLI commands: `list`, `check`, `version`, `serve`, `pin`, `ignore`, `config list`, `environments`
 - CLI command: `daemon`
 - CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`, `--source`, `--environment`
@@ -242,6 +242,7 @@ Dashboard behavior:
 | --- | --- |
 | Docker Hub | Supported |
 | GHCR (`ghcr.io`) | Supported |
+| Codeberg (`codeberg.org`) | Supported |
 
 ## Notifications
 

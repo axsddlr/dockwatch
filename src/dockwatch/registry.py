@@ -1,4 +1,4 @@
-"""Registry checkers for Docker Hub, GHCR, and lscr.io."""
+"""Registry checkers for Docker Hub, GHCR, Codeberg, and lscr.io."""
 
 from __future__ import annotations
 
@@ -514,6 +514,44 @@ async def check_ghcr(
         return _skip_result(info, f"ghcr check failed: {exc}")
 
 
+async def check_codeberg(
+    info: ContainerInfo,
+    store: ManifestStore | None = None,
+    config: DockwatchConfig | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> UpdateResult:
+    if not info.namespace or not info.image_name:
+        return _skip_result(info, "invalid image reference for codeberg")
+    resolved_config = config or load_config()
+    include_patterns, exclude_patterns, pattern_error = _resolve_effective_tag_filters(info, resolved_config)
+    if pattern_error:
+        return _skip_result(info, pattern_error)
+
+    base_url = "https://codeberg.org"
+    tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
+
+    async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        return await _check_repository_tags(
+            client,
+            info=info,
+            store=store,
+            base_url=base_url,
+            tags_url=tags_url,
+            not_found_reason="codeberg repository not found",
+            error_prefix="codeberg",
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+
+    try:
+        if client is not None:
+            return await _run(client)
+        async with httpx.AsyncClient(timeout=15.0) as session:
+            return await _run(session)
+    except httpx.HTTPError as exc:
+        return _skip_result(info, f"codeberg check failed: {exc}")
+
+
 async def check_container(
     info: ContainerInfo,
     store: ManifestStore | None = None,
@@ -530,6 +568,8 @@ async def check_container(
         return await check_lscr(info, store, config, client=client)
     if info.registry == RegistryType.GHCR:
         return await check_ghcr(info, store, config, client=client)
+    if info.registry == RegistryType.CODEBERG:
+        return await check_codeberg(info, store, config, client=client)
 
     if info.registry == RegistryType.UNKNOWN:
         return _skip_result(info, "local-only or unsupported image reference")

@@ -7,7 +7,15 @@ import httpx
 
 from dockwatch.config import DockwatchConfig
 from dockwatch.models import ContainerInfo, RegistryType
-from dockwatch.registry import _compile_tag_patterns, _select_latest_from_tags, check_all, check_container, check_dockerhub, check_ghcr
+from dockwatch.registry import (
+    _compile_tag_patterns,
+    _select_latest_from_tags,
+    check_all,
+    check_codeberg,
+    check_container,
+    check_dockerhub,
+    check_ghcr,
+)
 
 
 class MockResponse:
@@ -235,6 +243,41 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         _, second_headers = mock_client.calls[1]
         self.assertEqual(second_headers, {"Authorization": "Bearer abc-token"})
+
+    async def test_check_codeberg_uses_public_tags(self) -> None:
+        info = make_container(registry=RegistryType.CODEBERG, current_tag="1.0.0")
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, {"tags": ["latest", "1.3.0", "1.2.0"]}, url="https://codeberg.org/v2/owner/image/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://codeberg.org/v2/owner/image/manifests/1.3.0",
+                    headers={"Docker-Content-Digest": "sha256:codeberg-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_codeberg(info)
+
+        self.assertEqual(result.latest_tag, "1.3.0")
+        self.assertTrue(result.is_outdated)
+        self.assertIsNone(result.check_error)
+
+    async def test_check_codeberg_returns_not_found(self) -> None:
+        info = make_container(registry=RegistryType.CODEBERG, current_tag="1.0.0")
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(404, {}, url="https://codeberg.org/v2/owner/image/tags/list"),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_codeberg(info)
+
+        self.assertIsNone(result.is_outdated)
+        self.assertEqual(result.check_error, "codeberg repository not found")
 
     async def test_check_container_tracks_latest_tag(self) -> None:
         latest_info = ContainerInfo(

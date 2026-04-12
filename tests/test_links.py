@@ -47,6 +47,26 @@ class RegistryLinkTests(unittest.TestCase):
 
         self.assertEqual(build_registry_url(info), "https://github.com/example/app")
 
+    def test_codeberg_link(self) -> None:
+        info = ContainerInfo(
+            name="readeck",
+            container_id="1",
+            image_ref="codeberg.org/readeck/readeck:latest",
+            registry=RegistryType.CODEBERG,
+            namespace="readeck",
+            image_name="readeck",
+            current_tag="latest",
+        )
+
+        self.assertEqual(
+            build_registry_url(info),
+            "https://codeberg.org/readeck/-/packages/container/readeck/versions",
+        )
+        self.assertEqual(
+            build_registry_link(info),
+            ("Codeberg", "https://codeberg.org/readeck/-/packages/container/readeck/versions"),
+        )
+
     def test_source_label_wins(self) -> None:
         info = ContainerInfo(
             name="app",

@@ -79,6 +79,14 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(container.compose_service, "web")
         self.assertEqual(fake_client.list_kwargs, {"all": True})
 
+    def test_parse_image_ref_detects_codeberg_registry(self) -> None:
+        info = parse_image_ref("codeberg.org/readeck/readeck:latest")
+
+        self.assertEqual(info.registry, RegistryType.CODEBERG)
+        self.assertEqual(info.namespace, "readeck")
+        self.assertEqual(info.image_name, "readeck")
+        self.assertEqual(info.current_tag, "latest")
+
 
 if __name__ == "__main__":
     unittest.main()

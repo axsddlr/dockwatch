@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -33,6 +34,7 @@ MANIFEST_ACCEPT_HEADERS = ", ".join([
 ])
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+_BEARER_KV_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
 def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
@@ -265,6 +267,44 @@ async def _fetch_manifest_digest(
         return None
     response.raise_for_status()
     return response.headers.get("Docker-Content-Digest")
+
+
+def _parse_bearer_challenge(header: str | None) -> dict[str, str] | None:
+    if not header:
+        return None
+    scheme, _, params = header.partition(" ")
+    if scheme.lower() != "bearer" or not params.strip():
+        return None
+    parsed = {key: value for key, value in _BEARER_KV_RE.findall(params)}
+    if "realm" not in parsed:
+        return None
+    return parsed
+
+
+def _build_token_url(challenge: dict[str, str]) -> str:
+    realm = challenge["realm"]
+    parsed = urlparse(realm)
+    existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key in ("service", "scope"):
+        if challenge.get(key):
+            existing[key] = challenge[key]
+    return urlunparse(parsed._replace(query=urlencode(existing)))
+
+
+async def _resolve_bearer_headers(
+    client: httpx.AsyncClient,
+    response: httpx.Response,
+) -> dict[str, str] | None:
+    challenge = _parse_bearer_challenge(response.headers.get("Www-Authenticate"))
+    if challenge is None:
+        return None
+    token_response = await _request_with_retry(lambda: client.get(_build_token_url(challenge)))
+    token_response.raise_for_status()
+    token_payload = token_response.json()
+    token = token_payload.get("token") if isinstance(token_payload, dict) else None
+    if not token:
+        raise httpx.HTTPError("registry token response missing token", request=token_response.request)
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _check_repository_tags(
@@ -531,6 +571,12 @@ async def check_codeberg(
     tags_url = f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list"
 
     async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        probe = await _request_with_retry(lambda: client.get(tags_url))
+        if probe.status_code == 404:
+            return _skip_result(info, "codeberg repository not found")
+        headers: dict[str, str] | None = None
+        if probe.status_code == 401:
+            headers = await _resolve_bearer_headers(client, probe)
         return await _check_repository_tags(
             client,
             info=info,
@@ -541,6 +587,7 @@ async def check_codeberg(
             error_prefix="codeberg",
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
+            headers=headers,
         )
 
     try:

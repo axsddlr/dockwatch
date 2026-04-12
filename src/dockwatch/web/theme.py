@@ -485,6 +485,14 @@ def apply_theme() -> None:
         font-size: 11px;
     }}
 
+    .dw-data-cell--wrap {{
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }}
+
     .dw-actions {{
         display: flex;
         align-items: center;

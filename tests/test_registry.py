@@ -279,6 +279,45 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result.is_outdated)
         self.assertEqual(result.check_error, "codeberg repository not found")
 
+    async def test_check_codeberg_follows_bearer_challenge(self) -> None:
+        info = make_container(registry=RegistryType.CODEBERG, current_tag="1.0.0")
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(
+                    401,
+                    {},
+                    url="https://codeberg.org/v2/owner/image/tags/list",
+                    headers={
+                        "Www-Authenticate": 'Bearer realm="https://codeberg.org/service/token",service="container_registry",scope="repository:owner/image:pull"'
+                    },
+                ),
+                MockResponse(
+                    200,
+                    {"token": "cb-token"},
+                    url="https://codeberg.org/service/token?service=container_registry&scope=repository:owner/image:pull",
+                ),
+                MockResponse(
+                    200,
+                    {"tags": ["latest", "1.4.0"]},
+                    url="https://codeberg.org/v2/owner/image/tags/list",
+                ),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://codeberg.org/v2/owner/image/manifests/1.4.0",
+                    headers={"Docker-Content-Digest": "sha256:codeberg-digest"},
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_codeberg(info)
+
+        self.assertEqual(result.latest_tag, "1.4.0")
+        self.assertTrue(result.is_outdated)
+        _, third_headers = mock_client.calls[2]
+        self.assertEqual(third_headers, {"Authorization": "Bearer cb-token"})
+
     async def test_check_container_tracks_latest_tag(self) -> None:
         latest_info = ContainerInfo(
             name="bazarr",

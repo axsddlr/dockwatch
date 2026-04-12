@@ -175,10 +175,14 @@ def _cell(value: str, *, label: str, mono: bool = False) -> None:
 
 
 def _remote_cell(value: str, result: UpdateResult) -> None:
+    row_classes = "items-center gap-2 no-wrap" if not result.check_error else "items-start gap-2"
+    label_classes = "dw-data-cell mono" if not result.check_error else "dw-data-cell dw-data-cell--wrap mono"
     with ui.element("div").classes("dw-data-cell").props('data-label="Remote"'):
-        with ui.row().classes("items-center gap-2 no-wrap"):
-            remote_label = ui.label(value).classes("dw-data-cell mono")
-            if result.version_diff is not None:
+        with ui.row().classes(row_classes):
+            remote_label = ui.label(value).classes(label_classes)
+            if result.check_error:
+                remote_label.tooltip(result.check_error)
+            elif result.version_diff is not None:
                 remote_label.tooltip(f"{result.version_diff.current_raw} -> {result.version_diff.latest_raw} ({result.version_diff.bump_type})")
             bump_meta = _bump_meta(result)
             if bump_meta and result.is_outdated:

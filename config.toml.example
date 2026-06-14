@@ -70,8 +70,9 @@ project_name = "downloads"
 
 [trivy]
 # Vulnerability scanning via Trivy (https://trivy.dev)
-# Requires trivy binary on PATH (brew install trivy / apt install trivy).
+# Requires: trivy on PATH, OR set docker_mode = true (uses aquasec/trivy image).
 enabled = false
+docker_mode = false
 binary_path = "trivy"
 
 # Severity levels to report (CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN)

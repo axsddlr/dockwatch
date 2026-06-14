@@ -30,6 +30,7 @@ class ComposeProjectConfig:
 class TrivyConfig:
     enabled: bool = False
     binary_path: str = "trivy"
+    docker_mode: bool = False
     severity: list[str] = field(default_factory=lambda: ["CRITICAL", "HIGH"])
     scanners: list[str] = field(default_factory=lambda: ["vuln"])
     timeout_seconds: int = 300
@@ -153,6 +154,7 @@ def _to_toml(config: DockwatchConfig) -> str:
     trivy_section = (
         "\n[trivy]\n"
         f"enabled = {_bool_toml(config.trivy.enabled)}\n"
+        f"docker_mode = {_bool_toml(config.trivy.docker_mode)}\n"
         f"binary_path = {_toml_string(config.trivy.binary_path)}\n"
         f"severity = {_toml_array(config.trivy.severity)}\n"
         f"scanners = {_toml_array(config.trivy.scanners)}\n"
@@ -197,6 +199,7 @@ def _parse_trivy_config(data: object) -> TrivyConfig:
     severity = _parse_list(data.get("severity"))
     return TrivyConfig(
         enabled=_parse_bool(data.get("enabled"), False),
+        docker_mode=_parse_bool(data.get("docker_mode"), False),
         binary_path=str(data.get("binary_path", "trivy")).strip() or "trivy",
         severity=_unique_ordered(severity) if severity else ["CRITICAL", "HIGH"],
         scanners=_parse_list(data.get("scanners")) or ["vuln"],
@@ -240,6 +243,7 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
         },
         trivy=TrivyConfig(
             enabled=bool(config.trivy.enabled),
+            docker_mode=bool(config.trivy.docker_mode),
             binary_path=config.trivy.binary_path.strip() or "trivy",
             severity=_unique_ordered(config.trivy.severity) or ["CRITICAL", "HIGH"],
             scanners=_unique_ordered(config.trivy.scanners) or ["vuln"],

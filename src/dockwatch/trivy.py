@@ -23,36 +23,17 @@ class TrivyScanError(RuntimeError):
 class _TrivyScanArgs:
     image_ref: str
     binary: str
-    docker_mode: bool
     severity: list[str]
     scanners: list[str]
     timeout_seconds: int
     skip_db_update: bool
 
 
-def check_trivy_available(custom_path: str = "trivy", *, docker_mode: bool = False) -> bool:
-    if docker_mode:
-        return shutil.which("docker") is not None
+def check_trivy_available(custom_path: str = "trivy") -> bool:
     return shutil.which(custom_path) is not None
 
 
 def _build_cmd(args: _TrivyScanArgs) -> list[str]:
-    if args.docker_mode:
-        cmd = [
-            "docker", "run", "--rm",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock",
-            "aquasec/trivy",
-            "image",
-            "--format", "json",
-            "--no-progress",
-            "--scanners", ",".join(args.scanners),
-            "--severity", ",".join(args.severity),
-        ]
-        if args.skip_db_update:
-            cmd.append("--skip-db-update")
-        cmd.append(args.image_ref)
-        return cmd
-
     cmd = [
         args.binary,
         "image",
@@ -130,8 +111,6 @@ async def _scan_one(args: _TrivyScanArgs) -> TrivyScanResult:
             error=f"scan timed out after {args.timeout_seconds}s",
         )
     except FileNotFoundError:
-        if args.docker_mode:
-            raise TrivyNotFoundError("docker binary not found; required for Trivy docker mode")
         raise TrivyNotFoundError(f"trivy binary not found at '{args.binary}'")
 
     if proc.returncode != 0:
@@ -152,15 +131,12 @@ async def scan_image(
     *,
     timeout_override: int | None = None,
 ) -> TrivyScanResult:
-    if not check_trivy_available(trivy_config.binary_path, docker_mode=trivy_config.docker_mode):
-        if trivy_config.docker_mode:
-            raise TrivyNotFoundError("docker binary not found; required for Trivy docker mode")
+    if not check_trivy_available(trivy_config.binary_path):
         raise TrivyNotFoundError(f"trivy binary not found at '{trivy_config.binary_path}'")
 
     args = _TrivyScanArgs(
         image_ref=image_ref,
         binary=trivy_config.binary_path,
-        docker_mode=trivy_config.docker_mode,
         severity=list(trivy_config.severity) if trivy_config.severity else ["CRITICAL", "HIGH"],
         scanners=list(trivy_config.scanners) if trivy_config.scanners else ["vuln"],
         timeout_seconds=timeout_override or trivy_config.timeout_seconds,

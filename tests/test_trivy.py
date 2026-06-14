@@ -169,7 +169,6 @@ class TrivyConfigTests(unittest.TestCase):
     def test_default_config(self) -> None:
         cfg = TrivyConfig()
         self.assertFalse(cfg.enabled)
-        self.assertFalse(cfg.docker_mode)
         self.assertEqual(cfg.binary_path, "trivy")
         self.assertEqual(cfg.severity, ["CRITICAL", "HIGH"])
         self.assertEqual(cfg.scanners, ["vuln"])
@@ -178,9 +177,8 @@ class TrivyConfigTests(unittest.TestCase):
         self.assertEqual(cfg.cache_ttl_minutes, 60)
 
     def test_config_fields_are_independent(self) -> None:
-        cfg = TrivyConfig(enabled=True, docker_mode=True, timeout_seconds=600)
+        cfg = TrivyConfig(enabled=True, timeout_seconds=600)
         self.assertTrue(cfg.enabled)
-        self.assertTrue(cfg.docker_mode)
         self.assertEqual(cfg.timeout_seconds, 600)
         self.assertEqual(cfg.severity, ["CRITICAL", "HIGH"])
 
@@ -190,7 +188,6 @@ class TrivyCmdBuilderTests(unittest.TestCase):
         args = _TrivyScanArgs(
             image_ref="alpine:latest",
             binary="trivy",
-            docker_mode=False,
             severity=["CRITICAL", "HIGH"],
             scanners=["vuln"],
             timeout_seconds=300,
@@ -211,7 +208,6 @@ class TrivyCmdBuilderTests(unittest.TestCase):
         args = _TrivyScanArgs(
             image_ref="nginx:latest",
             binary="/usr/local/bin/trivy",
-            docker_mode=False,
             severity=["HIGH"],
             scanners=["vuln", "secret"],
             timeout_seconds=120,
@@ -222,42 +218,6 @@ class TrivyCmdBuilderTests(unittest.TestCase):
         self.assertIn("/usr/local/bin/trivy", cmd)
         self.assertEqual(cmd[1], "--skip-db-update")
 
-    def test_build_cmd_docker_mode(self) -> None:
-        args = _TrivyScanArgs(
-            image_ref="nginx:latest",
-            binary="trivy",
-            docker_mode=True,
-            severity=["CRITICAL"],
-            scanners=["vuln"],
-            timeout_seconds=300,
-            skip_db_update=False,
-        )
-        cmd = _build_cmd(args)
-        self.assertEqual(cmd[0], "docker")
-        self.assertEqual(cmd[1], "run")
-        self.assertIn("--rm", cmd)
-        self.assertIn("-v", cmd)
-        self.assertIn("/var/run/docker.sock:/var/run/docker.sock", cmd)
-        self.assertIn("aquasec/trivy", cmd)
-        self.assertIn("image", cmd)
-        self.assertIn("--format", cmd)
-        self.assertIn("json", cmd)
-        self.assertIn("nginx:latest", cmd)
-
-    def test_build_cmd_docker_mode_skip_db_update(self) -> None:
-        args = _TrivyScanArgs(
-            image_ref="alpine:latest",
-            binary="trivy",
-            docker_mode=True,
-            severity=["HIGH"],
-            scanners=["vuln"],
-            timeout_seconds=300,
-            skip_db_update=True,
-        )
-        cmd = _build_cmd(args)
-        self.assertIn("--skip-db-update", cmd)
-        self.assertIn("aquasec/trivy", cmd)
-
 
 class TrivyAvailableTests(unittest.TestCase):
     def test_check_trivy_not_found_for_fake_path(self) -> None:
@@ -265,14 +225,6 @@ class TrivyAvailableTests(unittest.TestCase):
 
     def test_check_trivy_available_default(self) -> None:
         result = check_trivy_available()
-        self.assertIsInstance(result, bool)
-
-    def test_check_docker_mode_checks_docker_binary(self) -> None:
-        result = check_trivy_available(docker_mode=True)
-        self.assertIsInstance(result, bool)
-
-    def test_check_docker_mode_checks_docker_not_trivy(self) -> None:
-        result = check_trivy_available("__nonexistent_trivy__", docker_mode=True)
         self.assertIsInstance(result, bool)
 
 

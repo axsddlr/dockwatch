@@ -187,7 +187,6 @@ environments = []
 
 [trivy]
 enabled = false
-docker_mode = false
 binary_path = "trivy"
 severity = ["CRITICAL", "HIGH"]
 scanners = ["vuln"]
@@ -210,8 +209,7 @@ Notes:
 - `portainer.api_key`: Portainer API key used with the `X-API-Key` header
 - `portainer.environments`: optional environment ID allowlist; empty means all visible environments
 - `trivy.enabled`: must be `true` for `dockwatch scan` to work; scanning is opt-in
-- `trivy.docker_mode`: when `true`, uses `docker run aquasec/trivy` instead of a local binary (only Docker required)
-- `trivy.binary_path`: path to the Trivy binary (ignored in docker mode); defaults to `"trivy"` (resolved via PATH)
+- `trivy.binary_path`: path to the Trivy binary; defaults to `"trivy"` (resolved via PATH)
 - `trivy.severity`: severity levels to report (CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN)
 - `trivy.scanners`: scanners to run (vuln, secret, misconfig, license)
 - `trivy.timeout_seconds`: maximum scan duration per image (min 10)
@@ -224,17 +222,10 @@ Notes:
 
 ### Prerequisites
 
-Choose one:
+**Docker Compose users** — trivy is bundled in the dockwatch image, no extra install needed.
 
-**Option A — Docker mode (recommended, no local install)**
-```toml
-[trivy]
-enabled = true
-docker_mode = true
-```
-Uses the official `aquasec/trivy` Docker image — `dockwatch` calls `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ...`. Only Docker is required.
+**Native (pip) installs** — install Trivy separately:
 
-**Option B — Binary mode**
 ```bash
 # macOS
 brew install trivy
@@ -242,6 +233,9 @@ brew install trivy
 # Linux
 sudo apt install trivy
 ```
+
+Enable scanning in config:
+
 ```toml
 [trivy]
 enabled = true
@@ -251,11 +245,10 @@ enabled = true
 
 1. `dockwatch scan` discovers running containers (same discovery pipeline as `check`)
 2. For each container, it looks up the Docker image ID to check the scan cache
-3. If no cached result exists or the cache TTL has expired, it runs Trivy:
-
-   **Docker mode:** `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --scanners vuln --severity CRITICAL,HIGH --format json --no-progress <image_ref>`
-
-   **Binary mode:** `trivy image --scanners vuln --severity CRITICAL,HIGH --format json --no-progress <image_ref>`
+3. If no cached result exists or the cache TTL has expired, it runs:
+   ```
+   trivy image --scanners vuln --severity CRITICAL,HIGH --format json --no-progress <image_ref>
+   ```
 4. Results are parsed into severity counts (Critical / High / Medium / Low) and individual finding details
 5. Results are cached in SQLite by Docker image ID — re-scanning only happens when the image changes or the cache expires
 

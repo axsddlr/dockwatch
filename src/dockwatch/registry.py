@@ -411,6 +411,7 @@ def _resolve_effective_tag_filters(
         schedule_jitter_seconds=config.schedule_jitter_seconds,
         run_on_startup=config.run_on_startup,
         max_concurrent_checks=config.max_concurrent_checks,
+        trivy=config.trivy,
     )
     return _resolve_tag_filters(effective_config)
 

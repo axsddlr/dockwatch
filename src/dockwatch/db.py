@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
-from .models import ContainerInfo
+from .models import ContainerInfo, TrivyFinding, TrivyScanResult
 
 STATE_DB_PATH = Path.home() / ".config" / "dockwatch" / "manifests.db"
 
@@ -77,6 +77,20 @@ class ManifestStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trivy_scan_cache (
+                    image_id TEXT PRIMARY KEY,
+                    image_ref TEXT NOT NULL,
+                    scan_json TEXT NOT NULL,
+                    critical_count INTEGER NOT NULL DEFAULT 0,
+                    high_count INTEGER NOT NULL DEFAULT 0,
+                    medium_count INTEGER NOT NULL DEFAULT 0,
+                    low_count INTEGER NOT NULL DEFAULT 0,
+                    scanned_at TEXT NOT NULL
+                )
+                """
+            )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
         with self._connect() as connection:
@@ -132,3 +146,96 @@ class ManifestStore:
             if legacy_key != image_key:
                 connection.execute("DELETE FROM manifest_state WHERE image_key = ?", (legacy_key,))
         return event
+
+    def trivy_cache_get(
+        self,
+        image_id: str,
+        *,
+        cache_ttl_minutes: int = 60,
+    ) -> TrivyScanResult | None:
+        import json  # noqa: PLC0415
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT image_ref, scan_json, critical_count, high_count, medium_count, low_count, scanned_at
+                FROM trivy_scan_cache
+                WHERE image_id = ?
+                """,
+                (image_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        image_ref, scan_json, critical, high, medium, low, scanned_at = row
+        try:
+            scanned_dt = datetime.fromisoformat(scanned_at)
+            age = (datetime.now(timezone.utc) - scanned_dt).total_seconds()
+            if age > cache_ttl_minutes * 60:
+                return None
+        except (ValueError, TypeError):
+            return None
+
+        findings_data = json.loads(scan_json)
+        findings = [
+            TrivyFinding(**f)
+            for f in findings_data
+        ]
+        return TrivyScanResult(
+            image_ref=image_ref,
+            findings=findings,
+            critical_count=critical,
+            high_count=high,
+            medium_count=medium,
+            low_count=low,
+            scanned_at=scanned_at,
+            image_id=image_id,
+        )
+
+    def trivy_cache_put(self, image_id: str, result: TrivyScanResult) -> None:
+        import json  # noqa: PLC0415
+
+        scanned_at = datetime.now(timezone.utc).isoformat()
+        findings_data = json.dumps([{
+            "vulnerability_id": f.vulnerability_id,
+            "pkg_name": f.pkg_name,
+            "installed_version": f.installed_version,
+            "fixed_version": f.fixed_version,
+            "severity": f.severity,
+            "title": f.title,
+            "primary_url": f.primary_url,
+            "target": f.target,
+            "class_type": f.class_type,
+        } for f in result.findings])
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO trivy_scan_cache (
+                    image_id, image_ref, scan_json,
+                    critical_count, high_count, medium_count, low_count,
+                    scanned_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(image_id) DO UPDATE SET
+                    image_ref = excluded.image_ref,
+                    scan_json = excluded.scan_json,
+                    critical_count = excluded.critical_count,
+                    high_count = excluded.high_count,
+                    medium_count = excluded.medium_count,
+                    low_count = excluded.low_count,
+                    scanned_at = excluded.scanned_at
+                """,
+                (
+                    image_id,
+                    result.image_ref,
+                    findings_data,
+                    result.critical_count,
+                    result.high_count,
+                    result.medium_count,
+                    result.low_count,
+                    scanned_at,
+                ),
+            )
+
+    def trivy_cache_invalidate(self, image_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM trivy_scan_cache WHERE image_id = ?", (image_id,))

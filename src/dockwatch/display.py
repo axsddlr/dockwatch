@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .links import build_registry_link
-from .models import ContainerInfo, UpdateResult, comparison_summary, deployed_display, deployed_display_result, remote_display
+from .models import ContainerInfo, TrivyScanResult, UpdateResult, comparison_summary, deployed_display, deployed_display_result, remote_display
 
 console = Console()
 
@@ -115,3 +115,37 @@ def render_summary(results: list[UpdateResult]) -> None:
     up_to_date = sum(1 for result in results if result.is_outdated is False and not result.check_error)
     unknown = len(results) - outdated - up_to_date
     console.print(f"Summary: {outdated} outdated, {up_to_date} up-to-date, {unknown} unknown")
+
+
+def render_scan_results(scan_results: list[TrivyScanResult]) -> None:
+    table = Table(title="Vulnerability Scan Results")
+    table.add_column("Image", style="cyan")
+    table.add_column("Critical", style="red")
+    table.add_column("High", style="yellow")
+    table.add_column("Medium")
+    table.add_column("Low")
+    table.add_column("Total")
+    table.add_column("Status")
+
+    for scan in scan_results:
+        if scan.error:
+            table.add_row(
+                scan.image_ref,
+                "-", "-", "-", "-", "-",
+                f"[red]{scan.error}[/red]",
+            )
+        else:
+            table.add_row(
+                scan.image_ref,
+                str(scan.critical_count),
+                str(scan.high_count),
+                str(scan.medium_count),
+                str(scan.low_count),
+                str(scan.total_count),
+                "[red]VULNERABLE[/red]" if scan.total_count > 0 else "[green]CLEAN[/green]",
+            )
+
+    if not scan_results:
+        table.add_row("-", "-", "-", "-", "-", "-", "No scan results")
+
+    console.print(table)

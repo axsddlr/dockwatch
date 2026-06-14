@@ -68,6 +68,27 @@ workdir = "/srv/downloads"
 files = ["compose.yml", "compose.override.yml"]
 project_name = "downloads"
 
+[trivy]
+# Vulnerability scanning via Trivy (https://trivy.dev)
+# Requires trivy binary on PATH (brew install trivy / apt install trivy).
+enabled = false
+binary_path = "trivy"
+
+# Severity levels to report (CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN)
+severity = ["CRITICAL", "HIGH"]
+
+# Scanners to run: vuln, secret, misconfig, license
+scanners = ["vuln"]
+
+# Max scan duration per image
+timeout_seconds = 300
+
+# Skip trivy DB auto-update before each scan
+skip_db_update = false
+
+# Cache scan results (minutes)
+cache_ttl_minutes = 60
+
 # Optional container labels can override tag filters:
 # dockwatch.include_tags = "^1\\.;^2\\."
 # dockwatch.exclude_tags = "-rc$"

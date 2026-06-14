@@ -157,3 +157,37 @@ def comparison_summary(result: UpdateResult) -> str:
     if result.status == "PINNED" or result.check_error:
         return "-"
     return "no comparison details"
+
+
+@dataclass(slots=True)
+class TrivyFinding:
+    vulnerability_id: str
+    pkg_name: str
+    installed_version: str
+    fixed_version: str | None
+    severity: str
+    title: str
+    primary_url: str
+    target: str
+    class_type: str
+
+    @property
+    def severity_order(self) -> int:
+        return {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}.get(self.severity.upper(), 0)
+
+
+@dataclass(slots=True)
+class TrivyScanResult:
+    image_ref: str
+    findings: list[TrivyFinding]  # noqa: RUF012
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    error: str | None = None
+    scanned_at: str | None = None
+    image_id: str | None = None
+
+    @property
+    def total_count(self) -> int:
+        return self.critical_count + self.high_count + self.medium_count + self.low_count

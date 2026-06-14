@@ -13,13 +13,14 @@ from packaging.version import Version
 from . import __version__
 from .config import DockwatchConfig, load_config, save_config
 from .db import ManifestStore
-from .display import render_containers_table, render_summary, render_update_table
-from .docker_client import get_running_containers
-from .models import ContainerInfo, RegistryType, UpdateResult
+from .display import render_containers_table, render_scan_results, render_summary, render_update_table
+from .docker_client import get_image_id, get_running_containers
+from .models import ContainerInfo, RegistryType, TrivyScanResult, UpdateResult
 from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
 from .sources import discover_containers, discover_environments
+from .trivy import TrivyNotFoundError, scan_image
 from .updater import build_update_plan, describe_update_plan, execute_update
 from .web import run_web_app
 
@@ -123,6 +124,106 @@ def check_updates(
                 typer.echo(f"Notifier error: {error}", err=True)
         else:
             typer.echo("Notifications sent.")
+
+
+@app.command("scan")
+def scan_images(
+    container: str | None = typer.Option(None, "--container", help="Scan only one container by name."),
+    json_output: bool = typer.Option(False, "--json", help="Print scan output as JSON."),
+    source: str = typer.Option("local", "--source", help="Container source: local, portainer, or all."),
+    environment: str | None = typer.Option(None, "--environment", help="Portainer environment ID."),
+) -> None:
+    """Scan running container images for vulnerabilities with Trivy."""
+    config = load_config()
+    if not config.trivy.enabled:
+        typer.echo("Trivy scanning is not enabled. Set trivy.enabled = true in config.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        discovery = asyncio.run(discover_containers(config, source=source, selected_environment=environment))
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"Container discovery failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    containers = discovery.containers
+    for error in discovery.errors:
+        typer.echo(error, err=True)
+    if source == "portainer" and discovery.errors and not containers:
+        raise typer.Exit(code=1)
+
+    if container:
+        containers = [item for item in containers if item.name == container]
+        if not containers:
+            typer.echo(f"Container '{container}' is not running.", err=True)
+            raise typer.Exit(code=1)
+
+    store = ManifestStore()
+    scan_results: list[TrivyScanResult] = []
+
+    async def _run_scans() -> None:
+        semaphore = asyncio.Semaphore(config.max_concurrent_checks)
+        async with semaphore:
+            pass
+        tasks = []
+        for info in containers:
+            tasks.append(_scan_container(info, config, store, semaphore))
+        gathered = await asyncio.gather(*tasks)
+        scan_results.extend([r for r in gathered if r is not None])
+
+    async def _scan_container(
+        info: ContainerInfo,
+        cfg: DockwatchConfig,
+        db_store: ManifestStore,
+        sem: asyncio.Semaphore,
+    ) -> TrivyScanResult | None:
+        async with sem:
+            image_id = get_image_id(info.name)
+            if image_id:
+                cached = db_store.trivy_cache_get(image_id, cache_ttl_minutes=cfg.trivy.cache_ttl_minutes)
+                if cached is not None:
+                    return cached
+            try:
+                result = await scan_image(info.image_ref, cfg.trivy)
+            except TrivyNotFoundError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1) from exc
+            if image_id and not result.error:
+                db_store.trivy_cache_put(image_id, result)
+            return result
+
+    try:
+        asyncio.run(_run_scans())
+    except typer.Exit:
+        raise
+    except TrivyNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        payload = [{
+            "image_ref": r.image_ref,
+            "critical": r.critical_count,
+            "high": r.high_count,
+            "medium": r.medium_count,
+            "low": r.low_count,
+            "total": r.total_count,
+            "error": r.error,
+            "findings": [
+                {
+                    "vulnerability_id": f.vulnerability_id,
+                    "package": f.pkg_name,
+                    "installed": f.installed_version,
+                    "fixed": f.fixed_version,
+                    "severity": f.severity,
+                    "title": f.title,
+                    "url": f.primary_url,
+                }
+                for f in r.findings
+            ],
+        } for r in scan_results]
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        render_scan_results(scan_results)
 
 
 @app.command("environments")

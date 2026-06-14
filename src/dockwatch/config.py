@@ -27,6 +27,17 @@ class ComposeProjectConfig:
 
 
 @dataclass(slots=True)
+class TrivyConfig:
+    enabled: bool = False
+    binary_path: str = "trivy"
+    severity: list[str] = field(default_factory=lambda: ["CRITICAL", "HIGH"])
+    scanners: list[str] = field(default_factory=lambda: ["vuln"])
+    timeout_seconds: int = 300
+    skip_db_update: bool = False
+    cache_ttl_minutes: int = 60
+
+
+@dataclass(slots=True)
 class DockwatchConfig:
     pinned: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
@@ -44,6 +55,7 @@ class DockwatchConfig:
     max_concurrent_checks: int = 5
     portainer: PortainerConfig = field(default_factory=PortainerConfig)
     compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
+    trivy: TrivyConfig = field(default_factory=TrivyConfig)
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
@@ -138,6 +150,16 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"api_key = {_toml_string(config.portainer.api_key)}\n"
         f"environments = {_toml_array(config.portainer.environments)}\n"
     )
+    trivy_section = (
+        "\n[trivy]\n"
+        f"enabled = {_bool_toml(config.trivy.enabled)}\n"
+        f"binary_path = {_toml_string(config.trivy.binary_path)}\n"
+        f"severity = {_toml_array(config.trivy.severity)}\n"
+        f"scanners = {_toml_array(config.trivy.scanners)}\n"
+        f"timeout_seconds = {config.trivy.timeout_seconds}\n"
+        f"skip_db_update = {_bool_toml(config.trivy.skip_db_update)}\n"
+        f"cache_ttl_minutes = {config.trivy.cache_ttl_minutes}\n"
+    )
     compose_projects = ""
     if config.compose_projects:
         compose_projects = "\n[compose_projects]\n"
@@ -148,7 +170,7 @@ def _to_toml(config: DockwatchConfig) -> str:
                 f"files = {_toml_array(project_cfg.files)}\n"
                 f"project_name = {_toml_string(project_cfg.project_name)}\n"
             )
-    return base + notifications + portainer + compose_projects
+    return base + notifications + portainer + trivy_section + compose_projects
 
 
 def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
@@ -167,6 +189,21 @@ def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
             project_name=str(raw_cfg.get("project_name", "")).strip(),
         )
     return projects
+
+
+def _parse_trivy_config(data: object) -> TrivyConfig:
+    if not isinstance(data, dict):
+        return TrivyConfig()
+    severity = _parse_list(data.get("severity"))
+    return TrivyConfig(
+        enabled=_parse_bool(data.get("enabled"), False),
+        binary_path=str(data.get("binary_path", "trivy")).strip() or "trivy",
+        severity=_unique_ordered(severity) if severity else ["CRITICAL", "HIGH"],
+        scanners=_parse_list(data.get("scanners")) or ["vuln"],
+        timeout_seconds=_parse_int(data.get("timeout_seconds"), 300, minimum=10),
+        skip_db_update=_parse_bool(data.get("skip_db_update"), False),
+        cache_ttl_minutes=_parse_int(data.get("cache_ttl_minutes"), 60, minimum=1),
+    )
 
 
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
@@ -201,6 +238,15 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             for key, value in config.compose_projects.items()
             if key.strip()
         },
+        trivy=TrivyConfig(
+            enabled=bool(config.trivy.enabled),
+            binary_path=config.trivy.binary_path.strip() or "trivy",
+            severity=_unique_ordered(config.trivy.severity) or ["CRITICAL", "HIGH"],
+            scanners=_unique_ordered(config.trivy.scanners) or ["vuln"],
+            timeout_seconds=max(10, int(config.trivy.timeout_seconds)),
+            skip_db_update=bool(config.trivy.skip_db_update),
+            cache_ttl_minutes=max(1, int(config.trivy.cache_ttl_minutes)),
+        ),
     )
     path.write_text(_to_toml(normalized), encoding="utf-8")
 
@@ -216,6 +262,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     notifications = data.get("notifications", {}) if isinstance(data, dict) else {}
     portainer = data.get("portainer", {}) if isinstance(data, dict) else {}
     compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}
+    trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
         pinned=_parse_list(data.get("pinned")),
         ignored=_parse_list(data.get("ignored")),
@@ -238,5 +285,6 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
             environments=_parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
         ),
         compose_projects=_parse_compose_projects(compose_projects),
+        trivy=_parse_trivy_config(trivy_raw),
     )
     return config

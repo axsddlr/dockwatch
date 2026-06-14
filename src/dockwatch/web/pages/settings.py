@@ -124,6 +124,7 @@ def build_config_from_form(existing: DockwatchConfig, form: SettingsFormData) ->
             environments=_parse_csv_list(form.portainer_environments),
         ),
         compose_projects=existing.compose_projects,
+        trivy=existing.trivy,
     )
 
 

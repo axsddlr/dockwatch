@@ -250,3 +250,17 @@ def get_running_containers() -> list[ContainerInfo]:
         containers.append(info)
 
     return containers
+
+
+def get_image_id(container_name: str) -> str | None:
+    """Return the Docker image ID for a running container by name."""
+    try:
+        client = docker.from_env()
+    except DockerException:
+        return None
+    try:
+        container = client.containers.get(container_name)
+        image_id = container.image.id
+        return image_id.removeprefix("sha256:") if image_id else None
+    except Exception:  # noqa: BLE001
+        return None

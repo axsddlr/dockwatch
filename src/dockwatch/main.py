@@ -22,7 +22,7 @@ from .scheduler import ScheduledCheckRunner
 from .sources import discover_containers, discover_environments
 from .trivy import TrivyNotFoundError, scan_image
 from .updater import build_update_plan, describe_update_plan, execute_update
-from .web import run_web_app
+
 
 app = typer.Typer(
     help=(
@@ -162,8 +162,6 @@ def scan_images(
 
     async def _run_scans() -> None:
         semaphore = asyncio.Semaphore(config.max_concurrent_checks)
-        async with semaphore:
-            pass
         tasks = []
         for info in containers:
             tasks.append(_scan_container(info, config, store, semaphore))
@@ -309,8 +307,10 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host", help="Host interface to bind web dashboard."),
     port: int = typer.Option(8080, "--port", help="Port to bind web dashboard."),
 ) -> None:
-    """Launch NiceGUI dashboard."""
-    run_web_app(host=host, port=port)
+    """Launch web dashboard."""
+    import uvicorn
+    from .api.app import create_app
+    uvicorn.run(create_app(), host=host, port=port)
 
 
 @app.command("daemon")

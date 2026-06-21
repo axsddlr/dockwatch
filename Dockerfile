@@ -2,10 +2,18 @@
 
 FROM aquasec/trivy:latest AS trivy
 
+FROM node:22-slim AS frontend-builder
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim AS runtime
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
+COPY --from=frontend-builder /app/dist /app/frontend/dist
 
 WORKDIR /app
 

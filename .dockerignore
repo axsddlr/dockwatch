@@ -10,7 +10,17 @@ tasks
 tests
 idea.txt
 README.md
+AGENTS.md
+CLAUDE.md
+RTK.md
 .github
+
+# Screenshots
+*.png
+*.avif
+
+# Frontend dev — only source needed for builder stage, dist is pre-built in image
+frontend/node_modules
 
 # Python caches and artifacts
 **/__pycache__

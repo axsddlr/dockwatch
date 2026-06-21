@@ -14,5 +14,25 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockwatch_config:/root/.config/dockwatch
 
+  dockwatch-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dockwatch-local:dev
+    pull_policy: never
+    container_name: dockwatch-dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "5173:5173"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockwatch_config:/root/.config/dockwatch
+      - ./frontend/src:/app/frontend/src:ro
+    environment:
+      - DOCKWATCH_DEV=true
+    command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
+
 volumes:
   dockwatch_config:

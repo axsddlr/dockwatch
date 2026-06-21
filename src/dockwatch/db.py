@@ -37,7 +37,10 @@ class ManifestStore:
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
 
     def _fetch(self, connection: sqlite3.Connection, image_key: str) -> ManifestRecord | None:
         row = connection.execute(
@@ -207,6 +210,7 @@ class ManifestStore:
             "class_type": f.class_type,
         } for f in result.findings])
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """
                 INSERT INTO trivy_scan_cache (
@@ -238,4 +242,5 @@ class ManifestStore:
 
     def trivy_cache_invalidate(self, image_id: str) -> None:
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM trivy_scan_cache WHERE image_id = ?", (image_id,))

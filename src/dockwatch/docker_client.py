@@ -144,7 +144,9 @@ def parse_image_ref(
         last_slash = repo_part.rfind("/")
         last_colon = repo_part.rfind(":")
         if last_colon > last_slash:
-            repo_part, current_tag = repo_part.rsplit(":", 1)
+            tag = repo_part.rsplit(":", 1)[1]
+            repo_part = repo_part.rsplit(":", 1)[0]
+            current_tag = tag or "latest"
 
     parts = [p for p in repo_part.split("/") if p]
     if not parts:
@@ -229,14 +231,17 @@ def get_running_containers() -> list[ContainerInfo]:
 
     containers: list[ContainerInfo] = []
     for container in raw_containers:
-        config = container.attrs.get("Config", {}) or {}
-        labels = dict(config.get("Labels", {}) or {})
-        image_attrs = getattr(container.image, "attrs", {}) or {}
+        try:
+            config = container.attrs.get("Config", {}) or {}
+            labels = dict(config.get("Labels", {}) or {})
+            image_attrs = container.image.attrs if container.image else {}
+            image_attrs = dict(image_attrs) if image_attrs else {}
+        except DockerException:
+            continue
         repo_digests = image_attrs.get("RepoDigests", []) or []
         repo_digest = repo_digests[0] if repo_digests else None
         image_ref = (
             config.get("Image")
-            or getattr(container.image, "tags", [""])[0]
             or ""
         )
         info = parse_image_ref(
@@ -256,7 +261,7 @@ def get_image_id(container_name: str) -> str | None:
     """Return the Docker image ID for a running container by name."""
     try:
         client = docker.from_env()
-    except DockerException:
+    except Exception:  # noqa: BLE001
         return None
     try:
         container = client.containers.get(container_name)

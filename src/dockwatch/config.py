@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import tempfile
 import tomllib
 
 CONFIG_PATH = Path.home() / ".config" / "dockwatch" / "config.toml"
@@ -165,7 +166,7 @@ def _to_toml(config: DockwatchConfig) -> str:
         compose_projects = "\n[compose_projects]\n"
         for project, project_cfg in config.compose_projects.items():
             compose_projects += (
-                f"\n[compose_projects.{project}]\n"
+                f"\n[compose_projects.{_toml_string(project)}]\n"
                 f"workdir = {_toml_string(project_cfg.workdir)}\n"
                 f"files = {_toml_array(project_cfg.files)}\n"
                 f"project_name = {_toml_string(project_cfg.project_name)}\n"
@@ -248,7 +249,18 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             cache_ttl_minutes=max(1, int(config.trivy.cache_ttl_minutes)),
         ),
     )
-    path.write_text(_to_toml(normalized), encoding="utf-8")
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(_to_toml(normalized), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _fallback_config(path: Path) -> DockwatchConfig:
+    default = DockwatchConfig()
+    try:
+        save_config(default, path)
+    except OSError:
+        pass
+    return default
 
 
 def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
@@ -257,8 +269,22 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         save_config(default_config, path)
         return default_config
 
-    content = path.read_text(encoding="utf-8")
-    data = tomllib.loads(content) if content.strip() else {}
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return _fallback_config(path)
+
+    if not content.strip():
+        return _fallback_config(path)
+
+    try:
+        data = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        return _fallback_config(path)
+
+    if not isinstance(data, dict):
+        return _fallback_config(path)
+
     notifications = data.get("notifications", {}) if isinstance(data, dict) else {}
     portainer = data.get("portainer", {}) if isinstance(data, dict) else {}
     compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}

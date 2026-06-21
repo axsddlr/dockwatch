@@ -691,5 +691,9 @@ async def check_all(
         return precomputed
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        checked = await asyncio.gather(*[_run_check(container, client) for container in check_targets])
-    return [*precomputed, *checked]
+        checked = await asyncio.gather(
+            *[_run_check(container, client) for container in check_targets],
+            return_exceptions=True,
+        )
+    results: list[UpdateResult] = [r for r in checked if isinstance(r, UpdateResult)]
+    return [*precomputed, *results]

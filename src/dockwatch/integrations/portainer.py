@@ -35,23 +35,29 @@ class PortainerClient:
         return {"X-API-Key": self.api_key}
 
     async def list_environments(self) -> list[PortainerEnvironment]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{self.base_url}/api/endpoints", headers=self._headers)
         try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/api/endpoints", headers=self._headers)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise PortainerError(f"portainer environments request failed: {exc}") from exc
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
         if not isinstance(payload, list):
             raise PortainerError("portainer environments response was not a list")
         environments: list[PortainerEnvironment] = []
         for item in payload:
             if not isinstance(item, dict):
                 continue
+            raw_id = item.get("Id")
+            if raw_id is None:
+                continue
             environments.append(
                 PortainerEnvironment(
-                    id=int(item.get("Id")),
-                    name=str(item.get("Name") or f"Environment {item.get('Id')}"),
+                    id=int(raw_id),
+                    name=str(item.get("Name") or f"Environment {raw_id}"),
                     url=str(item.get("URL")) if item.get("URL") else None,
                     group_id=int(item["GroupId"]) if item.get("GroupId") is not None else None,
                     status=int(item["Status"]) if item.get("Status") is not None else None,
@@ -60,19 +66,22 @@ class PortainerClient:
         return environments
 
     async def list_containers(self, endpoint_id: int) -> list[dict]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(
-                f"{self.base_url}/api/endpoints/{endpoint_id}/docker/containers/json",
-                headers=self._headers,
-                params={"all": "true"},
-            )
         try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/endpoints/{endpoint_id}/docker/containers/json",
+                    headers=self._headers,
+                    params={"all": "true"},
+                )
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise PortainerError(
                 f"portainer containers request failed for environment {endpoint_id}: {exc}"
             ) from exc
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
         if not isinstance(payload, list):
             raise PortainerError("portainer containers response was not a list")
         return [item for item in payload if isinstance(item, dict)]

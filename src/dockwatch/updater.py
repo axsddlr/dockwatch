@@ -283,6 +283,14 @@ def _execute_plain_update(plan: UpdatePlan) -> UpdateExecutionResult:
     except DockerException:
         container = client.containers.get(plan.container_id)
 
+    found_id = (container.attrs.get("Id", "") or "")[:12]
+    plan_id = (plan.container_id or "")[:12]
+    if plan_id and found_id != plan_id:
+        return UpdateExecutionResult(
+            False, "plain",
+            f"container ID mismatch: plan expected {plan_id}, found {found_id}",
+        )
+
     state = (container.attrs.get("State", {}) or {})
     was_running = bool(state.get("Running"))
     backup_name = f"{plan.container_name}-dockwatch-backup"
@@ -344,8 +352,8 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
         return UpdateExecutionResult(False, "compose", f"compose project '{plan.compose_project}' is not configured")
 
     workdir = Path(project.workdir)
-    if not workdir.exists():
-        return UpdateExecutionResult(False, "compose", f"compose workdir does not exist: {workdir}")
+    if not workdir.is_dir():
+        return UpdateExecutionResult(False, "compose", f"compose workdir is not a directory or does not exist: {workdir}")
 
     pull_cmd = _compose_command(project, "pull", plan.compose_service)
     up_cmd = _compose_command(project, "up", "-d", plan.compose_service)

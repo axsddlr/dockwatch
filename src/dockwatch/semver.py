@@ -26,6 +26,10 @@ def _normalize_tag(tag: str) -> str:
     if normalized.startswith("v") and len(normalized) > 1 and normalized[1].isdigit():
         normalized = normalized[1:]
     if "+" in normalized:
+        idx = normalized.rfind("+")
+        prefix = normalized[:idx]
+        if prefix and any(c in prefix for c in (".", "-", "_")):
+            normalized = prefix
         return normalized
 
     base, sep, suffix = normalized.partition("-")
@@ -53,6 +57,25 @@ def parse_version(tag: str) -> Version | None:
         return None
 
 
+def _strip_build_metadata(tag: str) -> str:
+    idx = tag.rfind("+")
+    if idx < 0:
+        return tag
+    prefix = tag[:idx]
+    if not prefix:
+        return tag
+    if prefix.rfind(".") >= 0 or prefix.rfind("-") >= 0 or prefix.rfind("_") >= 0:
+        return prefix
+    return tag
+
+
+def _normalize_formatting(tag: str) -> str:
+    normalized = _strip_build_metadata(tag)
+    if normalized.lower().startswith("v") and len(normalized) > 1 and normalized[1].isdigit():
+        normalized = normalized[1:]
+    return normalized
+
+
 def compare_versions(current: str, latest: str) -> VersionDiff:
     current_parsed = parse_version(current)
     latest_parsed = parse_version(latest)
@@ -60,9 +83,9 @@ def compare_versions(current: str, latest: str) -> VersionDiff:
         return VersionDiff("UNKNOWN", current_parsed, latest_parsed, current, latest)
 
     if current_parsed == latest_parsed:
-        if current != latest:
-            return VersionDiff("PRE-RELEASE", current_parsed, latest_parsed, current, latest)
-        return VersionDiff("UNKNOWN", current_parsed, latest_parsed, current, latest)
+        if _normalize_formatting(current) == _normalize_formatting(latest):
+            return VersionDiff("UNKNOWN", current_parsed, latest_parsed, current, latest)
+        return VersionDiff("PRE-RELEASE", current_parsed, latest_parsed, current, latest)
 
     if current_parsed.major != latest_parsed.major:
         bump_type: VersionBump = "MAJOR"

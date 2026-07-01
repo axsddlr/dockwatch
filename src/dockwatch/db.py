@@ -178,11 +178,11 @@ class ManifestStore:
         except (ValueError, TypeError):
             return None
 
-        findings_data = json.loads(scan_json)
-        findings = [
-            TrivyFinding(**f)
-            for f in findings_data
-        ]
+        try:
+            findings_data = json.loads(scan_json)
+            findings = [TrivyFinding(**f) for f in findings_data]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return None
         return TrivyScanResult(
             image_ref=image_ref,
             findings=findings,

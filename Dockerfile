@@ -9,7 +9,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.11-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
@@ -23,8 +23,13 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system .
 
+RUN useradd -m -s /bin/bash appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8080
 
-VOLUME ["/var/run/docker.sock", "/root/.config/dockwatch"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "from urllib.request import urlopen; urlopen('http://localhost:8080/health')" || exit 1
 
 CMD ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]

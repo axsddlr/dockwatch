@@ -12,7 +12,24 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - dockwatch_config:/root/.config/dockwatch
+      - dockwatch_config:/home/appuser/.config/dockwatch
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "512M"
+    init: true
 
   dockwatch-dev:
     profiles: ["dev"]
@@ -28,11 +45,28 @@ services:
       - "5173:5173"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - dockwatch_config:/root/.config/dockwatch
+      - dockwatch_config:/home/appuser/.config/dockwatch
       - ./frontend/src:/app/frontend/src:ro
     environment:
       - DOCKWATCH_DEV=true
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: "1G"
+    init: true
 
 volumes:
   dockwatch_config:

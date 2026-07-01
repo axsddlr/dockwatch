@@ -359,6 +359,25 @@ Docker label overrides:
 - On Linux, bind mount: `/var/run/docker.sock:/var/run/docker.sock`
 - On Windows, Docker Desktop/npipe access must be available to the environment.
 
+### Running
+
+```bash
+# Production
+docker compose up -d dockwatch
+
+# Development (with hot-reload frontend on port 5173)
+docker compose --profile dev up -d dockwatch-dev
+```
+
+### Compose features
+
+- **Non-root user**: container runs as `appuser`, not root.
+- **Healthcheck**: `GET /health` endpoint polled every 30s.
+- **Resource limits**: 1 CPU / 512 MB (prod), 2 CPU / 1 GB (dev).
+- **Log rotation**: JSON-file driver, 10 MB per file, 3-file cap.
+- **Init process**: `tini` via `init: true` for proper signal handling and zombie reaping.
+- Config volume persists at `/home/appuser/.config/dockwatch`.
+
 If Docker is unavailable, CLI and dashboard show actionable error messaging.
 
 ## Development

@@ -12,7 +12,15 @@ from .routes import containers, environments, settings, trivy
 from .ws import router as ws_router
 from .. import __version__
 
-DIST_PATH = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
+def _find_frontend_dist() -> Path:
+    candidates = [
+        Path("/app/frontend/dist"),
+        Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[1]
 
 
 def create_app() -> FastAPI:
@@ -36,7 +44,8 @@ def create_app() -> FastAPI:
     app.include_router(trivy.router, prefix="/api")
     app.include_router(ws_router)
 
-    if DIST_PATH.exists():
-        app.mount("/", StaticFiles(directory=str(DIST_PATH), html=True), name="static")
+    dist_path = _find_frontend_dist()
+    if dist_path.exists():
+        app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
 
     return app

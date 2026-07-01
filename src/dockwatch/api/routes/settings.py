@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -16,6 +17,10 @@ from ..serializers import deserialize_settings, serialize_settings
 
 router = APIRouter()
 
+# PUT handlers run in FastAPI's threadpool; serialize the config
+# read-modify-write cycle so concurrent saves cannot drop each other's changes.
+_settings_write_lock = threading.Lock()
+
 
 @router.get("/settings")
 def get_settings() -> Any:
@@ -25,9 +30,10 @@ def get_settings() -> Any:
 
 @router.put("/settings")
 def put_settings(body: dict[str, Any]) -> Any:
-    existing = load_config()
-    updated = deserialize_settings(body, existing)
-    save_config(updated)
+    with _settings_write_lock:
+        existing = load_config()
+        updated = deserialize_settings(body, existing)
+        save_config(updated)
     return serialize_settings(updated)
 
 

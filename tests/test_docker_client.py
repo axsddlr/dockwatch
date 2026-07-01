@@ -40,6 +40,9 @@ class FakeDockerClient:
         self.list_kwargs = kwargs
         return [FakeContainer()]
 
+    def close(self) -> None:
+        pass
+
 
 class DockerClientTests(unittest.TestCase):
     def test_parse_image_ref_reads_label_list_overrides(self) -> None:

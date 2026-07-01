@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, AlertTriangle, Rocket } from 'lucide-react'
 import { api } from '../../api/client'
@@ -19,6 +20,13 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
       onClose()
     },
   })
+
+  // Clear error/success left over from a previous update attempt so a
+  // reopened dialog doesn't show another container's stale status.
+  const resetMutation = updateMutation.reset
+  useEffect(() => {
+    if (open) resetMutation()
+  }, [open, resetMutation])
 
   if (!open) return null
 

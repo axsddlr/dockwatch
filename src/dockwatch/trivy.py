@@ -105,6 +105,8 @@ async def _scan_one(args: _TrivyScanArgs) -> TrivyScanResult:
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=args.timeout_seconds)
     except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
         return TrivyScanResult(
             image_ref=args.image_ref,
             findings=[],

@@ -6,6 +6,6 @@ if ($LASTEXITCODE -ne 0) { throw "install failed" }
 
 Write-Host ""
 Write-Host "==> Starting dockwatch dev server..."
-Write-Host "    Dashboard at http://localhost:8080"
+Write-Host "    Dashboard at http://localhost:8082"
 Write-Host ""
-dockwatch serve --host 0.0.0.0 --port 8080
+dockwatch serve --host 0.0.0.0 --port 8082

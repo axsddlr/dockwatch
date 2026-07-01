@@ -6,6 +6,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const reconnectDelay = useRef(2000)
+  const disposedRef = useRef(false)
   const setResults = useDashboardStore((s) => s.setResults)
   const setWsConnected = useDashboardStore((s) => s.setWsConnected)
   const setIsChecking = useDashboardStore((s) => s.setIsChecking)
@@ -48,6 +49,9 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setWsConnected(false)
+      // Closing during unmount must not schedule a reconnect, or the socket
+      // keeps reconnecting forever after the component is gone.
+      if (disposedRef.current) return
       reconnectTimer.current = setTimeout(() => {
         reconnectDelay.current = Math.min(reconnectDelay.current * 1.5, 30000)
         connect()
@@ -60,8 +64,10 @@ export function useWebSocket() {
   }, [setResults, setWsConnected, setIsChecking, setLastChecked])
 
   useEffect(() => {
+    disposedRef.current = false
     connect()
     return () => {
+      disposedRef.current = true
       clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
     }

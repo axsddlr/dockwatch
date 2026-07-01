@@ -222,39 +222,49 @@ def get_running_containers() -> list[ContainerInfo]:
     """Return Docker containers, including non-running ones, with normalized image metadata."""
     try:
         client = docker.from_env()
-        raw_containers = client.containers.list(all=True)
     except DockerException as exc:
         raise DockerConnectionError(
             "Could not connect to Docker. Ensure the Docker daemon is running "
             "and the current user can access the Docker socket."
         ) from exc
 
-    containers: list[ContainerInfo] = []
-    for container in raw_containers:
+    try:
         try:
-            config = container.attrs.get("Config", {}) or {}
-            labels = dict(config.get("Labels", {}) or {})
-            image_attrs = container.image.attrs if container.image else {}
-            image_attrs = dict(image_attrs) if image_attrs else {}
-        except DockerException:
-            continue
-        repo_digests = image_attrs.get("RepoDigests", []) or []
-        repo_digest = repo_digests[0] if repo_digests else None
-        image_ref = (
-            config.get("Image")
-            or ""
-        )
-        info = parse_image_ref(
-            image_ref,
-            name=(container.name or ""),
-            container_id=(container.id or "")[:12],
-            labels=labels,
-            compose_image_digest=labels.get("com.docker.compose.image"),
-            repo_digest=repo_digest,
-        )
-        containers.append(info)
+            raw_containers = client.containers.list(all=True)
+        except DockerException as exc:
+            raise DockerConnectionError(
+                "Could not connect to Docker. Ensure the Docker daemon is running "
+                "and the current user can access the Docker socket."
+            ) from exc
 
-    return containers
+        containers: list[ContainerInfo] = []
+        for container in raw_containers:
+            try:
+                config = container.attrs.get("Config", {}) or {}
+                labels = dict(config.get("Labels", {}) or {})
+                image_attrs = container.image.attrs if container.image else {}
+                image_attrs = dict(image_attrs) if image_attrs else {}
+            except DockerException:
+                continue
+            repo_digests = image_attrs.get("RepoDigests", []) or []
+            repo_digest = repo_digests[0] if repo_digests else None
+            image_ref = (
+                config.get("Image")
+                or ""
+            )
+            info = parse_image_ref(
+                image_ref,
+                name=(container.name or ""),
+                container_id=(container.id or "")[:12],
+                labels=labels,
+                compose_image_digest=labels.get("com.docker.compose.image"),
+                repo_digest=repo_digest,
+            )
+            containers.append(info)
+
+        return containers
+    finally:
+        client.close()
 
 
 def get_image_id(container_name: str) -> str | None:
@@ -269,3 +279,5 @@ def get_image_id(container_name: str) -> str | None:
         return image_id.removeprefix("sha256:") if image_id else None
     except Exception:  # noqa: BLE001
         return None
+    finally:
+        client.close()

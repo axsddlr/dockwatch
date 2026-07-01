@@ -279,9 +279,22 @@ def _rollback_plain_update(
 def _execute_plain_update(plan: UpdatePlan) -> UpdateExecutionResult:
     client = _docker_client()
     try:
+        return _execute_plain_update_with_client(plan, client)
+    finally:
+        client.close()
+
+
+def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerClient) -> UpdateExecutionResult:
+    try:
         container = client.containers.get(plan.container_name)
     except DockerException:
-        container = client.containers.get(plan.container_id)
+        try:
+            container = client.containers.get(plan.container_id)
+        except DockerException as exc:
+            return UpdateExecutionResult(
+                False, "plain",
+                f"container '{plan.container_name}' not found: {exc}",
+            )
 
     found_id = (container.attrs.get("Id", "") or "")[:12]
     plan_id = (plan.container_id or "")[:12]

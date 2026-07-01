@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSettings, useSaveSettings } from '../hooks/useSettings'
 import { MonitoringScope } from '../components/settings/MonitoringScope'
 import { TagFilters } from '../components/settings/TagFilters'
@@ -54,8 +54,13 @@ export function SettingsPage() {
     trivy_cache_ttl_minutes: 60,
   })
 
+  // Hydrate the form from the server only once; later refetches (e.g. on
+  // window focus) must not overwrite edits the user is still making.
+  const hydratedRef = useRef(false)
+
   useEffect(() => {
-    if (data) {
+    if (data && !hydratedRef.current) {
+      hydratedRef.current = true
       setForm({
         pinned: formatCsv(data.pinned ?? []),
         ignored: formatCsv(data.ignored ?? []),

@@ -24,7 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system .
 
 RUN useradd -m -s /bin/bash appuser && \
-    chown -R appuser:appuser /app
+    mkdir -p /home/appuser/.config/dockwatch && \
+    chown -R appuser:appuser /app /home/appuser/.config/dockwatch
 USER appuser
 
 EXPOSE 8080

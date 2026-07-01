@@ -14,6 +14,10 @@ from .config import ComposeProjectConfig, DockwatchConfig
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError
 from .models import UpdateResult, deployed_display_result, remote_display
 
+# Upper bound for docker compose pull/up; prevents a hung compose command
+# from blocking the update path forever.
+COMPOSE_COMMAND_TIMEOUT_SECONDS = 600
+
 _FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 
 
@@ -372,7 +376,10 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
     up_cmd = _compose_command(project, "up", "-d", plan.compose_service)
 
     try:
-        pull = subprocess.run(pull_cmd, cwd=workdir, capture_output=True, text=True, check=False)
+        pull = subprocess.run(
+            pull_cmd, cwd=workdir, capture_output=True, text=True, check=False,
+            timeout=COMPOSE_COMMAND_TIMEOUT_SECONDS,
+        )
         if pull.returncode != 0:
             return UpdateExecutionResult(
                 False,
@@ -380,7 +387,10 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
                 f"compose pull failed for '{plan.compose_service}'",
                 details=[pull.stderr.strip() or pull.stdout.strip()],
             )
-        up = subprocess.run(up_cmd, cwd=workdir, capture_output=True, text=True, check=False)
+        up = subprocess.run(
+            up_cmd, cwd=workdir, capture_output=True, text=True, check=False,
+            timeout=COMPOSE_COMMAND_TIMEOUT_SECONDS,
+        )
         if up.returncode != 0:
             return UpdateExecutionResult(
                 False,
@@ -388,6 +398,12 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
                 f"compose up failed for '{plan.compose_service}'",
                 details=[up.stderr.strip() or up.stdout.strip()],
             )
+    except subprocess.TimeoutExpired as exc:
+        return UpdateExecutionResult(
+            False,
+            "compose",
+            f"docker compose command timed out after {exc.timeout:.0f}s",
+        )
     except OSError as exc:
         return UpdateExecutionResult(False, "compose", f"failed to run docker compose: {exc}")
 

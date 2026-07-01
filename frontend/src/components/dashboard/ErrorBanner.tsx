@@ -1,5 +1,5 @@
 import { AlertTriangle, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface ErrorBannerProps {
   message: string | null
@@ -8,6 +8,11 @@ interface ErrorBannerProps {
 
 export function ErrorBanner({ message, onDismiss }: ErrorBannerProps) {
   const [dismissed, setDismissed] = useState(false)
+
+  // A new error must reappear even if a previous one was dismissed.
+  useEffect(() => {
+    setDismissed(false)
+  }, [message])
 
   if (!message || dismissed) return null
 

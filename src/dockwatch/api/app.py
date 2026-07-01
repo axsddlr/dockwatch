@@ -45,7 +45,18 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
 
     dist_path = _find_frontend_dist()
-    if dist_path.exists():
+    _mounted = dist_path.exists()
+
+    @app.get("/debug/dist")
+    async def debug_dist() -> dict:
+        return {
+            "resolved_path": str(dist_path),
+            "exists": dist_path.exists(),
+            "mounted": _mounted,
+            "contents": [p.name for p in dist_path.iterdir()][:50] if dist_path.exists() else [],
+        }
+
+    if _mounted:
         app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
 
     return app

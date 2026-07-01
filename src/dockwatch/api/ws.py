@@ -25,8 +25,13 @@ class ConnectionManager:
 
     async def broadcast(self, type_: str, payload: dict[str, Any]) -> None:
         message = json.dumps({"type": type_, "payload": payload})
-        dead_set = {id(ws): ws for ws, r in zip(self.active, results) if isinstance(r, Exception)}
-        self.active = [ws for ws in self.active if id(ws) not in dead_set]
+        targets = list(self.active)
+        results = await asyncio.gather(
+            *[self._send(ws, message) for ws in targets],
+            return_exceptions=True,
+        )
+        dead_ids = {id(ws) for ws, r in zip(targets, results) if isinstance(r, Exception)}
+        self.active = [ws for ws in self.active if id(ws) not in dead_ids]
 
     async def _send(self, websocket: WebSocket, message: str) -> None:
         await websocket.send_text(message)

@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .routes import containers, environments, settings, trivy
 from .ws import router as ws_router
@@ -21,6 +22,25 @@ def _find_frontend_dist() -> Path:
         if path.exists():
             return path
     return candidates[1]
+
+
+class SpaStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> object:  # noqa: ANN001
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or not _is_frontend_route(path, scope):
+                raise
+            return await super().get_response("index.html", scope)
+
+
+def _is_frontend_route(path: str, scope) -> bool:  # noqa: ANN001
+    request_path = str(scope.get("path", path)).lstrip("/")
+    if request_path in {"api", "ws", "debug", "health"}:
+        return False
+    if request_path.startswith(("api/", "ws/", "debug/", "health/")):
+        return False
+    return Path(request_path or path.lstrip("/")).suffix == ""
 
 
 def create_app() -> FastAPI:
@@ -57,6 +77,6 @@ def create_app() -> FastAPI:
         }
 
     if _mounted:
-        app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
+        app.mount("/", SpaStaticFiles(directory=str(dist_path), html=True), name="static")
 
     return app

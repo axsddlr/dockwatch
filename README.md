@@ -365,6 +365,9 @@ Docker label overrides:
 # Production
 docker compose up -d dockwatch
 
+# Use an alternate host port if 8080 is already allocated
+DOCKWATCH_PORT=18082 docker compose up -d dockwatch
+
 # Development (API on port 18080, hot-reload frontend on port 5173)
 docker compose --profile dev up -d dockwatch-dev-api dockwatch-dev-frontend
 

@@ -365,8 +365,8 @@ Docker label overrides:
 # Production
 docker compose up -d dockwatch
 
-# Development (with hot-reload frontend on port 5173)
-docker compose --profile dev up -d dockwatch-dev
+# Development (API on port 18080, hot-reload frontend on port 5173)
+docker compose --profile dev up -d dockwatch-dev-api dockwatch-dev-frontend
 ```
 
 ### Compose features

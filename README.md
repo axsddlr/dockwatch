@@ -367,6 +367,10 @@ docker compose up -d dockwatch
 
 # Development (API on port 18080, hot-reload frontend on port 5173)
 docker compose --profile dev up -d dockwatch-dev-api dockwatch-dev-frontend
+
+# Use alternate host ports if the defaults are already allocated
+DOCKWATCH_DEV_API_PORT=18081 DOCKWATCH_DEV_FRONTEND_PORT=5174 \
+  docker compose --profile dev up -d --remove-orphans dockwatch-dev-api dockwatch-dev-frontend
 ```
 
 ### Compose features

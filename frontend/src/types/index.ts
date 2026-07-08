@@ -105,6 +105,19 @@ export interface DockwatchSettings {
     skip_db_update: boolean
     cache_ttl_minutes: number
   }
+  compose_projects?: Record<string, ComposeProjectConfig>
+}
+
+export interface ComposeProjectConfig {
+  workdir: string
+  files: string[]
+  project_name: string
+}
+
+export interface ComposeDetectResult {
+  compose_project: string
+  detected: ComposeProjectConfig
+  warnings: string[]
 }
 
 export interface PortainerEnvironment {

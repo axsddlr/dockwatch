@@ -1,8 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, AlertTriangle, Rocket } from 'lucide-react'
+import { X, AlertTriangle, Rocket, Settings2 } from 'lucide-react'
 import { api } from '../../api/client'
 import type { UpdateResult } from '../../types'
+import { ComposeProjectConfigDialog } from './ComposeProjectConfigDialog'
+
+const COMPOSE_UNCONFIGURED_PATTERN = /compose project '.+' is missing from config\.compose_projects|compose project '.+' has no configured workdir/
 
 interface UpdateDialogProps {
   result: UpdateResult
@@ -12,6 +15,7 @@ interface UpdateDialogProps {
 
 export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
   const queryClient = useQueryClient()
+  const [showComposeConfig, setShowComposeConfig] = useState(false)
 
   const updateMutation = useMutation({
     mutationFn: () => api.containers.update(result.container_info.name),
@@ -71,9 +75,22 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
           </div>
 
           {updateMutation.isError && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-              <AlertTriangle size={14} />
-              {updateMutation.error instanceof Error ? updateMutation.error.message : 'Update failed'}
+            <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={14} />
+                {updateMutation.error instanceof Error ? updateMutation.error.message : 'Update failed'}
+              </div>
+              {result.container_info.compose_project &&
+                updateMutation.error instanceof Error &&
+                COMPOSE_UNCONFIGURED_PATTERN.test(updateMutation.error.message) && (
+                  <button
+                    onClick={() => setShowComposeConfig(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10 transition-colors"
+                  >
+                    <Settings2 size={12} />
+                    Configure this project
+                  </button>
+                )}
             </div>
           )}
 
@@ -100,6 +117,15 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
           </button>
         </div>
       </div>
+
+      {result.container_info.compose_project && (
+        <ComposeProjectConfigDialog
+          containerName={result.container_info.name}
+          composeProject={result.container_info.compose_project}
+          open={showComposeConfig}
+          onClose={() => setShowComposeConfig(false)}
+        />
+      )}
     </div>
   )
 }

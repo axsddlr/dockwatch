@@ -120,6 +120,14 @@ def serialize_settings(config: DockwatchConfig) -> dict[str, Any]:
             "skip_db_update": config.trivy.skip_db_update,
             "cache_ttl_minutes": config.trivy.cache_ttl_minutes,
         },
+        "compose_projects": {
+            key: {
+                "workdir": value.workdir,
+                "files": value.files,
+                "project_name": value.project_name,
+            }
+            for key, value in config.compose_projects.items()
+        },
     }
 
 
@@ -158,5 +166,21 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig) -> Doc
         existing.trivy.timeout_seconds = int(trivy_data.get("timeout_seconds", existing.trivy.timeout_seconds))
         existing.trivy.skip_db_update = bool(trivy_data.get("skip_db_update", existing.trivy.skip_db_update))
         existing.trivy.cache_ttl_minutes = int(trivy_data.get("cache_ttl_minutes", existing.trivy.cache_ttl_minutes))
+
+    compose_data = data.get("compose_projects", None)
+    if isinstance(compose_data, dict):
+        projects: dict[str, ComposeProjectConfig] = {}
+        for key, raw_cfg in compose_data.items():
+            if not isinstance(raw_cfg, dict):
+                continue
+            project_key = str(key).strip()
+            if not project_key:
+                continue
+            projects[project_key] = ComposeProjectConfig(
+                workdir=str(raw_cfg.get("workdir", "")),
+                files=_ensure_list(raw_cfg.get("files", []), []),
+                project_name=str(raw_cfg.get("project_name", "")),
+            )
+        existing.compose_projects = projects
 
     return existing

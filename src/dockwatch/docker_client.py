@@ -5,6 +5,7 @@ from __future__ import annotations
 import docker
 from docker.errors import DockerException
 
+from .config import ComposeProjectConfig
 from .models import ContainerInfo, RegistryType
 
 DIGEST_PINNED_TAG = "DIGEST_PINNED"
@@ -47,6 +48,22 @@ def _parse_label_list(labels: dict[str, str], key: str) -> list[str] | None:
         seen.add(item)
         unique.append(item)
     return unique
+
+
+def compose_labels_to_project_config(
+    labels: dict[str, str], *, project_name: str | None = None
+) -> ComposeProjectConfig:
+    """Best-effort derivation of a ComposeProjectConfig from a container's
+    own com.docker.compose.* labels. Caller is responsible for validating
+    the resulting workdir against dockwatch's own filesystem before saving.
+    """
+    workdir = str(labels.get("com.docker.compose.project.working_dir", "")).strip()
+    files = _parse_label_list(labels, "com.docker.compose.project.config_files") or []
+    return ComposeProjectConfig(
+        workdir=workdir,
+        files=files,
+        project_name=(project_name or labels.get("com.docker.compose.project", "") or "").strip(),
+    )
 
 
 def _tag_override_kwargs(labels: dict[str, str]) -> dict[str, list[str] | None]:

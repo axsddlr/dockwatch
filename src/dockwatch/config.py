@@ -192,6 +192,35 @@ def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
     return projects
 
 
+def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
+    """Best-effort sanity checks against dockwatch's own filesystem view.
+
+    Does not raise. A container's compose labels record paths as seen by
+    whatever ran `docker compose up` (host shell, Dockge, Dockhand, etc) —
+    those paths may not exist inside dockwatch's own container/mount
+    namespace even when they are perfectly correct from Compose's
+    perspective. Callers decide whether to block or just warn.
+    """
+    warnings: list[str] = []
+    workdir = cfg.workdir.strip()
+    if not workdir:
+        warnings.append("workdir is empty.")
+    elif not Path(workdir).is_dir():
+        warnings.append(
+            f"workdir '{workdir}' is not a directory dockwatch can see. "
+            "dockwatch needs a bind mount to this path to run compose commands."
+        )
+    else:
+        for file in cfg.files:
+            file_path = Path(file)
+            candidate = file_path if file_path.is_absolute() else Path(workdir) / file_path
+            if not candidate.is_file():
+                warnings.append(f"compose file '{file}' was not found at '{candidate}'.")
+    if not cfg.project_name.strip():
+        warnings.append("project_name is empty; compose commands will omit the -p flag.")
+    return warnings
+
+
 def _parse_trivy_config(data: object) -> TrivyConfig:
     if not isinstance(data, dict):
         return TrivyConfig()

@@ -1,4 +1,4 @@
-import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult } from '../types'
+import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig } from '../types'
 
 class ApiError extends Error {
   status: number
@@ -41,6 +41,13 @@ export const api = {
       request<{ ok: boolean; result?: TrivyScanResult; message?: string }>(`/api/containers/${encodeURIComponent(name)}/scan`),
     invalidateScan: (name: string) =>
       request<{ ok: boolean; message: string }>(`/api/containers/${encodeURIComponent(name)}/scan`, { method: 'DELETE' }),
+    detectCompose: (name: string) =>
+      request<ComposeDetectResult>(`/api/containers/${encodeURIComponent(name)}/compose-detect`),
+    validateComposeConfig: (name: string, cfg: ComposeProjectConfig) =>
+      request<{ warnings: string[] }>(`/api/containers/${encodeURIComponent(name)}/compose-detect/validate`, {
+        method: 'POST',
+        body: JSON.stringify(cfg),
+      }),
   },
   settings: {
     get: () => request<DockwatchSettings>('/api/settings'),

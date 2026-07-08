@@ -30,7 +30,10 @@ export const api = {
       return request<UpdateResult[]>(`/api/containers/check?${params}`, { method: 'POST' })
     },
     update: (name: string) =>
-      request<{ ok: boolean; plan: Record<string, unknown> }>(`/api/containers/${encodeURIComponent(name)}/update`, { method: 'POST' }),
+      request<{
+        ok: boolean
+        plan: { name: string; success: boolean; message: string; details: string[]; rollback_message: string | null }
+      }>(`/api/containers/${encodeURIComponent(name)}/update`, { method: 'POST' }),
     pin: (name: string) =>
       request<{ ok: boolean; pinned: string[] }>(`/api/containers/${encodeURIComponent(name)}/pin`, { method: 'POST' }),
     unpin: (name: string) =>

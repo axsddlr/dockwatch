@@ -18,8 +18,18 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
   const [showComposeConfig, setShowComposeConfig] = useState(false)
 
   const updateMutation = useMutation({
-    mutationFn: () => api.containers.update(result.container_info.name),
-    onSuccess: (data) => {
+    mutationFn: async () => {
+      const data = await api.containers.update(result.container_info.name)
+      if (!data.ok) {
+        throw new Error(
+          [data.plan.message, ...data.plan.details].filter(Boolean).join(' — ') ||
+            'Update did not complete successfully.',
+        )
+      }
+      return data
+    },
+    onSuccess: async () => {
+      await api.containers.check('local')
       queryClient.invalidateQueries({ queryKey: ['containers'] })
       onClose()
     },

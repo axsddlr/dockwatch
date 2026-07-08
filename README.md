@@ -362,25 +362,18 @@ Docker label overrides:
 ### Running
 
 ```bash
-# Production
+# Production (dashboard + API on host port 10801)
 docker compose up -d dockwatch
 
-# Use an alternate host port if 8080 is already allocated
+# Use an alternate host port if 10801 is already allocated
 DOCKWATCH_PORT=18082 docker compose up -d dockwatch
-
-# Development (API on port 18080, hot-reload frontend on port 5173)
-docker compose --profile dev up -d dockwatch-dev-api dockwatch-dev-frontend
-
-# Use alternate host ports if the defaults are already allocated
-DOCKWATCH_DEV_API_PORT=18081 DOCKWATCH_DEV_FRONTEND_PORT=5174 \
-  docker compose --profile dev up -d --remove-orphans dockwatch-dev-api dockwatch-dev-frontend
 ```
 
 ### Compose features
 
 - **Non-root user**: container runs as `appuser`, not root.
 - **Healthcheck**: `GET /health` endpoint polled every 30s.
-- **Resource limits**: 1 CPU / 512 MB (prod), 2 CPU / 1 GB (dev).
+- **Resource limits**: 1 CPU / 512 MB.
 - **Log rotation**: JSON-file driver, 10 MB per file, 3-file cap.
 - **Init process**: `tini` via `init: true` for proper signal handling and zombie reaping.
 - Config volume persists at `/home/appuser/.config/dockwatch`.

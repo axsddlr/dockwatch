@@ -8,6 +8,8 @@ services:
     container_name: dockwatch
     restart: unless-stopped
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    group_add:
+      - "${DOCKER_GID:-105}"
     ports:
       - "${DOCKWATCH_PORT:-10801}:8080"
     volumes:

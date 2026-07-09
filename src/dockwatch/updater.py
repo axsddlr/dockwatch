@@ -10,7 +10,7 @@ import docker
 from docker.errors import DockerException
 from docker.models.containers import Container
 
-from .config import ComposeProjectConfig, DockwatchConfig
+from .config import ComposeProjectConfig, DockwatchConfig, resolve_host_path
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError
 from .models import UpdateResult, deployed_display_result, remote_display
 
@@ -368,7 +368,7 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
     if project is None:
         return UpdateExecutionResult(False, "compose", f"compose project '{plan.compose_project}' is not configured")
 
-    workdir = Path(project.workdir)
+    workdir = resolve_host_path(project.workdir)
     if not workdir.is_dir():
         return UpdateExecutionResult(False, "compose", f"compose workdir is not a directory or does not exist: {workdir}")
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import os
 import tempfile
 import tomllib
 
@@ -192,6 +193,26 @@ def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
     return projects
 
 
+def host_mount_prefix() -> str:
+    """Prefix under which the host's / is bind-mounted into dockwatch's own
+    container (e.g. "/hostroot" if docker-compose.yml mounts "/:/hostroot").
+    Empty string means dockwatch runs with the host's real paths directly
+    (native install, or no host-root mount configured).
+    """
+    return os.environ.get("HOST_MOUNT_PREFIX", "").rstrip("/")
+
+
+def resolve_host_path(path: str) -> Path:
+    """Translate a host-real path (as recorded in Docker compose labels)
+    into the path dockwatch's own process should use to reach it, applying
+    HOST_MOUNT_PREFIX if configured.
+    """
+    prefix = host_mount_prefix()
+    if not prefix or not path:
+        return Path(path)
+    return Path(prefix + path) if path.startswith("/") else Path(prefix) / path
+
+
 def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
     """Best-effort sanity checks against dockwatch's own filesystem view.
 
@@ -205,17 +226,20 @@ def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
     workdir = cfg.workdir.strip()
     if not workdir:
         warnings.append("workdir is empty.")
-    elif not Path(workdir).is_dir():
-        warnings.append(
-            f"workdir '{workdir}' is not a directory dockwatch can see. "
-            "dockwatch needs a bind mount to this path to run compose commands."
-        )
     else:
-        for file in cfg.files:
-            file_path = Path(file)
-            candidate = file_path if file_path.is_absolute() else Path(workdir) / file_path
-            if not candidate.is_file():
-                warnings.append(f"compose file '{file}' was not found at '{candidate}'.")
+        resolved_workdir = resolve_host_path(workdir)
+        if not resolved_workdir.is_dir():
+            warnings.append(
+                f"workdir '{workdir}' is not a directory dockwatch can see "
+                f"(looked at '{resolved_workdir}'). dockwatch needs a bind "
+                "mount to this path to run compose commands."
+            )
+        else:
+            for file in cfg.files:
+                file_path = Path(file)
+                candidate = file_path if file_path.is_absolute() else resolved_workdir / file_path
+                if not candidate.is_file():
+                    warnings.append(f"compose file '{file}' was not found at '{candidate}'.")
     if not cfg.project_name.strip():
         warnings.append("project_name is empty; compose commands will omit the -p flag.")
     return warnings

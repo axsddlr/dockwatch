@@ -10,12 +10,18 @@ services:
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
     group_add:
       - "${DOCKER_GID:-105}"
+    environment:
+      - HOST_MOUNT_PREFIX=/hostroot
     ports:
       - "${DOCKWATCH_PORT:-10801}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockwatch_config:/home/appuser/.config/dockwatch
-      - ${COMPOSE_STACKS_DIR:-/app/data/stacks}:${COMPOSE_STACKS_DIR:-/app/data/stacks}
+      # Compose-managed containers' workdirs can live anywhere on the host
+      # (e.g. /root/jackett, /app/data/stacks/...) — mirror the whole host
+      # filesystem read-only-except-writes-compose-needs so `docker compose`
+      # can always resolve whatever workdir a container's labels report.
+      - /:/hostroot
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health')"]
       interval: 30s

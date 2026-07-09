@@ -15,6 +15,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockwatch_config:/home/appuser/.config/dockwatch
+      - ${COMPOSE_STACKS_DIR:-/app/data/stacks}:${COMPOSE_STACKS_DIR:-/app/data/stacks}
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health')"]
       interval: 30s

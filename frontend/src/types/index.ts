@@ -41,6 +41,8 @@ export interface UpdateResult {
   event: string | null
   deployed_tag: string | null
   deployed_version: string | null
+  deployed_display: string | null
+  remote_display: string | null
   deployed_digest: string | null
   remote_tag: string | null
   remote_digest: string | null

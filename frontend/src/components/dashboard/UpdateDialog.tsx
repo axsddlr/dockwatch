@@ -45,8 +45,8 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
   if (!open) return null
 
   const diff = result.version_diff
-  const from = result.deployed_tag ?? result.deployed_version ?? '?'
-  const to = result.remote_tag ?? result.latest_version ?? '?'
+  const from = result.deployed_display ?? result.deployed_tag ?? result.deployed_version ?? '?'
+  const to = result.latest_version ?? result.remote_tag ?? '?'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">

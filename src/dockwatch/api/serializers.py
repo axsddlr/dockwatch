@@ -9,7 +9,14 @@ from typing import Any
 from packaging.version import Version
 
 from ..config import DockwatchConfig, PortainerConfig, TrivyConfig, ComposeProjectConfig
-from ..models import ContainerInfo, RegistryType, UpdateResult, VersionDiff
+from ..models import (
+    ContainerInfo,
+    RegistryType,
+    UpdateResult,
+    VersionDiff,
+    deployed_display_result,
+    remote_display,
+)
 
 
 def _serialize_enum(value: Any) -> Any:
@@ -61,6 +68,8 @@ def serialize_update_result(result: UpdateResult) -> dict[str, Any]:
     data["event"] = result.event
     data["deployed_tag"] = result.deployed_tag
     data["deployed_version"] = result.deployed_version
+    data["deployed_display"] = deployed_display_result(result)
+    data["remote_display"] = remote_display(result)
     data["deployed_digest"] = result.deployed_digest
     data["remote_tag"] = result.remote_tag
     data["remote_digest"] = result.remote_digest

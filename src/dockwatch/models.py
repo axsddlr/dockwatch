@@ -131,6 +131,8 @@ def deployed_display_result(result: UpdateResult) -> str:
         and result.remote_digest
         and result.deployed_digest == result.remote_digest
         and result.remote_tag
+        # a floating remote tag ("latest = latest") confirms nothing
+        and result.remote_tag.lower() not in _FLOATING_TAGS
     ):
         return f"latest = {result.remote_tag}"
     return deployed_display(info)

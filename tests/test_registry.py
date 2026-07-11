@@ -15,6 +15,7 @@ from dockwatch.registry import (
     check_container,
     check_dockerhub,
     check_ghcr,
+    check_lscr,
 )
 
 
@@ -101,6 +102,34 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(latest, "1.1.0")
+
+    def test_select_latest_skips_prereleases_for_stable_track(self) -> None:
+        latest = _select_latest_from_tags(
+            ["1.9.3", "2.0.0rc1"],
+            current_tag="1.9.0",
+        )
+        self.assertEqual(latest, "1.9.3")
+
+    def test_select_latest_allows_prereleases_when_deployed_is_prerelease(self) -> None:
+        latest = _select_latest_from_tags(
+            ["1.9.3", "2.0.0rc1"],
+            current_tag="2.0.0rc0",
+        )
+        self.assertEqual(latest, "2.0.0rc1")
+
+    def test_select_latest_prefers_non_arch_suffixed_fallback(self) -> None:
+        latest = _select_latest_from_tags(
+            ["rolling-arm64", "rolling", "latest"],
+            current_tag="latest",
+        )
+        self.assertEqual(latest, "rolling")
+
+    def test_select_latest_still_returns_arch_tag_when_nothing_else(self) -> None:
+        latest = _select_latest_from_tags(
+            ["abc123-amd64", "def456-arm64"],
+            current_tag="latest",
+        )
+        self.assertEqual(latest, "abc123-amd64")
 
     async def test_check_dockerhub_returns_unknown_for_invalid_tag_regex(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
@@ -214,8 +243,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
             result = await check_dockerhub(info, config=DockwatchConfig(exclude_tags=[r"^rolling$"]))
 
-        self.assertIsNone(result.latest_tag)
-        self.assertIn("matched configured tag filters", result.check_error or "")
+        # only a floating tag survives the filters; with no digest or version
+        # information a mere tag-string difference is not proof of an update
+        self.assertEqual(result.latest_tag, "latest")
+        self.assertEqual(result.comparison_basis, "tag")
+        self.assertIsNone(result.is_outdated)
 
     async def test_check_ghcr_uses_token_and_tags(self) -> None:
         info = make_container(registry=RegistryType.GHCR, current_tag="1.0.0")
@@ -246,9 +278,12 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_check_codeberg_uses_public_tags(self) -> None:
         info = make_container(registry=RegistryType.CODEBERG, current_tag="1.0.0")
+        tags_payload = {"tags": ["latest", "1.3.0", "1.2.0"]}
         mock_client = MockAsyncClient(
             [
-                MockResponse(200, {"tags": ["latest", "1.3.0", "1.2.0"]}, url="https://codeberg.org/v2/owner/image/tags/list"),
+                # anonymous probe request hits the tags endpoint first
+                MockResponse(200, tags_payload, url="https://codeberg.org/v2/owner/image/tags/list"),
+                MockResponse(200, tags_payload, url="https://codeberg.org/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -328,6 +363,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             image_name="bazarr",
             current_tag="latest",
             labels={"org.opencontainers.image.version": "v1.5.4-ls334"},
+            version_label="v1.5.4-ls334",
             compose_image_digest="sha256:local-digest",
         )
         payload = {
@@ -340,11 +376,13 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         mock_client = MockAsyncClient(
             [
+                # anonymous probe request hits the tags endpoint first
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
                 MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
                 MockResponse(
                     200,
                     {},
-                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/v1.5.5-ls335",
+                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/latest",
                     headers={"Docker-Content-Digest": "sha256:remote-digest"},
                 ),
             ]
@@ -356,7 +394,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(latest_result.is_outdated)
         self.assertIsNone(latest_result.check_error)
         self.assertEqual(latest_result.comparison_basis, "digest")
-        self.assertEqual(latest_result.remote_tag, "v1.5.5-ls335")
+        # floating deployments digest-compare their own tag, not the semver candidate
+        self.assertEqual(latest_result.remote_tag, "latest")
+        manifest_url, _ = mock_client.calls[-1]
+        self.assertTrue(manifest_url.endswith("/manifests/latest"))
+        self.assertEqual(latest_result.comparison_reason, "digest changed behind same tag")
         self.assertEqual(latest_result.deployed_tag, "latest")
         self.assertEqual(latest_result.deployed_version, "v1.5.4-ls334")
         self.assertEqual(latest_result.latest_version, "v1.5.5-ls335")
@@ -390,6 +432,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             image_name="bazarr",
             current_tag="latest",
             labels={"org.opencontainers.image.version": "v1.5.4-ls334"},
+            version_label="v1.5.4-ls334",
             compose_image_digest="sha256:exact-match",
         )
         payload = {
@@ -401,11 +444,13 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         mock_client = MockAsyncClient(
             [
+                # anonymous probe request hits the tags endpoint first
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
                 MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/bazarr/tags/list"),
                 MockResponse(
                     200,
                     {},
-                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/v1.5.4-ls334",
+                    url="https://lscr.io/v2/linuxserver/bazarr/manifests/latest",
                     headers={"Docker-Content-Digest": "sha256:exact-match"},
                 ),
             ]
@@ -493,7 +538,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.is_outdated)
         self.assertEqual(result.comparison_basis, "digest")
         self.assertEqual(result.comparison_reason, "digest changed behind same tag")
-        self.assertEqual(result.version_status, "equal")
+        # only floating tags exist, so no semver candidate to rate against
+        self.assertIsNone(result.version_status)
 
     async def test_check_dockerhub_non_floating_tag_records_version_status(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
@@ -519,7 +565,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.deployed_version, "1.0.0")
         self.assertEqual(result.latest_version, "1.2.3")
         self.assertEqual(result.version_status, "behind")
-        self.assertIn("1.0.0 -> 1.2.3", result.comparison_reason or "")
+        self.assertIn("remote version 1.2.3 is newer than deployed 1.0.0", result.comparison_reason or "")
         self.assertIsNotNone(result.version_diff)
         self.assertEqual(result.version_diff.bump_type, "MINOR")
 

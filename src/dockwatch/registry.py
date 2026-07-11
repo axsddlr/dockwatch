@@ -33,6 +33,7 @@ MANIFEST_ACCEPT_HEADERS = ", ".join([
     "application/vnd.oci.image.manifest.v1+json",
 ])
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
+ARCH_TAG_RE = re.compile(r"(?i)[-_.](arm64|amd64|aarch64|armv?\d*|armhf|x86[-_]64|i386|s390x|ppc64le)$")
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 _BEARER_KV_RE = re.compile(r'(\w+)="([^"]*)"')
 
@@ -120,6 +121,7 @@ def _select_latest_from_tags(
     *,
     include_patterns: list[re.Pattern[str]] | None = None,
     exclude_patterns: list[re.Pattern[str]] | None = None,
+    current_tag: str | None = None,
 ) -> str | None:
     normalized = _filter_tags(
         tags,
@@ -129,6 +131,9 @@ def _select_latest_from_tags(
     if not normalized:
         return None
 
+    current_parsed = _safe_version(current_tag) if current_tag else None
+    allow_prerelease = current_parsed is not None and current_parsed.is_prerelease
+
     semver_candidates: list[tuple[Version, str]] = []
     for tag in normalized:
         lowered = tag.lower()
@@ -136,11 +141,20 @@ def _select_latest_from_tags(
             continue
         parsed = _safe_version(tag)
         if parsed is not None:
+            # Stable-track deployments should not be offered rc/beta/dev tags.
+            if parsed.is_prerelease and not allow_prerelease:
+                continue
             semver_candidates.append((parsed, tag))
 
     if semver_candidates:
         semver_candidates.sort(key=lambda item: item[0], reverse=True)
         return semver_candidates[0][1]
+
+    # Prefer non-floating tags without an arch suffix; arch-specific tags are
+    # per-platform aliases, not release candidates.
+    for tag in normalized:
+        if tag.lower() not in FLOATING_TAGS and not ARCH_TAG_RE.search(tag):
+            return tag
 
     for tag in normalized:
         if tag.lower() not in FLOATING_TAGS:
@@ -217,13 +231,18 @@ def _build_comparison_result(
                     comparison_reason = "version matches latest candidate"
             else:
                 comparison_basis = "tag"
-                is_outdated = effective_remote_tag != info.current_tag
-                if is_outdated:
-                    comparison_reason = (
-                        f"remote tag {effective_remote_tag} differs from deployed tag {info.current_tag}"
-                    )
-                else:
+                if effective_remote_tag == info.current_tag:
+                    is_outdated = False
                     comparison_reason = "tag matches latest candidate"
+                else:
+                    # A bare string difference proves nothing without a digest
+                    # or parseable versions; report UNKNOWN instead of a
+                    # perma-outdated container.
+                    is_outdated = None
+                    comparison_reason = (
+                        f"cannot compare deployed tag {info.current_tag} with remote "
+                        f"candidate {effective_remote_tag}; no digest or version information"
+                    )
 
     return UpdateResult(
         container_info=info,
@@ -330,6 +349,7 @@ async def _check_repository_tags(
         tags,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
+        current_tag=info.current_tag,
     )
     if not latest_tag:
         return _build_comparison_result(
@@ -341,12 +361,11 @@ async def _check_repository_tags(
             check_error="no tags matched configured tag filters",
             status="UNKNOWN",
         )
+    # For floating deployments always digest-compare the deployed tag itself:
+    # that is what `docker pull` would actually deliver. The best semver tag
+    # still travels as latest_tag/latest_version for display.
     comparison_tag = latest_tag
-    if (
-        info.current_tag.lower() in FLOATING_TAGS
-        and comparison_tag != info.current_tag
-        and _safe_version(latest_tag) is None
-    ):
+    if info.current_tag.lower() in FLOATING_TAGS and comparison_tag != info.current_tag:
         comparison_tag = info.current_tag
 
     remote_digest = await _fetch_manifest_digest(

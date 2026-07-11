@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
+from dockwatch import __version__ as dockwatch_version
 from dockwatch.config import (
     ComposeProjectConfig,
     DockwatchConfig,
@@ -185,6 +186,8 @@ class UnpinUnignoreTests(unittest.TestCase):
             "dockwatch.main.discover_containers",
             new=AsyncMock(return_value=SourceDiscoveryResult()),
         ), patch(
+            "dockwatch.main.build_notifiers", return_value=[object()]
+        ), patch(
             "dockwatch.main.send_configured_notifications", return_value=[]
         ) as notify_mock:
             result = self._run("check", "--notify")
@@ -197,15 +200,19 @@ class UnpinUnignoreTests(unittest.TestCase):
         runner = CliRunner()
         result = runner.invoke(app, ["version"])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("0.1.0", result.stdout)
+        self.assertIn(dockwatch_version, result.stdout)
 
     def test_serve_command_calls_web_runner(self) -> None:
         runner = CliRunner()
-        with patch("dockwatch.main.run_web_app") as run_mock:
+        with patch("uvicorn.run") as run_mock, patch(
+            "dockwatch.api.app.create_app", return_value=object()
+        ):
             result = runner.invoke(app, ["serve", "--host", "127.0.0.1", "--port", "9090"])
 
         self.assertEqual(result.exit_code, 0)
-        run_mock.assert_called_once_with(host="127.0.0.1", port=9090)
+        run_mock.assert_called_once()
+        self.assertEqual(run_mock.call_args.kwargs["host"], "127.0.0.1")
+        self.assertEqual(run_mock.call_args.kwargs["port"], 9090)
 
     def test_notify_test_command_uses_configured_notifiers(self) -> None:
         runner = CliRunner()
@@ -253,7 +260,7 @@ class UnpinUnignoreTests(unittest.TestCase):
             result = runner.invoke(app, ["check", "--source", "portainer"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("portainer environments request failed", result.stdout)
+        self.assertIn("portainer environments request failed", result.stderr)
 
     def test_environments_command_lists_portainer_environments(self) -> None:
         runner = CliRunner()
@@ -309,7 +316,7 @@ class UnpinUnignoreTests(unittest.TestCase):
         result = runner.invoke(app, ["update", "web", "--source", "portainer"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("Only local Docker updates are supported", result.stdout)
+        self.assertIn("Only local Docker updates are supported", result.stderr)
 
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):

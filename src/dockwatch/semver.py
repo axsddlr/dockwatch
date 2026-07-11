@@ -43,7 +43,13 @@ def _normalize_tag(tag: str) -> str:
         except InvalidVersion:
             return f"{base}+{suffix.replace('-', '.')}"
     if suffix.lower().startswith(("a", "alpha", "b", "beta", "rc", "pre", "preview", "dev", "post")):
-        return normalized
+        # words like "alpine" start with "a" but are not prereleases; only
+        # keep the suffix when packaging can actually parse it
+        try:
+            Version(normalized)
+            return normalized
+        except InvalidVersion:
+            pass
     return f"{base}+{suffix.replace('-', '.')}"
 
 

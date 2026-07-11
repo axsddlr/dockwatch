@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,7 +68,7 @@ class ManifestStore:
         return None
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS manifest_state (
@@ -96,7 +97,7 @@ class ManifestStore:
             )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             found = self._fetch_any(connection, info)
             return found[1] if found else None
 
@@ -112,7 +113,7 @@ class ManifestStore:
         image_key = build_image_key(info)
         legacy_key = build_legacy_image_key(info)
         event: str | None = None
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             previous = self._fetch(connection, image_key) or self._fetch(connection, legacy_key)
             if previous is None:
@@ -158,7 +159,7 @@ class ManifestStore:
     ) -> TrivyScanResult | None:
         import json  # noqa: PLC0415
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT image_ref, scan_json, critical_count, high_count, medium_count, low_count, scanned_at
@@ -209,7 +210,7 @@ class ManifestStore:
             "target": f.target,
             "class_type": f.class_type,
         } for f in result.findings])
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """
@@ -241,6 +242,6 @@ class ManifestStore:
             )
 
     def trivy_cache_invalidate(self, image_id: str) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM trivy_scan_cache WHERE image_id = ?", (image_id,))

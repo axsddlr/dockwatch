@@ -94,7 +94,7 @@ class RegistryLinkTests(unittest.TestCase):
         )
 
         self.assertEqual(build_registry_url(info), "https://hub.docker.com/r/qmcgaw/gluetun")
-        self.assertEqual(build_registry_link(info), ("Hub", "https://hub.docker.com/r/qmcgaw/gluetun"))
+        self.assertEqual(build_registry_link(info), ("Docker Hub", "https://hub.docker.com/r/qmcgaw/gluetun"))
 
     def test_registry_link_label_matches_source(self) -> None:
         info = ContainerInfo(
@@ -107,7 +107,7 @@ class RegistryLinkTests(unittest.TestCase):
             current_tag="1.0.0",
         )
 
-        self.assertEqual(build_registry_link(info), ("Repo", "https://github.com/example/app"))
+        self.assertEqual(build_registry_link(info), ("Registry Repo", "https://github.com/example/app"))
 
 
 if __name__ == "__main__":

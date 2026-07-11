@@ -48,7 +48,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
 
   return (
     <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm last:border-b-0 hover:bg-[var(--color-bg-panel-alt)]/50 transition-colors">
-      <div className="col-span-4 flex items-center gap-3 min-w-0">
+      <div className="col-span-3 flex items-center gap-3 min-w-0">
         <span className={`h-2 w-2 flex-shrink-0 rounded-full ${cfg.color.replace('text-', 'bg-')}`} />
         <div className="min-w-0">
           <div className="truncate font-medium text-[var(--color-text-primary)]">
@@ -71,16 +71,22 @@ export function ContainerRow({ result }: ContainerRowProps) {
         </span>
       </div>
 
-      <div className="col-span-2 text-xs text-[var(--color-text-muted)]">
+      <div className="col-span-1 truncate text-xs text-[var(--color-text-muted)]">
         {result.comparison_basis ?? '-'}
       </div>
 
-      <div className="col-span-1 truncate font-mono text-xs text-[var(--color-text-primary)]">
+      <div
+        className="col-span-2 truncate font-mono text-xs text-[var(--color-text-primary)]"
+        title={result.deployed_display ?? result.deployed_tag ?? result.deployed_version ?? undefined}
+      >
         {result.deployed_display ?? result.deployed_tag ?? result.deployed_version ?? '-'}
       </div>
 
-      <div className="col-span-2 flex items-center gap-1.5">
-        <span className="truncate font-mono text-xs text-[var(--color-text-primary)]">
+      <div className="col-span-3 flex items-center gap-1.5 min-w-0">
+        <span
+          className="truncate font-mono text-xs text-[var(--color-text-primary)]"
+          title={result.latest_version ?? result.remote_tag ?? undefined}
+        >
           {result.latest_version ?? result.remote_tag ?? '-'}
         </span>
         {bump && BUMP_COLORS[bump] && (

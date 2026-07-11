@@ -25,11 +25,11 @@ export function ContainerTable() {
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel)]">
       <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-table-head)] px-4 py-2.5 text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
-        <span className="col-span-4">Container</span>
+        <span className="col-span-3">Container</span>
         <span className="col-span-1">Status</span>
-        <span className="col-span-2">Basis</span>
-        <span className="col-span-1">Deployed</span>
-        <span className="col-span-2">Remote</span>
+        <span className="col-span-1">Basis</span>
+        <span className="col-span-2">Deployed</span>
+        <span className="col-span-3">Remote</span>
         <span className="col-span-2"></span>
       </div>
 

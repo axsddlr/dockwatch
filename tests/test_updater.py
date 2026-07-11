@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from dockwatch.config import ComposeProjectConfig, DockwatchConfig
@@ -9,7 +10,7 @@ from dockwatch.updater import build_update_plan, execute_update
 
 
 def _result(**kwargs) -> UpdateResult:
-    container = ContainerInfo(
+    container_kwargs = dict(
         name="web",
         container_id="abcdef123456",
         image_ref="nginx:1.0.0",
@@ -17,8 +18,9 @@ def _result(**kwargs) -> UpdateResult:
         namespace="library",
         image_name="nginx",
         current_tag="1.0.0",
-        **kwargs.pop("container_overrides", {}),
     )
+    container_kwargs.update(kwargs.pop("container_overrides", {}))
+    container = ContainerInfo(**container_kwargs)
     return UpdateResult(
         container_info=container,
         is_outdated=True,
@@ -102,7 +104,7 @@ class UpdateExecutionTests(unittest.TestCase):
 
     def test_compose_update_uses_subprocess(self) -> None:
         config = DockwatchConfig(
-            compose_projects={"media": ComposeProjectConfig(workdir="C:/compose", files=["compose.yml"])}
+            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media", files=["compose.yml"])}
         )
         plan = build_update_plan(
             _result(
@@ -115,7 +117,7 @@ class UpdateExecutionTests(unittest.TestCase):
         )
 
         success_proc = MagicMock(returncode=0, stdout="", stderr="")
-        with patch("dockwatch.updater.Path.exists", return_value=True), patch(
+        with patch("dockwatch.updater.Path.is_dir", return_value=True), patch(
             "dockwatch.updater.subprocess.run",
             side_effect=[success_proc, success_proc],
         ) as run_mock:
@@ -123,6 +125,42 @@ class UpdateExecutionTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         self.assertEqual(run_mock.call_count, 2)
+        pull_cmd = run_mock.call_args_list[0].args[0]
+        self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], "/srv/media/compose.yml")
+
+    def test_compose_update_translates_absolute_file_paths(self) -> None:
+        config = DockwatchConfig(
+            compose_projects={
+                "jackett": ComposeProjectConfig(
+                    workdir="/root/jackett",
+                    files=["/root/jackett/docker-compose.yml"],
+                    project_name="jackett",
+                )
+            }
+        )
+        plan = build_update_plan(
+            _result(
+                container_overrides={
+                    "compose_project": "jackett",
+                    "compose_service": "jackett",
+                }
+            ),
+            config,
+        )
+
+        success_proc = MagicMock(returncode=0, stdout="", stderr="")
+        with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": "/hostroot"}), patch(
+            "dockwatch.updater.Path.is_dir", return_value=True
+        ), patch(
+            "dockwatch.updater.subprocess.run",
+            side_effect=[success_proc, success_proc],
+        ) as run_mock:
+            result = execute_update(plan, config)
+
+        self.assertTrue(result.success)
+        pull_cmd = run_mock.call_args_list[0].args[0]
+        self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], "/hostroot/root/jackett/docker-compose.yml")
+        self.assertEqual(run_mock.call_args_list[0].kwargs["cwd"], Path("/hostroot/root/jackett"))
 
 
 if __name__ == "__main__":

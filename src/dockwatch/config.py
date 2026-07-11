@@ -213,6 +213,18 @@ def resolve_host_path(path: str) -> Path:
     return Path(prefix + path) if path.startswith("/") else Path(prefix) / path
 
 
+def resolve_compose_file(file: str, workdir: str) -> Path:
+    """Translate a compose file entry (host-real, absolute or workdir-relative)
+    into the path dockwatch's own process should use, applying
+    HOST_MOUNT_PREFIX if configured.
+    """
+    # startswith("/") not Path.is_absolute(): compose label paths are always
+    # POSIX, and this must behave identically when tests run on Windows.
+    if file.startswith("/"):
+        return resolve_host_path(file)
+    return resolve_host_path(workdir) / file
+
+
 def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
     """Best-effort sanity checks against dockwatch's own filesystem view.
 
@@ -236,8 +248,7 @@ def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
             )
         else:
             for file in cfg.files:
-                file_path = Path(file)
-                candidate = file_path if file_path.is_absolute() else resolved_workdir / file_path
+                candidate = resolve_compose_file(file, workdir)
                 if not candidate.is_file():
                     warnings.append(f"compose file '{file}' was not found at '{candidate}'.")
     if not cfg.project_name.strip():

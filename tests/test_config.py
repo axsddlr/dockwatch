@@ -7,11 +7,54 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from dockwatch.config import ComposeProjectConfig, DockwatchConfig, PortainerConfig, load_config, save_config
+from dockwatch.config import (
+    ComposeProjectConfig,
+    DockwatchConfig,
+    PortainerConfig,
+    load_config,
+    resolve_compose_file,
+    save_config,
+    validate_compose_project_config,
+)
 from dockwatch.main import app
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.registry import check_all
 from dockwatch.sources import SourceDiscoveryResult
+
+
+class HostPathResolutionTests(unittest.TestCase):
+    def test_absolute_compose_file_gets_host_mount_prefix(self) -> None:
+        with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": "/hostroot"}):
+            resolved = resolve_compose_file("/root/jackett/docker-compose.yml", "/root/jackett")
+        self.assertEqual(resolved, Path("/hostroot/root/jackett/docker-compose.yml"))
+
+    def test_relative_compose_file_joins_resolved_workdir(self) -> None:
+        with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": "/hostroot"}):
+            resolved = resolve_compose_file("compose.yml", "/root/jackett")
+        self.assertEqual(resolved, Path("/hostroot/root/jackett/compose.yml"))
+
+    def test_no_prefix_is_a_no_op(self) -> None:
+        with patch.dict("os.environ", {}, clear=False):
+            import os
+
+            os.environ.pop("HOST_MOUNT_PREFIX", None)
+            resolved = resolve_compose_file("/srv/media/compose.yml", "/srv/media")
+        self.assertEqual(resolved, Path("/srv/media/compose.yml"))
+
+    def test_validation_checks_files_under_prefix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            workdir = Path(tmp_dir) / "root" / "jackett"
+            workdir.mkdir(parents=True)
+            (workdir / "docker-compose.yml").write_text("services: {}\n")
+            with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": tmp_dir}):
+                warnings = validate_compose_project_config(
+                    ComposeProjectConfig(
+                        workdir="/root/jackett",
+                        files=["/root/jackett/docker-compose.yml"],
+                        project_name="jackett",
+                    )
+                )
+        self.assertEqual(warnings, [])
 
 
 class ConfigTests(unittest.TestCase):

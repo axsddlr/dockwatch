@@ -10,7 +10,7 @@ import docker
 from docker.errors import DockerException
 from docker.models.containers import Container
 
-from .config import ComposeProjectConfig, DockwatchConfig, resolve_host_path
+from .config import ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError
 from .models import UpdateResult, deployed_display_result, remote_display
 
@@ -356,7 +356,7 @@ def _compose_command(project: ComposeProjectConfig, *args: str) -> list[str]:
     if project.project_name:
         command.extend(["-p", project.project_name])
     for file in project.files:
-        command.extend(["-f", file])
+        command.extend(["-f", resolve_compose_file(file, project.workdir).as_posix()])
     command.extend(args)
     return command
 

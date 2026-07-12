@@ -340,9 +340,12 @@ async def _check_repository_tags(
     headers: dict[str, str] | None = None,
 ) -> UpdateResult:
     all_tags: list[str] = []
-    next_url: str | None = tags_url
-    _MAX_PAGES = 10
-    _MAX_TAGS = 5000
+    _first_url = tags_url
+    if "?" not in _first_url:
+        _first_url = f"{_first_url}?n=100"
+    next_url: str | None = _first_url
+    _MAX_PAGES = 50
+    _MAX_TAGS = 25000
 
     for _page in range(_MAX_PAGES):
         tags_response = await _request_with_retry(lambda: client.get(next_url, headers=headers))

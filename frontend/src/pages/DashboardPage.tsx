@@ -25,7 +25,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     initialCheck.mutate()
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [source, environment])
 
   useEffect(() => {
     if (!autoRefresh) return
@@ -33,7 +33,7 @@ export function DashboardPage() {
       initialCheck.mutate()
     }, autoRefreshInterval * 1000)
     return () => clearInterval(timer)
-  }, [autoRefresh, autoRefreshInterval])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoRefresh, autoRefreshInterval, source, environment])
 
   return (
     <div className="space-y-6">

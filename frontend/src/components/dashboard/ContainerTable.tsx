@@ -5,11 +5,11 @@ import { ContainerRow } from './ContainerRow'
 export function ContainerTable() {
   const results = useDashboardStore((s) => s.results)
   const selected = useDashboardStore((s) => s.selectedStatuses)
+  const selectedSource = useDashboardStore((s) => s.selectedSource)
 
-  const filtered =
-    selected.size === 0
-      ? results
-      : results.filter((r) => selected.has(deriveStatus(r)))
+  const filtered = results
+    .filter((r) => selectedSource === 'all' || r.container_info.source === selectedSource)
+    .filter((r) => selected.size === 0 || selected.has(deriveStatus(r)))
 
   if (results.length === 0) {
     return (

@@ -646,7 +646,20 @@ async def check_container(
         return await check_codeberg(info, store, config, client=client)
 
     if info.registry == RegistryType.UNKNOWN:
-        return _skip_result(info, "local-only or unsupported image reference")
+        # Locally built images have no registry to check; that is expected,
+        # not an error.
+        return UpdateResult(
+            container_info=info,
+            latest_tag=None,
+            is_outdated=None,
+            check_error=None,
+            status="LOCAL",
+            event=None,
+            deployed_tag=info.current_tag,
+            deployed_version=deployed_version_hint(info),
+            deployed_digest=deployed_digest(info),
+            comparison_reason="locally built image; no registry to check",
+        )
     return _skip_result(info, "unsupported registry")
 
 

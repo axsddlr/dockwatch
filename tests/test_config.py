@@ -360,7 +360,7 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cache", by_name)
         self.assertEqual(by_name["web"].status, "PINNED")
         self.assertIsNone(by_name["web"].is_outdated)
-        self.assertEqual(by_name["cache"].status, "UNKNOWN")
+        self.assertEqual(by_name["cache"].status, "LOCAL")
 
     async def test_check_all_respects_label_overrides(self) -> None:
         containers = [

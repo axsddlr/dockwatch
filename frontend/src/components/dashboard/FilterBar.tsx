@@ -6,7 +6,7 @@ export function FilterBar() {
   const selected = useDashboardStore((s) => s.selectedStatuses)
   const toggle = useDashboardStore((s) => s.toggleStatusFilter)
 
-  const statuses: ContainerStatus[] = ['UP_TO_DATE', 'OUTDATED', 'PINNED', 'UNKNOWN', 'ERROR']
+  const statuses: ContainerStatus[] = ['UP_TO_DATE', 'OUTDATED', 'PINNED', 'LOCAL', 'UNKNOWN', 'ERROR']
 
   return (
     <div className="flex flex-wrap gap-2">

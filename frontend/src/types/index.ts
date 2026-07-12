@@ -136,11 +136,13 @@ export type ContainerStatus =
   | 'UP_TO_DATE'
   | 'OUTDATED'
   | 'PINNED'
+  | 'LOCAL'
   | 'UNKNOWN'
   | 'ERROR'
 
 export function deriveStatus(r: UpdateResult): ContainerStatus {
   if (r.status === 'PINNED' || r.container_info.pinned_override) return 'PINNED'
+  if (r.status === 'LOCAL') return 'LOCAL'
   if (r.check_error) return 'ERROR'
   if (r.is_outdated === true) return 'OUTDATED'
   if (r.is_outdated === false) return 'UP_TO_DATE'
@@ -151,6 +153,7 @@ export const STATUS_CONFIG: Record<ContainerStatus, { label: string; color: stri
   UP_TO_DATE: { label: 'Up-to-date', color: 'text-green-400', bg: 'bg-green-400/10' },
   OUTDATED: { label: 'Outdated', color: 'text-red-400', bg: 'bg-red-400/10' },
   PINNED: { label: 'Pinned', color: 'text-blue-400', bg: 'bg-blue-400/10' },
+  LOCAL: { label: 'Local', color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
   UNKNOWN: { label: 'Unknown', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
   ERROR: { label: 'Error', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
 }

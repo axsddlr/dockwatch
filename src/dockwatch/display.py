@@ -51,6 +51,8 @@ def render_containers_table(containers: list[ContainerInfo]) -> None:
 def _status_label(result: UpdateResult) -> tuple[str, str]:
     if result.status == "PINNED":
         return "PINNED", "blue"
+    if result.status == "LOCAL":
+        return "LOCAL", "cyan"
     if result.check_error:
         return "UNKNOWN", "yellow"
     if result.is_outdated is True:

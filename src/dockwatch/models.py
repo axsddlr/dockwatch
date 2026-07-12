@@ -141,6 +141,8 @@ def deployed_display_result(result: UpdateResult) -> str:
 def remote_display(result: UpdateResult) -> str:
     if result.status == "PINNED":
         return "Pinned by config"
+    if result.status == "LOCAL":
+        return "Local build"
     if result.check_error:
         return result.check_error
     remote_version = resolved_remote_version(result)

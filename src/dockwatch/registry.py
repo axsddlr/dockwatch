@@ -493,6 +493,8 @@ async def _fetch_dockerhub_tags_via_rest(
         if not payload.get("next"):
             break
         page += 1
+    if all_tags:
+        print(f"[dockwatch] REST API fetched {len(all_tags)} tags for {namespace}/{image_name}, top 3: {all_tags[:3]!r}")
     return all_tags
 
 

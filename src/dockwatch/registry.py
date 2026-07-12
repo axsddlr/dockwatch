@@ -339,12 +339,38 @@ async def _check_repository_tags(
     exclude_patterns: list[re.Pattern[str]],
     headers: dict[str, str] | None = None,
 ) -> UpdateResult:
-    tags_response = await _request_with_retry(lambda: client.get(tags_url, headers=headers))
-    if tags_response.status_code == 404:
-        return _skip_result(info, not_found_reason)
-    tags_response.raise_for_status()
-    tags_payload = tags_response.json()
-    tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+    all_tags: list[str] = []
+    next_url: str | None = tags_url
+    _MAX_PAGES = 10
+    _MAX_TAGS = 5000
+
+    for _page in range(_MAX_PAGES):
+        tags_response = await _request_with_retry(lambda: client.get(next_url, headers=headers))
+        if tags_response.status_code == 404:
+            return _skip_result(info, not_found_reason)
+        tags_response.raise_for_status()
+        tags_payload = tags_response.json()
+        page_tags = tags_payload.get("tags", []) if isinstance(tags_payload, dict) else []
+        all_tags.extend(page_tags)
+
+        if len(all_tags) >= _MAX_TAGS:
+            break
+
+        link_header = tags_response.headers.get("Link", "")
+        next_found = False
+        for part in link_header.split(","):
+            if 'rel="next"' in part:
+                match = re.search(r"<([^>]+)>", part)
+                if match:
+                    next_url = match.group(1)
+                    if next_url.startswith("/"):
+                        next_url = f"{base_url}{next_url}"
+                    next_found = True
+                    break
+        if not next_found:
+            break
+
+    tags = all_tags
     latest_tag = _select_latest_from_tags(
         tags,
         include_patterns=include_patterns,

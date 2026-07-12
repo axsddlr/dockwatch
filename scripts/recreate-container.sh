@@ -10,4 +10,6 @@ if [[ "${1:-}" == "--pull" ]]; then
   git pull --ff-only
 fi
 
-docker compose -f docker-compose.yml up -d --build --force-recreate
+docker compose -f docker-compose.yml down
+docker compose -f docker-compose.yml build --no-cache
+docker compose -f docker-compose.yml up -d --force-recreate

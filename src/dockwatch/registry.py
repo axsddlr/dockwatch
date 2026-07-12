@@ -464,6 +464,38 @@ def _resolve_effective_tag_filters(
     return _resolve_tag_filters(effective_config)
 
 
+_DH_REST_TAGS_URL = "https://hub.docker.com/v2/repositories"
+_DH_REST_PAGE_SIZE = 100
+_DH_REST_MAX_PAGES = 10
+
+
+async def _fetch_dockerhub_tags_via_rest(
+    namespace: str,
+    image_name: str,
+    client: httpx.AsyncClient,
+) -> list[str]:
+    all_tags: list[str] = []
+    page = 1
+    for _ in range(_DH_REST_MAX_PAGES):
+        url = (
+            f"{_DH_REST_TAGS_URL}/{namespace}/{image_name}/tags"
+            f"?page_size={_DH_REST_PAGE_SIZE}&page={page}&ordering=last_updated"
+        )
+        response = await _request_with_retry(lambda: client.get(url))
+        if response.status_code == 404:
+            break
+        response.raise_for_status()
+        payload = response.json()
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        for item in results:
+            if isinstance(item, dict) and "name" in item:
+                all_tags.append(item["name"])
+        if not payload.get("next"):
+            break
+        page += 1
+    return all_tags
+
+
 async def check_dockerhub(
     info: ContainerInfo,
     store: ManifestStore | None = None,
@@ -485,6 +517,29 @@ async def check_dockerhub(
     )
 
     async def _run(client: httpx.AsyncClient) -> UpdateResult:
+        tags = await _fetch_dockerhub_tags_via_rest(
+            info.namespace, info.image_name, client
+        )
+        if not tags:
+            return _skip_result(info, "docker hub image not found or has no tags")
+
+        latest_tag = _select_latest_from_tags(
+            tags,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            current_tag=info.current_tag,
+        )
+        if not latest_tag:
+            return _build_comparison_result(
+                info,
+                latest_tag=None,
+                remote_tag=None,
+                remote_digest=None,
+                event=None,
+                check_error="no tags matched configured tag filters",
+                status="UNKNOWN",
+            )
+
         token_response = await _request_with_retry(lambda: client.get(token_url))
         if token_response.status_code == 404:
             return _skip_result(info, "docker hub image not found")
@@ -493,19 +548,26 @@ async def check_dockerhub(
         token = token_payload.get("token") if isinstance(token_payload, dict) else None
         if not token:
             return _skip_result(info, "docker hub token response missing token")
-
         auth_headers = {"Authorization": f"Bearer {token}"}
-        return await _check_repository_tags(
+
+        comparison_tag = latest_tag
+        if info.current_tag.lower() in FLOATING_TAGS and comparison_tag != info.current_tag:
+            comparison_tag = info.current_tag
+
+        remote_digest = await _fetch_manifest_digest(
             client,
-            info=info,
-            store=store,
             base_url=base_url,
-            tags_url=f"{base_url}/v2/{info.namespace}/{info.image_name}/tags/list",
-            not_found_reason="docker hub image not found",
-            error_prefix="docker hub",
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
+            namespace=info.namespace,
+            image_name=info.image_name,
+            tag=comparison_tag,
             headers=auth_headers,
+        )
+        return _build_comparison_result(
+            info,
+            latest_tag=latest_tag,
+            remote_tag=comparison_tag,
+            remote_digest=remote_digest,
+            event=_record_event(store, info, latest_tag=latest_tag, remote_digest=remote_digest),
         )
 
     try:

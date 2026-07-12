@@ -40,6 +40,10 @@ class MockResponse:
             raise httpx.HTTPStatusError("error", request=self.request, response=httpx.Response(self.status_code))
 
 
+def _dh_rest_tags(*names: str) -> dict:
+    return {"count": len(names), "next": None, "results": [{"name": n} for n in names]}
+
+
 class MockAsyncClient:
     def __init__(self, responses: list[MockResponse]):
         self._responses = responses
@@ -142,13 +146,12 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_dockerhub_retries_transient_status(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
         token_payload = {"token": "dh-token"}
-        tags_payload = {"tags": ["1.2.0"]}
 
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("1.2.0"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
                 MockResponse(503, {}, url="https://auth.docker.io/token"),
                 MockResponse(200, token_payload, url="https://auth.docker.io/token"),
-                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -178,12 +181,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             exclude_tags_override=[],
         )
         token_payload = {"token": "dh-token"}
-        tags_payload = {"tags": ["1.2.0", "2.1.0"]}
 
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("1.2.0", "2.1.0"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
                 MockResponse(200, token_payload, url="https://auth.docker.io/token"),
-                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -202,12 +204,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_dockerhub_prefers_latest_semver(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
         token_payload = {"token": "dh-token"}
-        tags_payload = {"tags": ["latest", "1.1.0", "1.2.3"]}
 
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("latest", "1.1.0", "1.2.3"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
                 MockResponse(200, token_payload, url="https://auth.docker.io/token"),
-                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -226,12 +227,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_dockerhub_falls_back_to_most_recent_non_floating(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="foo")
         token_payload = {"token": "dh-token"}
-        tags_payload = {"tags": ["latest", "rolling"]}
 
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("latest", "rolling"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
                 MockResponse(200, token_payload, url="https://auth.docker.io/token"),
-                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -522,8 +522,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("latest"), url="https://hub.docker.com/v2/repositories/qmcgaw/gluetun/tags"),
                 MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
-                MockResponse(200, {"tags": ["latest"]}, url="https://registry-1.docker.io/v2/qmcgaw/gluetun/tags/list"),
                 MockResponse(
                     200,
                     {},
@@ -546,12 +546,11 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_dockerhub_non_floating_tag_records_version_status(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
         token_payload = {"token": "dh-token"}
-        tags_payload = {"tags": ["1.2.3"]}
 
         mock_client = MockAsyncClient(
             [
+                MockResponse(200, _dh_rest_tags("1.2.3"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
                 MockResponse(200, token_payload, url="https://auth.docker.io/token"),
-                MockResponse(200, tags_payload, url="https://registry-1.docker.io/v2/owner/image/tags/list"),
                 MockResponse(
                     200,
                     {},

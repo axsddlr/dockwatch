@@ -359,6 +359,37 @@ Docker label overrides:
 - On Linux, bind mount: `/var/run/docker.sock:/var/run/docker.sock`
 - On Windows, Docker Desktop/npipe access must be available to the environment.
 
+### DOCKER_GID (docker.sock permission)
+
+The container runs as non-root `appuser` and needs group membership matching
+whatever group owns `/var/run/docker.sock` on the host, or every Docker API
+call fails with `PermissionError: [Errno 13] Permission denied` and
+container discovery silently returns zero containers (no error surfaced —
+the dashboard just looks empty).
+
+`docker-compose.yml` adds `appuser` to group `${DOCKER_GID:-105}` via
+`group_add`. `105` is a reasonable default for many Linux hosts (the `docker`
+group's typical GID), but it isn't universal — set `DOCKER_GID` to match your
+host:
+
+```bash
+# Linux: find the actual docker group GID
+getent group docker | cut -d: -f3
+
+# Docker Desktop for Windows / macOS: the socket inside the VM is
+# owned by root, not a "docker" group — use gid 0
+DOCKER_GID=0
+```
+
+Put the value in `.env` (gitignored) next to `docker-compose.yml`:
+
+```
+DOCKER_GID=0
+```
+
+Then recreate the container so `group_add` picks it up — a config change
+alone (editing `.env`) does not affect an already-running container.
+
 ### Running
 
 ```bash

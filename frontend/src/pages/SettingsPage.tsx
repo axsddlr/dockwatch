@@ -91,7 +91,26 @@ export function SettingsPage() {
     }
   }, [data])
 
+  const NUMERIC_FIELDS = new Set([
+    'schedule_interval_seconds',
+    'schedule_jitter_seconds',
+    'max_concurrent_checks',
+    'trivy_timeout_seconds',
+    'trivy_cache_ttl_minutes',
+  ])
+
   const handleChange = (field: string, value: string) => {
+    if (NUMERIC_FIELDS.has(field)) {
+      // Keep the field editable while the user is mid-edit (e.g. clearing
+      // it to type a new value), but never store a NaN/non-numeric value —
+      // that would get JSON.stringify'd as a string and sent to a backend
+      // field typed as int.
+      if (value.trim() === '') return
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed)) return
+      setForm((prev) => ({ ...prev, [field]: parsed }))
+      return
+    }
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 

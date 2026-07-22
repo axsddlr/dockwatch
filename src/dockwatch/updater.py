@@ -380,6 +380,60 @@ def _compose_command(project: ComposeProjectConfig, *args: str) -> list[str]:
     return command
 
 
+def _write_compose_file(path: Path, text: str) -> None:
+    """Write a compose file atomically (tmp + replace), matching save_config's
+    pattern, so a process kill mid-write can't leave a truncated compose file
+    on what's usually a bind-mounted host path."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _replace_service_image(text: str, service: str, old_image: str, new_image: str) -> str | None:
+    """Replace `image: <old_image>` inside exactly one service's block.
+
+    Scoped by indentation depth: a service's block ends at the first
+    subsequent line whose indentation is <= the service key's own
+    indentation (i.e. a sibling key or dedent), so this cannot walk into
+    another service that happens to pin the same image. Returns the
+    rewritten text, or None if the service/line wasn't found.
+    """
+    lines = text.splitlines(keepends=True)
+    service_pattern = re.compile(rf"^(\s*){re.escape(service)}:\s*(?:#.*)?$")
+    image_pattern = re.compile(rf"^(\s*)image:\s*{re.escape(old_image)}\s*(#.*)?$")
+
+    in_block = False
+    service_indent = 0
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n")
+        if not in_block:
+            match = service_pattern.match(stripped)
+            if match:
+                in_block = True
+                service_indent = len(match.group(1))
+            continue
+
+        # Blank/comment-only lines don't end the block.
+        if not stripped.strip():
+            continue
+        indent = len(stripped) - len(stripped.lstrip())
+        if indent <= service_indent:
+            in_block = False
+            if service_pattern.match(stripped):
+                in_block = True
+                service_indent = len(match.group(1)) if (match := service_pattern.match(stripped)) else service_indent
+            continue
+
+        image_match = image_pattern.match(stripped)
+        if image_match:
+            comment = f" {image_match.group(2)}" if image_match.group(2) else ""
+            newline = "\n" if line.endswith("\n") else ""
+            lines[i] = f"{image_match.group(1)}image: {new_image}{comment}{newline}"
+            return "".join(lines)
+
+    return None
+
+
 def _rewrite_compose_image_tag(
     project: ComposeProjectConfig, workdir: Path, plan: UpdatePlan,
 ) -> str | None:
@@ -402,16 +456,10 @@ def _rewrite_compose_image_tag(
         text = path.read_text(encoding="utf-8")
         if old_image not in text:
             continue
-        # Scope the replacement to this service's `image:` line only, so a
-        # shared base image pinned under a different service is untouched.
-        pattern = re.compile(
-            rf"(^\s*{re.escape(plan.compose_service)}:\s*\n(?:^[ \t].*\n)*?^(\s*)image:\s*){re.escape(old_image)}(\s*(?:#.*)?$)",
-            re.MULTILINE,
-        )
-        new_text, count = pattern.subn(rf"\g<1>{new_image}\g<3>", text)
-        if count == 0:
+        new_text = _replace_service_image(text, plan.compose_service, old_image, new_image)
+        if new_text is None:
             continue
-        path.write_text(new_text, encoding="utf-8")
+        _write_compose_file(path, new_text)
         return None
 
     return f"could not find 'image: {old_image}' for service '{plan.compose_service}' in compose files"

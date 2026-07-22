@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 import subprocess
 
 import docker
@@ -38,6 +39,8 @@ class UpdatePlan:
     reason: str | None = None
     compose_project: str | None = None
     compose_service: str | None = None
+    current_tag: str | None = None
+    remote_tag: str | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -105,6 +108,20 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
                 f"compose project '{project}' has no configured workdir",
                 mode="compose",
             )
+        remote_tag = result.remote_tag or result.latest_tag
+        if (
+            info.current_tag.lower() not in _FLOATING_TAGS
+            and remote_tag
+            and remote_tag != info.current_tag
+            and not remote_tag.lower().startswith("sha256:")
+        ):
+            # Compose pins the image to an exact tag: `docker compose pull`
+            # only re-fetches that same tag, so nothing actually changes
+            # unless the compose file's tag is rewritten first.
+            plan_remote_tag = remote_tag
+        else:
+            plan_remote_tag = None
+
         return UpdatePlan(
             container_name=info.name,
             container_id=info.container_id,
@@ -116,6 +133,8 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
             remote_display=remote_display(result),
             compose_project=project,
             compose_service=info.compose_service,
+            current_tag=info.current_tag,
+            remote_tag=plan_remote_tag,
         )
 
     return UpdatePlan(
@@ -361,6 +380,43 @@ def _compose_command(project: ComposeProjectConfig, *args: str) -> list[str]:
     return command
 
 
+def _rewrite_compose_image_tag(
+    project: ComposeProjectConfig, workdir: Path, plan: UpdatePlan,
+) -> str | None:
+    """Rewrite the pinned tag in the service's `image:` line to plan.remote_tag.
+
+    Compose pins the deployed tag literally in the file, so `docker compose
+    pull` alone re-fetches the same tag forever. Returns an error message on
+    failure, or None on success (including when no rewrite was needed).
+    """
+    if not plan.current_tag or not plan.remote_tag:
+        return None
+    repo = plan.image_ref.rsplit(":", 1)[0]
+    old_image = f"{repo}:{plan.current_tag}"
+    new_image = f"{repo}:{plan.remote_tag}"
+
+    for file in project.files:
+        path = resolve_compose_file(file, project.workdir)
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if old_image not in text:
+            continue
+        # Scope the replacement to this service's `image:` line only, so a
+        # shared base image pinned under a different service is untouched.
+        pattern = re.compile(
+            rf"(^\s*{re.escape(plan.compose_service)}:\s*\n(?:^[ \t].*\n)*?^(\s*)image:\s*){re.escape(old_image)}(\s*(?:#.*)?$)",
+            re.MULTILINE,
+        )
+        new_text, count = pattern.subn(rf"\g<1>{new_image}\g<3>", text)
+        if count == 0:
+            continue
+        path.write_text(new_text, encoding="utf-8")
+        return None
+
+    return f"could not find 'image: {old_image}' for service '{plan.compose_service}' in compose files"
+
+
 def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
     if not plan.compose_project or not plan.compose_service:
         return UpdateExecutionResult(False, "compose", "compose project metadata is incomplete")
@@ -371,6 +427,11 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
     workdir = resolve_host_path(project.workdir)
     if not workdir.is_dir():
         return UpdateExecutionResult(False, "compose", f"compose workdir is not a directory or does not exist: {workdir}")
+
+    if plan.remote_tag:
+        rewrite_error = _rewrite_compose_image_tag(project, workdir, plan)
+        if rewrite_error:
+            return UpdateExecutionResult(False, "compose", rewrite_error)
 
     pull_cmd = _compose_command(project, "pull", plan.compose_service)
     up_cmd = _compose_command(project, "up", "-d", plan.compose_service)
@@ -407,11 +468,15 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
     except OSError as exc:
         return UpdateExecutionResult(False, "compose", f"failed to run docker compose: {exc}")
 
+    details = []
+    if plan.remote_tag:
+        details.append(f"rewrote compose image tag: {plan.current_tag} -> {plan.remote_tag}")
+    details.extend(["docker compose pull completed", "docker compose up -d completed"])
     return UpdateExecutionResult(
         True,
         "compose",
         f"updated compose service '{plan.compose_service}'",
-        details=["docker compose pull completed", "docker compose up -d completed"],
+        details=details,
     )
 
 

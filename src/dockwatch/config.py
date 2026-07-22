@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import os
+import re
 import tempfile
 import tomllib
+
+_WINDOWS_DRIVE_PATH = re.compile(r"^([A-Za-z]):\\(.*)$")
 
 CONFIG_PATH = Path.home() / ".config" / "dockwatch" / "config.toml"
 DEFAULT_NOTIFY_ON = ["update"]
@@ -206,10 +209,24 @@ def resolve_host_path(path: str) -> Path:
     """Translate a host-real path (as recorded in Docker compose labels)
     into the path dockwatch's own process should use to reach it, applying
     HOST_MOUNT_PREFIX if configured.
+
+    Compose labels record paths exactly as seen by whatever ran `docker
+    compose up`. On Docker Desktop for Windows that's a Windows path
+    (e.g. "D:\\Programs\\stack"), even though dockwatch itself always runs
+    inside a Linux container. Docker Desktop exposes the Windows drives
+    inside its VM at /run/desktop/mnt/host/<lowercase-drive>/..., which is
+    what HOST_MOUNT_PREFIX (typically "/hostroot") is bind-mounted from.
     """
     prefix = host_mount_prefix()
     if not prefix or not path:
         return Path(path)
+
+    windows_match = _WINDOWS_DRIVE_PATH.match(path)
+    if windows_match:
+        drive, rest = windows_match.groups()
+        posix_rest = rest.replace("\\", "/")
+        return Path(prefix + f"/run/desktop/mnt/host/{drive.lower()}/{posix_rest}")
+
     return Path(prefix + path) if path.startswith("/") else Path(prefix) / path
 
 
@@ -219,8 +236,9 @@ def resolve_compose_file(file: str, workdir: str) -> Path:
     HOST_MOUNT_PREFIX if configured.
     """
     # startswith("/") not Path.is_absolute(): compose label paths are always
-    # POSIX, and this must behave identically when tests run on Windows.
-    if file.startswith("/"):
+    # POSIX (or Windows drive-letter), and this must behave identically when
+    # tests run on Windows.
+    if file.startswith("/") or _WINDOWS_DRIVE_PATH.match(file):
         return resolve_host_path(file)
     return resolve_host_path(workdir) / file
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -103,64 +104,76 @@ class UpdateExecutionTests(unittest.TestCase):
         self.assertIn("pinned", result.message)
 
     def test_compose_update_uses_subprocess(self) -> None:
-        config = DockwatchConfig(
-            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media", files=["compose.yml"])}
-        )
-        plan = build_update_plan(
-            _result(
-                container_overrides={
-                    "compose_project": "media",
-                    "compose_service": "web",
-                }
-            ),
-            config,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            compose_file = workdir / "compose.yml"
+            compose_file.write_text("services:\n  web:\n    image: nginx:1.0.0\n")
 
-        success_proc = MagicMock(returncode=0, stdout="", stderr="")
-        with patch("dockwatch.updater.Path.is_dir", return_value=True), patch(
-            "dockwatch.updater.subprocess.run",
-            side_effect=[success_proc, success_proc],
-        ) as run_mock:
-            result = execute_update(plan, config)
+            config = DockwatchConfig(
+                compose_projects={"media": ComposeProjectConfig(workdir=str(workdir), files=["compose.yml"])}
+            )
+            plan = build_update_plan(
+                _result(
+                    container_overrides={
+                        "compose_project": "media",
+                        "compose_service": "web",
+                    }
+                ),
+                config,
+            )
 
-        self.assertTrue(result.success)
-        self.assertEqual(run_mock.call_count, 2)
-        pull_cmd = run_mock.call_args_list[0].args[0]
-        self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], "/srv/media/compose.yml")
+            success_proc = MagicMock(returncode=0, stdout="", stderr="")
+            with patch(
+                "dockwatch.updater.subprocess.run",
+                side_effect=[success_proc, success_proc],
+            ) as run_mock:
+                result = execute_update(plan, config)
+
+            self.assertTrue(result.success)
+            self.assertEqual(run_mock.call_count, 2)
+            pull_cmd = run_mock.call_args_list[0].args[0]
+            self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], compose_file.as_posix())
+            self.assertIn("image: nginx:1.1.0", compose_file.read_text())
 
     def test_compose_update_translates_absolute_file_paths(self) -> None:
-        config = DockwatchConfig(
-            compose_projects={
-                "jackett": ComposeProjectConfig(
-                    workdir="/root/jackett",
-                    files=["/root/jackett/docker-compose.yml"],
-                    project_name="jackett",
-                )
-            }
-        )
-        plan = build_update_plan(
-            _result(
-                container_overrides={
-                    "compose_project": "jackett",
-                    "compose_service": "jackett",
+        with tempfile.TemporaryDirectory() as tmp:
+            hostroot = Path(tmp)
+            workdir = hostroot / "root" / "jackett"
+            workdir.mkdir(parents=True)
+            compose_file = workdir / "docker-compose.yml"
+            compose_file.write_text("services:\n  jackett:\n    image: nginx:1.0.0\n")
+
+            config = DockwatchConfig(
+                compose_projects={
+                    "jackett": ComposeProjectConfig(
+                        workdir="/root/jackett",
+                        files=["/root/jackett/docker-compose.yml"],
+                        project_name="jackett",
+                    )
                 }
-            ),
-            config,
-        )
+            )
+            plan = build_update_plan(
+                _result(
+                    container_overrides={
+                        "compose_project": "jackett",
+                        "compose_service": "jackett",
+                    }
+                ),
+                config,
+            )
 
-        success_proc = MagicMock(returncode=0, stdout="", stderr="")
-        with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": "/hostroot"}), patch(
-            "dockwatch.updater.Path.is_dir", return_value=True
-        ), patch(
-            "dockwatch.updater.subprocess.run",
-            side_effect=[success_proc, success_proc],
-        ) as run_mock:
-            result = execute_update(plan, config)
+            success_proc = MagicMock(returncode=0, stdout="", stderr="")
+            with patch.dict("os.environ", {"HOST_MOUNT_PREFIX": str(hostroot)}), patch(
+                "dockwatch.updater.subprocess.run",
+                side_effect=[success_proc, success_proc],
+            ) as run_mock:
+                result = execute_update(plan, config)
 
-        self.assertTrue(result.success)
-        pull_cmd = run_mock.call_args_list[0].args[0]
-        self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], "/hostroot/root/jackett/docker-compose.yml")
-        self.assertEqual(run_mock.call_args_list[0].kwargs["cwd"], Path("/hostroot/root/jackett"))
+            self.assertTrue(result.success)
+            pull_cmd = run_mock.call_args_list[0].args[0]
+            self.assertEqual(pull_cmd[pull_cmd.index("-f") + 1], compose_file.as_posix())
+            self.assertEqual(run_mock.call_args_list[0].kwargs["cwd"], workdir)
+            self.assertIn("image: nginx:1.1.0", compose_file.read_text())
 
 
 if __name__ == "__main__":

@@ -1,13 +1,17 @@
 import { useDashboardStore } from '../../store/dashboardStore'
 import { deriveStatus } from '../../types'
 import { ContainerRow } from './ContainerRow'
+import { ErrorBoundary } from '../ErrorBoundary'
 
 export function ContainerTable() {
   const results = useDashboardStore((s) => s.results)
   const selected = useDashboardStore((s) => s.selectedStatuses)
   const selectedSource = useDashboardStore((s) => s.selectedSource)
 
+  // A malformed record (missing container_info) from a backend edge case
+  // shouldn't blank the whole table before rendering even starts.
   const filtered = results
+    .filter((r) => r && r.container_info)
     .filter((r) => selectedSource === 'all' || r.container_info.source === selectedSource)
     .filter((r) => selected.size === 0 || selected.has(deriveStatus(r)))
 
@@ -38,7 +42,18 @@ export function ContainerTable() {
           No containers match the selected filters.
         </p>
       ) : (
-        filtered.map((r) => <ContainerRow key={r.container_info.name} result={r} />)
+        filtered.map((r) => (
+          <ErrorBoundary
+            key={r.container_info.name}
+            fallback={(error) => (
+              <div className="border-b border-[var(--color-border)] px-4 py-2.5 text-xs text-red-400">
+                Failed to render {r.container_info.name}: {error.message}
+              </div>
+            )}
+          >
+            <ContainerRow result={r} />
+          </ErrorBoundary>
+        ))
       )}
     </div>
   )

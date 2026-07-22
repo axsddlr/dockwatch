@@ -218,3 +218,137 @@ class TestMainCLI:
         info = parse_image_ref("   ")
         assert info.image_name == "unknown"
         assert info.current_tag == "latest"
+
+
+# --- 2026-07-22 bug hunt additions ---------------------------------------
+
+
+class TestComposeTagRewriteScoping:
+    """FIX: updater.py _replace_service_image — the old inline regex used an
+    unbounded `(?:^[ \\t].*\\n)*?` continuation with no indentation floor, so
+    it could walk past the target service's block into a sibling service at
+    the same top-level indent and silently rewrite its image tag instead."""
+
+    def test_sibling_service_with_same_image_string_is_untouched(self):
+        from dockwatch.updater import _replace_service_image
+        text = (
+            "services:\n"
+            "  db:\n"
+            "    build:\n"
+            "      context: ./db\n"
+            "  redis:\n"
+            "    image: redis:7.0.0\n"
+        )
+        result = _replace_service_image(text, "db", "redis:7.0.0", "redis:7.1.0")
+        assert result is None
+
+    def test_target_service_rewritten_sibling_untouched(self):
+        from dockwatch.updater import _replace_service_image
+        text = (
+            "services:\n"
+            "  jackett:\n"
+            "    image: linuxserver/jackett:0.24.2184\n"
+            "    ports:\n"
+            "      - 9117:9117\n"
+            "  sonarr:\n"
+            "    image: linuxserver/sonarr:4.0.0\n"
+        )
+        result = _replace_service_image(
+            text, "jackett", "linuxserver/jackett:0.24.2184", "linuxserver/jackett:v0.24.2251-ls468"
+        )
+        assert result is not None
+        assert "jackett:v0.24.2251-ls468" in result
+        assert "sonarr:4.0.0" in result
+
+    def test_preserves_trailing_comment(self):
+        from dockwatch.updater import _replace_service_image
+        text = "services:\n  web:\n    image: nginx:1.0.0 # pinned\n"
+        result = _replace_service_image(text, "web", "nginx:1.0.0", "nginx:1.1.0")
+        assert "image: nginx:1.1.0 # pinned" in result
+
+    def test_no_match_returns_none(self):
+        from dockwatch.updater import _replace_service_image
+        text = "services:\n  web:\n    image: nginx:1.0.0\n"
+        result = _replace_service_image(text, "web", "nginx:9.9.9", "nginx:9.9.10")
+        assert result is None
+
+
+class TestPinUnpinRace:
+    """FIX: api/routes/containers.py pin_container/unpin_container — these did
+    an unlocked load-modify-save of config.toml while settings.py's PUT
+    /settings handler already used a lock for the identical pattern.
+    Concurrent pins could silently lose one another's change."""
+
+    def test_concurrent_pins_do_not_lose_updates(self, tmp_path: Path):
+        import threading
+        from dockwatch import config as config_module
+        from dockwatch.api.routes import containers as containers_routes
+
+        config_path = tmp_path / "config.toml"
+        save_config(DockwatchConfig(), config_path)
+
+        names = [f"container-{i}" for i in range(8)]
+        errors: list[BaseException] = []
+
+        def pin(name: str) -> None:
+            try:
+                with containers_routes._pin_write_lock:
+                    cfg = load_config(config_path)
+                    if name not in cfg.pinned:
+                        cfg.pinned = [*cfg.pinned, name]
+                        save_config(cfg, config_path)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=pin, args=(n,)) for n in names]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        final = load_config(config_path)
+        assert sorted(final.pinned) == sorted(names)
+
+
+class TestComposeFileWriteAtomicity:
+    """FIX: updater.py compose file rewrite now writes via tmp+replace (like
+    save_config already did) instead of a direct in-place write_text, so a
+    process kill mid-write can't leave a truncated compose file on a
+    bind-mounted host path."""
+
+    def test_rewrite_uses_atomic_replace(self, tmp_path: Path):
+        from unittest.mock import patch as mock_patch
+        from dockwatch import updater as updater_module
+
+        compose_file = tmp_path / "compose.yml"
+        compose_file.write_text("services:\n  web:\n    image: nginx:1.0.0\n")
+
+        calls: list[str] = []
+        original_replace = Path.replace
+
+        def tracking_replace(self, target):
+            calls.append(str(self))
+            return original_replace(self, target)
+
+        with mock_patch.object(Path, "replace", tracking_replace):
+            updater_module._write_compose_file(compose_file, "services:\n  web:\n    image: nginx:1.1.0\n")
+
+        assert calls, "expected write to go through Path.replace (atomic), not direct write_text"
+        assert "nginx:1.1.0" in compose_file.read_text()
+
+
+class TestVersionParserDivergence:
+    """BUG (documented, not fixed this pass — needs unifying the two
+    parsers): registry._safe_version has no -alpine/-slim/-bookworm suffix
+    handling, unlike semver.parse_version, so tags like postgres:16.1-alpine
+    fall through to UNKNOWN instead of a real outdated/up-to-date verdict
+    when no registry digest is available."""
+
+    def test_semver_parses_alpine_suffix(self):
+        from dockwatch.semver import parse_version
+        assert parse_version("1.2.3-alpine") is not None
+
+    def test_registry_safe_version_rejects_alpine_suffix(self):
+        from dockwatch.registry import _safe_version
+        assert _safe_version("1.2.3-alpine") is None

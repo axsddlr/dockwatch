@@ -32,7 +32,10 @@ def get_settings() -> Any:
 def put_settings(body: dict[str, Any]) -> Any:
     with _settings_write_lock:
         existing = load_config()
-        updated = deserialize_settings(body, existing)
+        try:
+            updated = deserialize_settings(body, existing)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"invalid settings value: {exc}") from exc
         save_config(updated)
     return serialize_settings(updated)
 

@@ -363,3 +363,26 @@ class TestVersionParserDivergence:
     def test_registry_safe_version_still_rejects_unparseable_tags(self):
         from dockwatch.registry import _safe_version
         assert _safe_version("latest") is None
+
+
+class TestSettingsPutValidation:
+    """Fix verified: PUT /settings previously let a non-numeric string reach
+    int() inside deserialize_settings uncaught, propagating as a bare
+    ValueError -> generic Starlette 500 with no useful message. The route
+    now catches TypeError/ValueError and returns a proper 422."""
+
+    def test_deserialize_raises_value_error_on_non_numeric_string(self):
+        config = DockwatchConfig()
+        try:
+            deserialize_settings({"schedule_interval_seconds": "abc"}, config)
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+    def test_put_settings_route_returns_422_not_500(self):
+        from fastapi.testclient import TestClient
+        from dockwatch.api.app import create_app
+
+        client = TestClient(create_app())
+        response = client.put("/api/settings", json={"schedule_interval_seconds": "abc"})
+        assert response.status_code == 422

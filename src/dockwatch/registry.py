@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -22,6 +23,8 @@ from .models import (
     deployed_version_hint,
 )
 from .semver import compare_versions, parse_version
+
+logger = logging.getLogger(__name__)
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 # Multi-arch manifest types listed first so registries return manifest list digests
@@ -499,7 +502,10 @@ async def _fetch_dockerhub_tags_via_rest(
             break
         page += 1
     if all_tags:
-        print(f"[dockwatch] REST API fetched {len(all_tags)} tags for {namespace}/{image_name}, top 3: {all_tags[:3]!r}")
+        logger.debug(
+            "REST API fetched %d tags for %s/%s, top 3: %r",
+            len(all_tags), namespace, image_name, all_tags[:3],
+        )
     return all_tags
 
 

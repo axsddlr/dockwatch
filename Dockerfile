@@ -25,7 +25,7 @@ COPY pyproject.toml ./
 COPY src ./src
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system .
+    uv pip install --system --reinstall-package dockwatch .
 
 RUN useradd -m -s /bin/bash appuser && \
     mkdir -p /home/appuser/.config/dockwatch && \

@@ -21,7 +21,7 @@ from .models import (
     deployed_display,
     deployed_version_hint,
 )
-from .semver import compare_versions
+from .semver import compare_versions, parse_version
 
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 # Multi-arch manifest types listed first so registries return manifest list digests
@@ -86,11 +86,16 @@ def _filter_tags(
 
 def _safe_version(tag: str) -> Version | None:
     normalized = _normalize_tag(tag).lstrip("v")
-    normalized = LINUXSERVER_SUFFIX_RE.sub(r".post\1", normalized)
+    ls_normalized = LINUXSERVER_SUFFIX_RE.sub(r".post\1", normalized)
     try:
-        return Version(normalized)
+        return Version(ls_normalized)
     except InvalidVersion:
-        return None
+        pass
+    # Not a linuxserver-style "-lsNN" suffix (e.g. "-alpine", "-slim",
+    # "-bookworm"): fall back to semver's more lenient normalizer instead
+    # of giving up, so distro-suffixed tags still get a comparable version
+    # rather than silently degrading is_outdated to UNKNOWN.
+    return parse_version(tag)
 
 
 async def _request_with_retry(

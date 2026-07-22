@@ -339,16 +339,27 @@ class TestComposeFileWriteAtomicity:
 
 
 class TestVersionParserDivergence:
-    """BUG (documented, not fixed this pass — needs unifying the two
-    parsers): registry._safe_version has no -alpine/-slim/-bookworm suffix
-    handling, unlike semver.parse_version, so tags like postgres:16.1-alpine
-    fall through to UNKNOWN instead of a real outdated/up-to-date verdict
-    when no registry digest is available."""
+    """Fix verified: registry._safe_version had no -alpine/-slim/-bookworm
+    suffix handling, unlike semver.parse_version, so tags like
+    postgres:16.1-alpine fell through to UNKNOWN instead of a real
+    outdated/up-to-date verdict when no registry digest was available.
+    _safe_version now falls back to semver.parse_version's more lenient
+    normalizer when the linuxserver "-lsNN" convention doesn't apply."""
 
     def test_semver_parses_alpine_suffix(self):
         from dockwatch.semver import parse_version
         assert parse_version("1.2.3-alpine") is not None
 
-    def test_registry_safe_version_rejects_alpine_suffix(self):
+    def test_registry_safe_version_parses_alpine_suffix(self):
         from dockwatch.registry import _safe_version
-        assert _safe_version("1.2.3-alpine") is None
+        assert _safe_version("1.2.3-alpine") is not None
+
+    def test_registry_safe_version_still_handles_linuxserver_suffix(self):
+        from dockwatch.registry import _safe_version
+        v = _safe_version("0.24.2184-ls453")
+        assert v is not None
+        assert v.is_postrelease
+
+    def test_registry_safe_version_still_rejects_unparseable_tags(self):
+        from dockwatch.registry import _safe_version
+        assert _safe_version("latest") is None

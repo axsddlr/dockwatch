@@ -11,7 +11,7 @@ import typer
 from packaging.version import Version
 
 from . import __version__
-from .config import DockwatchConfig, load_config, save_config
+from .config import DockwatchConfig, load_config
 from .db import ManifestStore
 from .display import render_containers_table, render_scan_results, render_summary, render_update_table
 from .docker_client import get_image_id, get_running_containers
@@ -339,51 +339,41 @@ def daemon(
         typer.echo("Daemon stopped.")
 
 
-def _update_named_list(current: list[str], item: str) -> list[str]:
-    if item in current:
-        return current
-    return [*current, item]
-
-
 @app.command("pin")
 def pin_container(container: str) -> None:
     """Pin a container so update checks mark it as PINNED."""
-    config = load_config()
-    config.pinned = _update_named_list(config.pinned, container)
-    save_config(config)
+    store = ManifestStore()
+    store.add_flag(container, "pinned")
     typer.echo(f"Pinned: {container}")
 
 
 @app.command("ignore")
 def ignore_container(container: str) -> None:
     """Ignore a container in update checks."""
-    config = load_config()
-    config.ignored = _update_named_list(config.ignored, container)
-    save_config(config)
+    store = ManifestStore()
+    store.add_flag(container, "ignored")
     typer.echo(f"Ignored: {container}")
 
 
 @app.command("unpin")
 def unpin_container(container: str) -> None:
     """Remove a container from the pinned list."""
-    config = load_config()
-    if container not in config.pinned:
+    store = ManifestStore()
+    removed = store.remove_flag(container, "pinned")
+    if not removed:
         typer.echo(f"'{container}' is not pinned.", err=True)
         raise typer.Exit(code=1)
-    config.pinned = [c for c in config.pinned if c != container]
-    save_config(config)
     typer.echo(f"Unpinned: {container}")
 
 
 @app.command("unignore")
 def unignore_container(container: str) -> None:
     """Remove a container from the ignored list."""
-    config = load_config()
-    if container not in config.ignored:
+    store = ManifestStore()
+    removed = store.remove_flag(container, "ignored")
+    if not removed:
         typer.echo(f"'{container}' is not ignored.", err=True)
         raise typer.Exit(code=1)
-    config.ignored = [c for c in config.ignored if c != container]
-    save_config(config)
     typer.echo(f"Unignored: {container}")
 
 
@@ -391,16 +381,19 @@ def unignore_container(container: str) -> None:
 def list_config() -> None:
     """Show pinned and ignored containers from config."""
     config: DockwatchConfig = load_config()
+    store = ManifestStore()
     typer.echo("Pinned:")
-    if config.pinned:
-        for item in config.pinned:
+    pinned = store.get_pinned()
+    if pinned:
+        for item in pinned:
             typer.echo(f"  - {item}")
     else:
         typer.echo("  (none)")
 
     typer.echo("Ignored:")
-    if config.ignored:
-        for item in config.ignored:
+    ignored = store.get_ignored()
+    if ignored:
+        for item in ignored:
             typer.echo(f"  - {item}")
     else:
         typer.echo("  (none)")

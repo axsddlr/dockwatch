@@ -62,16 +62,13 @@ class ConfigTests(unittest.TestCase):
     def test_load_creates_default_file(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "config.toml"
-            config = load_config(config_path)
-            self.assertEqual(config.pinned, [])
+            load_config(config_path)
             self.assertTrue(config_path.exists())
 
     def test_save_and_reload_round_trip(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "config.toml"
             source = DockwatchConfig(
-                pinned=["plex", "plex", "jellyfin"],
-                ignored=["db"],
                 notify_only=["nginx"],
                 include_tags=[r"^1\\.", r"^1\\."],
                 exclude_tags=[r"-rc$"],
@@ -100,8 +97,6 @@ class ConfigTests(unittest.TestCase):
             )
             save_config(source, config_path)
             loaded = load_config(config_path)
-            self.assertEqual(loaded.pinned, ["plex", "jellyfin"])
-            self.assertEqual(loaded.ignored, ["db"])
             self.assertEqual(loaded.notify_only, ["nginx"])
             self.assertEqual(loaded.include_tags, [r"^1\\."])
             self.assertEqual(loaded.exclude_tags, [r"-rc$"])
@@ -146,25 +141,35 @@ class UnpinUnignoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = TemporaryDirectory()
         self._config_path = Path(self._tmp.name) / "config.toml"
-        # Pre-populate config with pinned + ignored entries
-        cfg = DockwatchConfig(pinned=["web", "db"], ignored=["cache", "redis"])
-        save_config(cfg, self._config_path)
+        self._db_path = Path(self._tmp.name) / "test.db"
+        save_config(DockwatchConfig(), self._config_path)
+
+        from dockwatch.db import ManifestStore
+
+        # Pre-populate the store with pinned + ignored entries
+        store = ManifestStore(path=self._db_path)
+        store.add_flag("web", "pinned")
+        store.add_flag("db", "pinned")
+        store.add_flag("cache", "ignored")
+        store.add_flag("redis", "ignored")
+        self._store = store
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     def _run(self, *args: str):  # noqa: ANN202
+        from dockwatch.db import ManifestStore
+
         runner = CliRunner()
         with patch("dockwatch.main.load_config", lambda: load_config(self._config_path)), \
-             patch("dockwatch.main.save_config", lambda cfg: save_config(cfg, self._config_path)):
+             patch("dockwatch.main.ManifestStore", lambda: ManifestStore(path=self._db_path)):
             return runner.invoke(app, list(args))
 
     def test_unpin_removes_entry(self) -> None:
         result = self._run("unpin", "web")
         self.assertEqual(result.exit_code, 0)
-        cfg = load_config(self._config_path)
-        self.assertNotIn("web", cfg.pinned)
-        self.assertIn("db", cfg.pinned)
+        self.assertNotIn("web", self._store.get_pinned())
+        self.assertIn("db", self._store.get_pinned())
 
     def test_unpin_unknown_errors(self) -> None:
         result = self._run("unpin", "nonexistent")
@@ -173,9 +178,8 @@ class UnpinUnignoreTests(unittest.TestCase):
     def test_unignore_removes_entry(self) -> None:
         result = self._run("unignore", "cache")
         self.assertEqual(result.exit_code, 0)
-        cfg = load_config(self._config_path)
-        self.assertNotIn("cache", cfg.ignored)
-        self.assertIn("redis", cfg.ignored)
+        self.assertNotIn("cache", self._store.get_ignored())
+        self.assertIn("redis", self._store.get_ignored())
 
     def test_unignore_unknown_errors(self) -> None:
         result = self._run("unignore", "nonexistent")
@@ -321,6 +325,8 @@ class UnpinUnignoreTests(unittest.TestCase):
 
 class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_check_all_skips_ignored_and_marks_pinned(self) -> None:
+        from dockwatch.db import ManifestStore
+
         containers = [
             ContainerInfo(
                 name="web",
@@ -351,8 +357,13 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        config = DockwatchConfig(pinned=["web"], ignored=["db"], notify_only=[])
-        results = await check_all(containers, config)
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            store.add_flag("web", "pinned")
+            store.add_flag("db", "ignored")
+
+            config = DockwatchConfig(notify_only=[])
+            results = await check_all(containers, config, store=store)
 
         self.assertEqual(len(results), 2)
         by_name = {result.container_info.name: result for result in results}
@@ -363,6 +374,8 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_name["cache"].status, "LOCAL")
 
     async def test_check_all_respects_label_overrides(self) -> None:
+        from dockwatch.db import ManifestStore
+
         containers = [
             ContainerInfo(
                 name="web",
@@ -387,8 +400,12 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        config = DockwatchConfig(pinned=[], ignored=["web"])
-        results = await check_all(containers, config)
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            store.add_flag("web", "ignored")
+
+            config = DockwatchConfig()
+            results = await check_all(containers, config, store=store)
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].container_info.name, "web")
@@ -450,6 +467,47 @@ class TestPinnedIgnoredMigration:
         migrate_pinned_ignored_to_db(config_path, store)  # must not raise
 
         assert store.get_pinned() == []
+
+
+class TestCLIPinUsesStore(unittest.TestCase):
+    def test_pin_command_writes_to_store(self) -> None:
+        from dockwatch.db import ManifestStore
+
+        runner = CliRunner()
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            with patch("dockwatch.main.ManifestStore", lambda: ManifestStore(path=db_path)):
+                result = runner.invoke(app, ["pin", "nginx"])
+            self.assertEqual(result.exit_code, 0)
+            store = ManifestStore(path=db_path)
+            self.assertEqual(store.get_pinned(), ["nginx"])
+
+    def test_ignore_command_writes_to_store(self) -> None:
+        from dockwatch.db import ManifestStore
+
+        runner = CliRunner()
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            with patch("dockwatch.main.ManifestStore", lambda: ManifestStore(path=db_path)):
+                result = runner.invoke(app, ["ignore", "redis"])
+            self.assertEqual(result.exit_code, 0)
+            store = ManifestStore(path=db_path)
+            self.assertEqual(store.get_ignored(), ["redis"])
+
+    def test_config_list_reads_pinned_and_ignored_from_store(self) -> None:
+        from dockwatch.db import ManifestStore
+
+        runner = CliRunner()
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            store = ManifestStore(path=db_path)
+            store.add_flag("nginx", "pinned")
+            store.add_flag("redis", "ignored")
+            with patch("dockwatch.main.ManifestStore", lambda: ManifestStore(path=db_path)):
+                result = runner.invoke(app, ["config", "list"])
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("nginx", result.stdout)
+            self.assertIn("redis", result.stdout)
 
 
 if __name__ == "__main__":

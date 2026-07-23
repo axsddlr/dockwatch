@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -19,12 +18,6 @@ from ..serializers import serialize_update_results
 from ..ws import manager
 
 router = APIRouter()
-
-# Guards the pin/unpin load-modify-save cycle, matching settings.py's
-# _settings_write_lock for the same read-modify-write-config pattern —
-# without it, two concurrent pin/unpin requests can lose one another's
-# change (last save wins over the whole file).
-_pin_write_lock = threading.Lock()
 
 
 def _find_result(name: str) -> UpdateResult:
@@ -118,24 +111,15 @@ def validate_compose_config(name: str, body: dict[str, Any]) -> Any:
 
 @router.post("/containers/{name}/pin")
 def pin_container(name: str) -> Any:
-    from ...config import load_config, save_config
-
-    with _pin_write_lock:
-        config = load_config()
-        if name not in config.pinned:
-            config.pinned = [*config.pinned, name]
-            save_config(config)
-        return {"ok": True, "pinned": config.pinned}
+    store = get_store()
+    store.add_flag(name, "pinned")
+    return {"ok": True, "pinned": store.get_pinned()}
 
 
 @router.delete("/containers/{name}/pin")
 def unpin_container(name: str) -> Any:
-    from ...config import load_config, save_config
-
-    with _pin_write_lock:
-        config = load_config()
-        if name not in config.pinned:
-            raise HTTPException(status_code=404, detail=f"'{name}' is not pinned.")
-        config.pinned = [c for c in config.pinned if c != name]
-        save_config(config)
-        return {"ok": True, "pinned": config.pinned}
+    store = get_store()
+    removed = store.remove_flag(name, "pinned")
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"'{name}' is not pinned.")
+    return {"ok": True, "pinned": store.get_pinned()}

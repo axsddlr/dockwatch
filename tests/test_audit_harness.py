@@ -319,29 +319,24 @@ class TestComposeTagRewriteScoping:
 
 
 class TestPinUnpinRace:
-    """FIX: api/routes/containers.py pin_container/unpin_container — these did
-    an unlocked load-modify-save of config.toml while settings.py's PUT
-    /settings handler already used a lock for the identical pattern.
-    Concurrent pins could silently lose one another's change."""
+    """Fix verified: pin_container/unpin_container write through
+    ManifestStore.add_flag/remove_flag, which serializes writes via
+    SQLite's own BEGIN IMMEDIATE transaction -- this closes the race
+    both within one process (many threads) and across processes (CLI
+    vs web server), unlike the earlier threading.Lock fix which only
+    protected concurrent requests within a single server process."""
 
-    def test_concurrent_pins_do_not_lose_updates(self, tmp_path: Path):
+    def test_concurrent_pins_do_not_lose_updates(self, tmp_path):
         import threading
-        from dockwatch import config as config_module
-        from dockwatch.api.routes import containers as containers_routes
+        from dockwatch.db import ManifestStore
 
-        config_path = tmp_path / "config.toml"
-        save_config(DockwatchConfig(), config_path)
-
+        store = ManifestStore(path=tmp_path / "test.db")
         names = [f"container-{i}" for i in range(8)]
         errors: list[BaseException] = []
 
         def pin(name: str) -> None:
             try:
-                with containers_routes._pin_write_lock:
-                    cfg = load_config(config_path)
-                    if name not in cfg.pinned:
-                        cfg.pinned = [*cfg.pinned, name]
-                        save_config(cfg, config_path)
+                store.add_flag(name, "pinned")
             except BaseException as exc:  # noqa: BLE001
                 errors.append(exc)
 
@@ -352,8 +347,33 @@ class TestPinUnpinRace:
             t.join()
 
         assert errors == []
-        final = load_config(config_path)
-        assert sorted(final.pinned) == sorted(names)
+        assert sorted(store.get_pinned()) == sorted(names)
+
+    def test_concurrent_pin_and_unpin_of_different_names_both_succeed(self, tmp_path):
+        import threading
+        from dockwatch.db import ManifestStore
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("existing", "pinned")
+
+        results: dict[str, bool] = {}
+
+        def pin_new():
+            results["pin"] = store.add_flag("new-container", "pinned")
+
+        def unpin_existing():
+            results["unpin"] = store.remove_flag("existing", "pinned")
+
+        t1 = threading.Thread(target=pin_new)
+        t2 = threading.Thread(target=unpin_existing)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert results["pin"] is True
+        assert results["unpin"] is True
+        assert store.get_pinned() == ["new-container"]
 
 
 class TestComposeFileWriteAtomicity:

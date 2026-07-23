@@ -95,6 +95,16 @@ class ManifestStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS container_flags (
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored')),
+                    added_at TEXT NOT NULL,
+                    PRIMARY KEY (name, kind)
+                )
+                """
+            )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
         with closing(self._connect()) as connection, connection:
@@ -245,3 +255,61 @@ class ManifestStore:
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM trivy_scan_cache WHERE image_id = ?", (image_id,))
+
+    def _get_flags(self, kind: str) -> list[str]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                "SELECT name FROM container_flags WHERE kind = ? ORDER BY added_at",
+                (kind,),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def get_pinned(self) -> list[str]:
+        return self._get_flags("pinned")
+
+    def get_ignored(self) -> list[str]:
+        return self._get_flags("ignored")
+
+    def _set_flags(self, kind: str, names: list[str]) -> None:
+        deduped = list(dict.fromkeys(n.strip() for n in names if n.strip()))
+        observed_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM container_flags WHERE kind = ?", (kind,))
+            connection.executemany(
+                "INSERT INTO container_flags (name, kind, added_at) VALUES (?, ?, ?)",
+                [(name, kind, observed_at) for name in deduped],
+            )
+
+    def set_pinned(self, names: list[str]) -> None:
+        self._set_flags("pinned", names)
+
+    def set_ignored(self, names: list[str]) -> None:
+        self._set_flags("ignored", names)
+
+    def add_flag(self, name: str, kind: str) -> bool:
+        name = name.strip()
+        observed_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT 1 FROM container_flags WHERE name = ? AND kind = ?",
+                (name, kind),
+            ).fetchone()
+            if existing is not None:
+                return False
+            connection.execute(
+                "INSERT INTO container_flags (name, kind, added_at) VALUES (?, ?, ?)",
+                (name, kind, observed_at),
+            )
+            return True
+
+    def remove_flag(self, name: str, kind: str) -> bool:
+        name = name.strip()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "DELETE FROM container_flags WHERE name = ? AND kind = ?",
+                (name, kind),
+            )
+            return cursor.rowcount > 0

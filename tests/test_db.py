@@ -69,5 +69,64 @@ class ManifestStoreTests(unittest.TestCase):
         self.assertIsNone(second_event)
 
 
+class TestContainerFlags:
+    def test_add_pin_returns_true_when_new(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        added = store.add_flag("nginx", "pinned")
+        assert added is True
+        assert store.get_pinned() == ["nginx"]
+
+    def test_add_pin_returns_false_when_already_present(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        added_again = store.add_flag("nginx", "pinned")
+        assert added_again is False
+        assert store.get_pinned() == ["nginx"]
+
+    def test_remove_flag_returns_true_when_present(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        removed = store.remove_flag("nginx", "pinned")
+        assert removed is True
+        assert store.get_pinned() == []
+
+    def test_remove_flag_returns_false_when_absent(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        removed = store.remove_flag("nginx", "pinned")
+        assert removed is False
+
+    def test_pinned_and_ignored_are_independent(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        store.add_flag("redis", "ignored")
+        assert store.get_pinned() == ["nginx"]
+        assert store.get_ignored() == ["redis"]
+
+    def test_set_pinned_bulk_replace(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        store.set_pinned(["redis", "postgres"])
+        assert sorted(store.get_pinned()) == ["postgres", "redis"]
+
+    def test_set_ignored_bulk_replace_empty_list_clears(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "ignored")
+        store.set_ignored([])
+        assert store.get_ignored() == []
+
+    def test_flags_persist_across_store_instances(self, tmp_path):
+        path = tmp_path / "test.db"
+        store1 = ManifestStore(path=path)
+        store1.add_flag("nginx", "pinned")
+        store2 = ManifestStore(path=path)
+        assert store2.get_pinned() == ["nginx"]
+
+    def test_get_pinned_preserves_insertion_order(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("zebra", "pinned")
+        store.add_flag("apple", "pinned")
+        assert store.get_pinned() == ["zebra", "apple"]
+
+
 if __name__ == "__main__":
     unittest.main()

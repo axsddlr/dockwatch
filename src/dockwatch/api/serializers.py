@@ -9,6 +9,7 @@ from typing import Any
 from packaging.version import Version
 
 from ..config import DockwatchConfig, PortainerConfig, TrivyConfig, ComposeProjectConfig
+from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
     RegistryType,
@@ -98,10 +99,10 @@ def _ensure_list(value: Any, fallback: list[Any]) -> list[Any]:
     return list(fallback)
 
 
-def serialize_settings(config: DockwatchConfig) -> dict[str, Any]:
+def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[str, Any]:
     return {
-        "pinned": config.pinned,
-        "ignored": config.ignored,
+        "pinned": store.get_pinned(),
+        "ignored": store.get_ignored(),
         "notify_only": config.notify_only,
         "include_tags": config.include_tags,
         "exclude_tags": config.exclude_tags,
@@ -140,9 +141,11 @@ def serialize_settings(config: DockwatchConfig) -> dict[str, Any]:
     }
 
 
-def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig) -> DockwatchConfig:
-    existing.pinned = _ensure_list(data.get("pinned", existing.pinned), existing.pinned)
-    existing.ignored = _ensure_list(data.get("ignored", existing.ignored), existing.ignored)
+def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store: ManifestStore) -> DockwatchConfig:
+    if "pinned" in data:
+        store.set_pinned(_ensure_list(data.get("pinned"), store.get_pinned()))
+    if "ignored" in data:
+        store.set_ignored(_ensure_list(data.get("ignored"), store.get_ignored()))
     existing.notify_only = _ensure_list(data.get("notify_only", existing.notify_only), existing.notify_only)
     existing.include_tags = _ensure_list(data.get("include_tags", existing.include_tags), existing.include_tags)
     existing.exclude_tags = _ensure_list(data.get("exclude_tags", existing.exclude_tags), existing.exclude_tags)

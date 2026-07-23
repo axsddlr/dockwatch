@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from dockwatch.api.serializers import deserialize_settings, serialize_settings
+from dockwatch.db import ManifestStore
 from dockwatch.config import (
     DockwatchConfig,
     PortainerConfig,
@@ -178,23 +179,67 @@ class TestPortainerFixes:
 class TestSettingsAPI:
     """FIX: serializers.py:97 — Portainer API key masked; type validation on deserialize."""
 
-    def test_serialize_settings_masks_api_key(self):
+    def test_serialize_settings_masks_api_key(self, tmp_path):
         config = DockwatchConfig(
             portainer=PortainerConfig(enabled=True, url="https://p.example.com", api_key="ptr_secret123", environments=["1"]),
         )
-        data = serialize_settings(config)
+        store = ManifestStore(path=tmp_path / "test.db")
+        data = serialize_settings(config, store)
         assert data["portainer"]["api_key"] != "ptr_secret123"
         assert "****" in data["portainer"]["api_key"] or data["portainer"]["api_key"] == ""
 
-    def test_deserialize_rejects_non_list_for_list_fields(self):
+    def test_deserialize_rejects_non_list_for_list_fields(self, tmp_path):
         config = DockwatchConfig()
-        result = deserialize_settings({"pinned": "not-a-list", "schedule_interval_seconds": 300}, config)
-        assert isinstance(result.pinned, list)
+        store = ManifestStore(path=tmp_path / "test.db")
+        deserialize_settings({"pinned": "not-a-list", "schedule_interval_seconds": 300}, config, store)
+        assert isinstance(store.get_pinned(), list)
 
-    def test_deserialize_preserves_valid_lists(self):
+    def test_deserialize_preserves_valid_lists(self, tmp_path):
         config = DockwatchConfig()
-        result = deserialize_settings({"pinned": ["nginx", "redis"]}, config)
-        assert result.pinned == ["nginx", "redis"]
+        store = ManifestStore(path=tmp_path / "test.db")
+        deserialize_settings({"pinned": ["nginx", "redis"]}, config, store)
+        assert sorted(store.get_pinned()) == ["nginx", "redis"]
+
+
+class TestSettingsUsesStoreForFlags:
+    def test_serialize_settings_reads_pinned_from_store(self, tmp_path):
+        from dockwatch.api.serializers import serialize_settings
+        from dockwatch.config import DockwatchConfig
+        from dockwatch.db import ManifestStore
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        store.add_flag("redis", "ignored")
+
+        data = serialize_settings(DockwatchConfig(), store)
+
+        assert data["pinned"] == ["nginx"]
+        assert data["ignored"] == ["redis"]
+
+    def test_deserialize_settings_writes_pinned_to_store(self, tmp_path):
+        from dockwatch.api.serializers import deserialize_settings
+        from dockwatch.config import DockwatchConfig
+        from dockwatch.db import ManifestStore
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        config = DockwatchConfig()
+
+        deserialize_settings({"pinned": ["nginx", "redis"]}, config, store)
+
+        assert sorted(store.get_pinned()) == ["nginx", "redis"]
+
+    def test_deserialize_settings_empty_pinned_clears_store(self, tmp_path):
+        from dockwatch.api.serializers import deserialize_settings
+        from dockwatch.config import DockwatchConfig
+        from dockwatch.db import ManifestStore
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        config = DockwatchConfig()
+
+        deserialize_settings({"pinned": []}, config, store)
+
+        assert store.get_pinned() == []
 
 
 class TestVersionSync:
@@ -371,10 +416,11 @@ class TestSettingsPutValidation:
     ValueError -> generic Starlette 500 with no useful message. The route
     now catches TypeError/ValueError and returns a proper 422."""
 
-    def test_deserialize_raises_value_error_on_non_numeric_string(self):
+    def test_deserialize_raises_value_error_on_non_numeric_string(self, tmp_path):
         config = DockwatchConfig()
+        store = ManifestStore(path=tmp_path / "test.db")
         try:
-            deserialize_settings({"schedule_interval_seconds": "abc"}, config)
+            deserialize_settings({"schedule_interval_seconds": "abc"}, config, store)
             assert False, "expected ValueError"
         except ValueError:
             pass

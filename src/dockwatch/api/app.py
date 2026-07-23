@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -9,9 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from .deps import get_store
 from .routes import containers, environments, settings, trivy
 from .ws import router as ws_router
 from .. import __version__
+from ..config import CONFIG_PATH, migrate_pinned_ignored_to_db
 
 def _find_frontend_dist() -> Path:
     candidates = [
@@ -43,8 +46,14 @@ def _frontend_file_path(dist_path: Path, requested_path: str) -> Path:
     return candidate
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
+    migrate_pinned_ignored_to_db(CONFIG_PATH, get_store())
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="dockwatch", version=__version__)
+    app = FastAPI(title="dockwatch", version=__version__, lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,

@@ -12,7 +12,7 @@ from ...config import load_config, save_config
 from ...integrations import PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
-from ..deps import get_config
+from ..deps import get_config, get_store
 from ..serializers import deserialize_settings, serialize_settings
 
 router = APIRouter()
@@ -25,19 +25,21 @@ _settings_write_lock = threading.Lock()
 @router.get("/settings")
 def get_settings() -> Any:
     config = get_config()
-    return serialize_settings(config)
+    store = get_store()
+    return serialize_settings(config, store)
 
 
 @router.put("/settings")
 def put_settings(body: dict[str, Any]) -> Any:
     with _settings_write_lock:
         existing = load_config()
+        store = get_store()
         try:
-            updated = deserialize_settings(body, existing)
+            updated = deserialize_settings(body, existing, store)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"invalid settings value: {exc}") from exc
         save_config(updated)
-    return serialize_settings(updated)
+    return serialize_settings(updated, store)
 
 
 @router.post("/settings/test-notification")

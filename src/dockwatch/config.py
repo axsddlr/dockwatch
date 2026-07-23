@@ -46,8 +46,6 @@ class TrivyConfig:
 
 @dataclass(slots=True)
 class DockwatchConfig:
-    pinned: list[str] = field(default_factory=list)
-    ignored: list[str] = field(default_factory=list)
     notify_only: list[str] = field(default_factory=list)
     include_tags: list[str] = field(default_factory=list)
     exclude_tags: list[str] = field(default_factory=list)
@@ -156,8 +154,6 @@ def _toml_array(values: list[str]) -> str:
 
 def _to_toml(config: DockwatchConfig) -> str:
     base = (
-        f"pinned = {_toml_array(config.pinned)}\n"
-        f"ignored = {_toml_array(config.ignored)}\n"
         f"notify_only = {_toml_array(config.notify_only)}\n"
         f"include_tags = {_toml_array(config.include_tags)}\n"
         f"exclude_tags = {_toml_array(config.exclude_tags)}\n"
@@ -318,8 +314,6 @@ def _parse_trivy_config(data: object) -> TrivyConfig:
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized = DockwatchConfig(
-        pinned=_unique_ordered(config.pinned),
-        ignored=_unique_ordered(config.ignored),
         notify_only=_unique_ordered(config.notify_only),
         include_tags=_unique_ordered(config.include_tags),
         exclude_tags=_unique_ordered(config.exclude_tags),
@@ -398,8 +392,6 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}
     trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
-        pinned=_parse_list(data.get("pinned")),
-        ignored=_parse_list(data.get("ignored")),
         notify_only=_parse_list(data.get("notify_only")),
         include_tags=_parse_list(data.get("include_tags")),
         exclude_tags=_parse_list(data.get("exclude_tags")),

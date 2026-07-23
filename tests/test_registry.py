@@ -671,6 +671,57 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(mock_client.enter_count, 1)
 
+    async def test_pinned_container_from_store_is_precomputed(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            store.add_flag("nginx", "pinned")
+
+            container = ContainerInfo(
+                name="nginx",
+                container_id="abc123",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+            )
+            config = DockwatchConfig()
+
+            results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].status, "PINNED")
+
+    async def test_ignored_container_from_store_is_excluded(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            store.add_flag("redis", "ignored")
+
+            container = ContainerInfo(
+                name="redis",
+                container_id="def456",
+                image_ref="redis:7.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="redis",
+                current_tag="7.0.0",
+            )
+            config = DockwatchConfig()
+
+            results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

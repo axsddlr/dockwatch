@@ -453,8 +453,6 @@ def _resolve_effective_tag_filters(
     config: DockwatchConfig,
 ) -> tuple[list[re.Pattern[str]], list[re.Pattern[str]], str | None]:
     effective_config = DockwatchConfig(
-        pinned=config.pinned,
-        ignored=config.ignored,
         notify_only=config.notify_only,
         include_tags=info.include_tags_override if info.include_tags_override is not None else config.include_tags,
         exclude_tags=info.exclude_tags_override if info.exclude_tags_override is not None else config.exclude_tags,
@@ -791,8 +789,8 @@ async def check_all(
     max_concurrency: int | None = None,
 ) -> list[UpdateResult]:
     resolved_config = config or load_config()
-    ignored = set(resolved_config.ignored)
-    pinned = set(resolved_config.pinned)
+    ignored = set(store.get_ignored()) if store else set()
+    pinned = set(store.get_pinned()) if store else set()
 
     precomputed: list[UpdateResult] = []
     check_targets: list[ContainerInfo] = []

@@ -395,5 +395,62 @@ class RegistryConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0].status, "PINNED")
 
 
+class TestPinnedIgnoredMigration:
+    def test_migrates_existing_toml_values_into_store(self, tmp_path):
+        from dockwatch.config import migrate_pinned_ignored_to_db
+        from dockwatch.db import ManifestStore
+
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'pinned = ["nginx", "redis"]\nignored = ["postgres"]\n',
+            encoding="utf-8",
+        )
+        store = ManifestStore(path=tmp_path / "test.db")
+
+        migrate_pinned_ignored_to_db(config_path, store)
+
+        assert sorted(store.get_pinned()) == ["nginx", "redis"]
+        assert store.get_ignored() == ["postgres"]
+
+    def test_migration_is_idempotent(self, tmp_path):
+        from dockwatch.config import migrate_pinned_ignored_to_db
+        from dockwatch.db import ManifestStore
+
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('pinned = ["nginx"]\n', encoding="utf-8")
+        store = ManifestStore(path=tmp_path / "test.db")
+
+        migrate_pinned_ignored_to_db(config_path, store)
+        migrate_pinned_ignored_to_db(config_path, store)  # run twice
+
+        assert store.get_pinned() == ["nginx"]
+
+    def test_migration_skips_when_store_already_has_data(self, tmp_path):
+        from dockwatch.config import migrate_pinned_ignored_to_db
+        from dockwatch.db import ManifestStore
+
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('pinned = ["nginx"]\n', encoding="utf-8")
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("already-here", "pinned")
+
+        migrate_pinned_ignored_to_db(config_path, store)
+
+        # Migration must not clobber flags a user already set post-migration
+        # on a previous run -- it only imports when the store is empty.
+        assert store.get_pinned() == ["already-here"]
+
+    def test_migration_handles_missing_config_file(self, tmp_path):
+        from dockwatch.config import migrate_pinned_ignored_to_db
+        from dockwatch.db import ManifestStore
+
+        config_path = tmp_path / "does-not-exist.toml"
+        store = ManifestStore(path=tmp_path / "test.db")
+
+        migrate_pinned_ignored_to_db(config_path, store)  # must not raise
+
+        assert store.get_pinned() == []
+
+
 if __name__ == "__main__":
     unittest.main()

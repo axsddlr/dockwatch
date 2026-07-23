@@ -9,6 +9,8 @@ import re
 import tempfile
 import tomllib
 
+from .db import ManifestStore
+
 _WINDOWS_DRIVE_PATH = re.compile(r"^([A-Za-z]):\\(.*)$")
 
 CONFIG_PATH = Path.home() / ".config" / "dockwatch" / "config.toml"
@@ -79,6 +81,30 @@ def _parse_list(data: object) -> list[str]:
     if not isinstance(data, list):
         return []
     return _unique_ordered([str(item) for item in data])
+
+
+def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
+    """One-time import of pinned/ignored from config.toml into SQLite.
+
+    Only runs when the store has no flags yet, so it never clobbers
+    changes made after an earlier migration (or a fresh SQLite-only
+    install with no legacy TOML values to import).
+    """
+    if store.get_pinned() or store.get_ignored():
+        return
+    if not path.exists():
+        return
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError):
+        return
+    pinned = _parse_list(data.get("pinned"))
+    ignored = _parse_list(data.get("ignored"))
+    if pinned:
+        store.set_pinned(pinned)
+    if ignored:
+        store.set_ignored(ignored)
 
 
 def _parse_notify_events(data: object) -> list[str]:

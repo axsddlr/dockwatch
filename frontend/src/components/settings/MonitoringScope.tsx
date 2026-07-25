@@ -13,12 +13,10 @@ function Field({ label, children }: FieldProps) {
 }
 
 export function MonitoringScope({
-  pinned,
   ignored,
   notifyOnly,
   onChange,
 }: {
-  pinned: string
   ignored: string
   notifyOnly: string
   onChange: (field: string, value: string) => void
@@ -26,15 +24,9 @@ export function MonitoringScope({
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Monitoring Scope</h3>
-      <Field label="Pinned containers (comma-separated)">
-        <input
-          type="text"
-          value={pinned}
-          onChange={(e) => onChange('pinned', e.target.value)}
-          placeholder="container1, container2"
-          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-dim)] focus:border-[var(--color-primary)] focus:outline-none"
-        />
-      </Field>
+      <p className="text-xs text-[var(--color-text-dim)]">
+        Pin or unpin containers directly from the dashboard row actions.
+      </p>
       <Field label="Ignored containers (comma-separated)">
         <input
           type="text"

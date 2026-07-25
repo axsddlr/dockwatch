@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useSettings, useSaveSettings } from '../hooks/useSettings'
 import { MonitoringScope } from '../components/settings/MonitoringScope'
 import { TagFilters } from '../components/settings/TagFilters'
@@ -25,9 +26,9 @@ export function SettingsPage() {
   const { data, isLoading } = useSettings()
   const saveMutation = useSaveSettings()
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const [form, setForm] = useState({
-    pinned: '',
     ignored: '',
     notify_only: '',
     include_tags: '',
@@ -62,7 +63,6 @@ export function SettingsPage() {
     if (data && !hydratedRef.current) {
       hydratedRef.current = true
       setForm({
-        pinned: formatCsv(data.pinned ?? []),
         ignored: formatCsv(data.ignored ?? []),
         notify_only: formatCsv(data.notify_only ?? []),
         include_tags: formatCsv(data.include_tags ?? []),
@@ -88,6 +88,9 @@ export function SettingsPage() {
         trivy_skip_db_update: data.trivy?.skip_db_update ?? false,
         trivy_cache_ttl_minutes: data.trivy?.cache_ttl_minutes ?? 60,
       })
+      if (data.portainer?.enabled || data.trivy?.enabled) {
+        setAdvancedOpen(true)
+      }
     }
   }, [data])
 
@@ -121,7 +124,6 @@ export function SettingsPage() {
   const handleSave = async () => {
     setSaveMessage(null)
     const payload: Partial<DockwatchSettings> = {
-      pinned: parseCsv(form.pinned),
       ignored: parseCsv(form.ignored),
       notify_only: parseCsv(form.notify_only),
       include_tags: parseCsv(form.include_tags),
@@ -173,7 +175,6 @@ export function SettingsPage() {
 
       <div className="max-w-2xl space-y-8">
         <MonitoringScope
-          pinned={form.pinned}
           ignored={form.ignored}
           notifyOnly={form.notify_only}
           onChange={handleChange}
@@ -208,26 +209,40 @@ export function SettingsPage() {
           onToggle={handleToggle}
         />
 
-        <PortainerIntegration
-          enabled={form.portainer_enabled}
-          url={form.portainer_url}
-          apiKey={form.portainer_api_key}
-          environments={form.portainer_environments}
-          onChange={handleChange}
-          onToggle={handleToggle}
-        />
+        <div className="space-y-4">
+          <button
+            onClick={() => setAdvancedOpen((prev) => !prev)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-primary)]"
+          >
+            {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            Advanced (Portainer, Trivy)
+          </button>
 
-        <TrivyConfig
-          enabled={form.trivy_enabled}
-          binaryPath={form.trivy_binary_path}
-          severity={form.trivy_severity}
-          scanners={form.trivy_scanners}
-          timeoutSeconds={form.trivy_timeout_seconds}
-          skipDbUpdate={form.trivy_skip_db_update}
-          cacheTtlMinutes={form.trivy_cache_ttl_minutes}
-          onChange={handleChange}
-          onToggle={handleToggle}
-        />
+          {advancedOpen && (
+            <div className="space-y-8 border-l-2 border-[var(--color-border)] pl-4">
+              <PortainerIntegration
+                enabled={form.portainer_enabled}
+                url={form.portainer_url}
+                apiKey={form.portainer_api_key}
+                environments={form.portainer_environments}
+                onChange={handleChange}
+                onToggle={handleToggle}
+              />
+
+              <TrivyConfig
+                enabled={form.trivy_enabled}
+                binaryPath={form.trivy_binary_path}
+                severity={form.trivy_severity}
+                scanners={form.trivy_scanners}
+                timeoutSeconds={form.trivy_timeout_seconds}
+                skipDbUpdate={form.trivy_skip_db_update}
+                cacheTtlMinutes={form.trivy_cache_ttl_minutes}
+                onChange={handleChange}
+                onToggle={handleToggle}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-[var(--color-border)] pt-6">

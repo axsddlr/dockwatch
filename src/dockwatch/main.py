@@ -11,7 +11,7 @@ import typer
 from packaging.version import Version
 
 from . import __version__
-from .config import DockwatchConfig, load_config
+from .config import CONFIG_PATH, DockwatchConfig, load_config, migrate_pinned_ignored_to_db
 from .db import ManifestStore
 from .display import render_containers_table, render_scan_results, render_summary, render_update_table
 from .docker_client import get_image_id, get_running_containers
@@ -39,6 +39,18 @@ config_app = typer.Typer(help="Manage dockwatch configuration.")
 notify_app = typer.Typer(help="Manage notifications.")
 app.add_typer(config_app, name="config")
 app.add_typer(notify_app, name="notify")
+
+
+@app.callback()
+def main_callback() -> None:
+    """Run one-time setup that every CLI invocation depends on.
+
+    Ensures any legacy TOML `pinned`/`ignored` values are imported into the
+    SQLite-backed store before a subcommand can read or write flags. The
+    migration itself is idempotent (it only imports into an empty store),
+    so calling it on every CLI startup is safe and cheap.
+    """
+    migrate_pinned_ignored_to_db(CONFIG_PATH, ManifestStore())
 
 
 @app.command("list")

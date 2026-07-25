@@ -469,6 +469,40 @@ class TestPinnedIgnoredMigration:
         assert store.get_pinned() == []
 
 
+class TestCLITriggersMigration(unittest.TestCase):
+    """Regression test: the CLI must run the TOML->SQLite migration too.
+
+    Previously `migrate_pinned_ignored_to_db` was only called from the web
+    server's FastAPI lifespan hook. A user who ran a CLI command (e.g.
+    `dockwatch config list`) before ever starting the server would see an
+    empty store, and any subsequent CLI write would make the store
+    non-empty -- permanently defeating the migration's empty-store guard
+    once the server did start. The root Typer callback in main.py must
+    call the migration before any subcommand runs.
+    """
+
+    def test_cli_invocation_imports_legacy_toml_pins_into_store(self) -> None:
+        from dockwatch.db import ManifestStore
+
+        runner = CliRunner()
+        with TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.toml"
+            config_path.write_text(
+                'pinned = ["plex"]\nignored = ["db"]\n',
+                encoding="utf-8",
+            )
+            db_path = Path(tmp) / "test.db"
+
+            with patch("dockwatch.main.CONFIG_PATH", config_path), \
+                 patch("dockwatch.main.ManifestStore", lambda: ManifestStore(path=db_path)):
+                result = runner.invoke(app, ["config", "list"])
+
+            self.assertEqual(result.exit_code, 0)
+            store = ManifestStore(path=db_path)
+            self.assertEqual(store.get_pinned(), ["plex"])
+            self.assertEqual(store.get_ignored(), ["db"])
+
+
 class TestCLIPinUsesStore(unittest.TestCase):
     def test_pin_command_writes_to_store(self) -> None:
         from dockwatch.db import ManifestStore

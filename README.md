@@ -162,8 +162,6 @@ Default path:
 Example:
 
 ```toml
-pinned = ["plex"]
-ignored = ["db"]
 notify_only = []
 include_tags = []
 exclude_tags = []
@@ -196,8 +194,9 @@ cache_ttl_minutes = 60
 ```
 
 Notes:
-- `pinned`: included in results as `PINNED`
-- `ignored`: skipped during checks
+- Pinned/ignored containers are **not** managed in `config.toml`. They're managed via CLI (`dockwatch pin`/`dockwatch ignore`/`dockwatch unpin`/`dockwatch unignore`) or the dashboard settings API, and are persisted in the `container_flags` table of `manifests.db`.
+  - Pinned containers are included in results as `PINNED`
+  - Ignored containers are skipped during checks
 - `notify_only`: optional container-name allowlist for notifications
 - `include_tags`: optional regex allowlist applied before latest-tag selection
 - `exclude_tags`: optional regex denylist applied after include filtering

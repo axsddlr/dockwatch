@@ -17,6 +17,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockwatch_config:/home/appuser/.config/dockwatch
+      # Trivy's vulnerability DB + parsed-layer cache. Without this, every
+      # container recreate wipes it, forcing a full DB re-download (the
+      # dominant cost of a scan) on the very next Trivy run.
+      - dockwatch_trivy_cache:/home/appuser/.cache/trivy
       # Compose-managed containers' workdirs can live anywhere on the host
       # (e.g. /root/jackett, /app/data/stacks/...) — mirror the whole host
       # filesystem read-only-except-writes-compose-needs so `docker compose`
@@ -42,3 +46,4 @@ services:
 
 volumes:
   dockwatch_config:
+  dockwatch_trivy_cache:

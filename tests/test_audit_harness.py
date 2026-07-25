@@ -31,27 +31,27 @@ class TestConfigAtomicity:
 
     def test_save_creates_valid_toml(self, tmp_path: Path):
         config = DockwatchConfig(
-            pinned=["nginx", "redis"],
+            notify_only=["nginx", "redis"],
             schedule_interval_seconds=120,
         )
         path = tmp_path / "config.toml"
         save_config(config, path)
         assert path.exists()
         content = path.read_text(encoding="utf-8")
-        assert 'pinned = ["nginx", "redis"]' in content
+        assert 'notify_only = ["nginx", "redis"]' in content
 
     def test_load_recovers_from_corrupted_file(self, tmp_path: Path):
         path = tmp_path / "config.toml"
         path.write_text("this is not valid toml @#$%^", encoding="utf-8")
         config = load_config(path)
         assert config is not None
-        assert isinstance(config.pinned, list)
+        assert isinstance(config.notify_only, list)
 
     def test_load_recovers_from_empty_file(self, tmp_path: Path):
         path = tmp_path / "config.toml"
         path.write_text("", encoding="utf-8")
         config = load_config(path)
-        assert isinstance(config.pinned, list)
+        assert isinstance(config.notify_only, list)
         assert config.schedule_interval_seconds == 300
 
     def test_load_recovers_from_garbled_binary(self, tmp_path: Path):
@@ -59,7 +59,7 @@ class TestConfigAtomicity:
         path.write_bytes(b"\x00\x01\xFF\xFE\xFD")
         config = load_config(path)
         assert config is not None
-        assert isinstance(config.pinned, list)
+        assert isinstance(config.notify_only, list)
 
 
 class TestConfigRoundtrip:

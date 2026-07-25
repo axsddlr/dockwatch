@@ -4,6 +4,17 @@ from __future__ import annotations
 def test_static_frontend_does_not_mask_api_routes(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
 
+    import dockwatch.config as config_module
+
+    config_path = tmp_path / "config.toml"
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_module.load_config, "__defaults__", (config_path,))
+
+    config = config_module.load_config(config_path)
+    config.auth.username = "admin"
+    config.auth.password_hash = config_module.hash_password("correct-password")
+    config_module.save_config(config, config_path)
+
     from fastapi.testclient import TestClient
     from dockwatch.api import app as app_module
 
@@ -19,6 +30,7 @@ def test_static_frontend_does_not_mask_api_routes(monkeypatch, tmp_path) -> None
     monkeypatch.setattr(app_module, "_find_frontend_dist", lambda: dist_path)
 
     client = TestClient(app_module.create_app())
+    client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
 
     health_response = client.get("/health")
     assert health_response.status_code == 200

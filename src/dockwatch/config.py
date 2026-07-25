@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import hashlib
+import hmac
 import os
 import re
+import secrets
 import tempfile
 import tomllib
 
@@ -31,6 +34,13 @@ class ComposeProjectConfig:
     workdir: str = ""
     files: list[str] = field(default_factory=list)
     project_name: str = ""
+
+
+@dataclass(slots=True)
+class AuthConfig:
+    username: str = ""
+    password_hash: str = ""
+    secret_key: str = ""
 
 
 @dataclass(slots=True)
@@ -61,6 +71,7 @@ class DockwatchConfig:
     portainer: PortainerConfig = field(default_factory=PortainerConfig)
     compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
     trivy: TrivyConfig = field(default_factory=TrivyConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 def _unique_ordered(values: list[str]) -> list[str]:
@@ -105,6 +116,27 @@ def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
         store.set_ignored(ignored)
 
 
+def bootstrap_auth_from_env(config: DockwatchConfig, path: Path) -> DockwatchConfig:
+    """One-time bootstrap of dashboard login credentials from environment
+    variables, for first-run setup via Docker Compose's .env convention.
+
+    Only runs when no password hash is already persisted, so config.toml
+    is always the source of truth once credentials exist — editing .env
+    and recreating the container later does not reset the password.
+    """
+    if config.auth.password_hash:
+        return config
+    username = os.environ.get("DOCKWATCH_USERNAME", "").strip()
+    password = os.environ.get("DOCKWATCH_PASSWORD", "")
+    if not username or not password:
+        return config
+    config.auth.username = username
+    config.auth.password_hash = hash_password(password)
+    save_config(config, path)
+    print(f"[dockwatch] Initial credentials configured for user '{username}'.")
+    return config
+
+
 def _parse_notify_events(data: object) -> list[str]:
     values = [item.lower() for item in _parse_list(data)]
     filtered = [item for item in values if item in VALID_NOTIFY_EVENTS]
@@ -133,6 +165,32 @@ def _parse_int(data: object, default: int, *, minimum: int) -> int:
 
 def _bool_toml(value: bool) -> str:
     return "true" if value else "false"
+
+
+_PBKDF2_ITERATIONS = 600_000
+
+
+def hash_password(raw: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", raw.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def verify_password(raw: str, encoded: str) -> bool:
+    try:
+        scheme, iterations_str, salt_hex, digest_hex = encoded.split("$")
+    except ValueError:
+        return False
+    if scheme != "pbkdf2_sha256":
+        return False
+    try:
+        iterations = int(iterations_str)
+        salt = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(digest_hex)
+    except ValueError:
+        return False
+    actual = hashlib.pbkdf2_hmac("sha256", raw.encode("utf-8"), salt, iterations)
+    return hmac.compare_digest(actual, expected)
 
 
 def _toml_string(value: str) -> str:
@@ -197,7 +255,13 @@ def _to_toml(config: DockwatchConfig) -> str:
                 f"files = {_toml_array(project_cfg.files)}\n"
                 f"project_name = {_toml_string(project_cfg.project_name)}\n"
             )
-    return base + notifications + portainer + trivy_section + compose_projects
+    auth = (
+        "\n[auth]\n"
+        f"username = {_toml_string(config.auth.username)}\n"
+        f"password_hash = {_toml_string(config.auth.password_hash)}\n"
+        f"secret_key = {_toml_string(config.auth.secret_key)}\n"
+    )
+    return base + notifications + portainer + trivy_section + compose_projects + auth
 
 
 def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
@@ -350,10 +414,32 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             skip_db_update=bool(config.trivy.skip_db_update),
             cache_ttl_minutes=max(1, int(config.trivy.cache_ttl_minutes)),
         ),
+        auth=AuthConfig(
+            username=config.auth.username.strip(),
+            password_hash=config.auth.password_hash.strip(),
+            secret_key=config.auth.secret_key.strip(),
+        ),
     )
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(_to_toml(normalized), encoding="utf-8")
     tmp.replace(path)
+
+
+def ensure_auth_secret(config: DockwatchConfig, path: Path) -> DockwatchConfig:
+    """Guarantee config.auth.secret_key is populated, generating and
+    persisting one if missing.
+
+    A stable signing key must survive process restarts, or every issued
+    session cookie would invalidate the moment the server restarts.
+    """
+    if config.auth.secret_key:
+        return config
+    config.auth.secret_key = secrets.token_hex(32)
+    try:
+        save_config(config, path)
+    except OSError:
+        pass
+    return config
 
 
 def _fallback_config(path: Path) -> DockwatchConfig:
@@ -362,14 +448,14 @@ def _fallback_config(path: Path) -> DockwatchConfig:
         save_config(default, path)
     except OSError:
         pass
-    return default
+    return ensure_auth_secret(default, path)
 
 
 def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     if not path.exists():
         default_config = DockwatchConfig()
         save_config(default_config, path)
-        return default_config
+        return ensure_auth_secret(default_config, path)
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -391,6 +477,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     portainer = data.get("portainer", {}) if isinstance(data, dict) else {}
     compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}
     trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
+    auth_raw = data.get("auth", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
         notify_only=_parse_list(data.get("notify_only")),
         include_tags=_parse_list(data.get("include_tags")),
@@ -412,5 +499,10 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         ),
         compose_projects=_parse_compose_projects(compose_projects),
         trivy=_parse_trivy_config(trivy_raw),
+        auth=AuthConfig(
+            username=str(auth_raw.get("username", "")) if isinstance(auth_raw, dict) else "",
+            password_hash=str(auth_raw.get("password_hash", "")) if isinstance(auth_raw, dict) else "",
+            secret_key=str(auth_raw.get("secret_key", "")) if isinstance(auth_raw, dict) else "",
+        ),
     )
-    return config
+    return ensure_auth_secret(config, path)

@@ -11,10 +11,14 @@ class ApiError extends Error {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   })
   if (!res.ok) {
+    if (res.status === 401 && url !== '/api/auth/login' && url !== '/api/auth/session') {
+      window.dispatchEvent(new CustomEvent('dockwatch:unauthorized'))
+    }
     const body = await res.json().catch(() => ({ detail: res.statusText }))
     throw new ApiError(body.detail || res.statusText, res.status)
   }
@@ -67,6 +71,15 @@ export const api = {
   environments: {
     list: () =>
       request<{ environments: PortainerEnvironment[]; error?: string }>('/api/environments'),
+  },
+  auth: {
+    login: (username: string, password: string) =>
+      request<{ ok: boolean; username: string }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+    session: () => request<{ authenticated: boolean; username?: string }>('/api/auth/session'),
   },
 }
 

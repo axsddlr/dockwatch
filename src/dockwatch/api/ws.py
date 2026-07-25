@@ -6,7 +6,10 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+
+from ..config import load_config
+from .security import verify_session_cookie
 
 router = APIRouter()
 
@@ -42,6 +45,12 @@ manager = ConnectionManager()
 
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
+    try:
+        verify_session_cookie(websocket, load_config())
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+
     await manager.connect(websocket)
     try:
         while True:

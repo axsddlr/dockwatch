@@ -11,7 +11,15 @@ import typer
 from packaging.version import Version
 
 from . import __version__
-from .config import CONFIG_PATH, DockwatchConfig, load_config, migrate_pinned_ignored_to_db
+from .config import (
+    CONFIG_PATH,
+    DockwatchConfig,
+    bootstrap_auth_from_env,
+    hash_password,
+    load_config,
+    migrate_pinned_ignored_to_db,
+    save_config,
+)
 from .db import ManifestStore
 from .display import render_containers_table, render_scan_results, render_summary, render_update_table
 from .docker_client import get_image_id, get_running_containers
@@ -322,6 +330,16 @@ def serve(
     """Launch web dashboard."""
     import uvicorn
     from .api.app import create_app
+
+    config = bootstrap_auth_from_env(load_config(), CONFIG_PATH)
+    if not config.auth.password_hash:
+        typer.echo(
+            "WARNING: no dashboard credentials configured — set "
+            "DOCKWATCH_USERNAME/DOCKWATCH_PASSWORD or run "
+            "'dockwatch config set-password'. The dashboard will reject "
+            "all requests until credentials exist.",
+            err=True,
+        )
     uvicorn.run(create_app(), host=host, port=port)
 
 
@@ -439,6 +457,19 @@ def list_config() -> None:
             typer.echo(f"    project_name: {project.project_name or '(auto)'}")
     else:
         typer.echo("  (none)")
+
+
+@config_app.command("set-password")
+def set_password(
+    username: str = typer.Option(..., "--username", prompt=True),
+    password: str = typer.Option(..., "--password", prompt=True, hide_input=True, confirmation_prompt=True),
+) -> None:
+    """Set or reset the dashboard login credentials."""
+    config = load_config()
+    config.auth.username = username
+    config.auth.password_hash = hash_password(password)
+    save_config(config)
+    typer.echo(f"Credentials updated for user '{username}'.")
 
 
 @notify_app.command("test")

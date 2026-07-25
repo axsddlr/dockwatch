@@ -5,13 +5,14 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from .deps import get_store
-from .routes import containers, environments, settings, trivy
+from .routes import auth, containers, environments, settings, trivy
+from .security import require_auth
 from .ws import router as ws_router
 from .. import __version__
 from ..config import CONFIG_PATH, migrate_pinned_ignored_to_db
@@ -67,16 +68,17 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(containers.router, prefix="/api")
-    app.include_router(settings.router, prefix="/api")
-    app.include_router(environments.router, prefix="/api")
-    app.include_router(trivy.router, prefix="/api")
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(containers.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(settings.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(environments.router, prefix="/api", dependencies=[Depends(require_auth)])
+    app.include_router(trivy.router, prefix="/api", dependencies=[Depends(require_auth)])
     app.include_router(ws_router)
 
     dist_path = _find_frontend_dist()
     _mounted = dist_path.exists()
 
-    @app.get("/debug/dist")
+    @app.get("/debug/dist", dependencies=[Depends(require_auth)])
     async def debug_dist() -> dict:
         return {
             "resolved_path": str(dist_path),

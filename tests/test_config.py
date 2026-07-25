@@ -9,13 +9,17 @@ from typer.testing import CliRunner
 
 from dockwatch import __version__ as dockwatch_version
 from dockwatch.config import (
+    AuthConfig,
     ComposeProjectConfig,
     DockwatchConfig,
     PortainerConfig,
+    bootstrap_auth_from_env,
+    hash_password,
     load_config,
     resolve_compose_file,
     save_config,
     validate_compose_project_config,
+    verify_password,
 )
 from dockwatch.main import app
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
@@ -542,6 +546,91 @@ class TestCLIPinUsesStore(unittest.TestCase):
             self.assertEqual(result.exit_code, 0)
             self.assertIn("nginx", result.stdout)
             self.assertIn("redis", result.stdout)
+
+
+class AuthConfigTests(unittest.TestCase):
+    def test_password_hash_round_trip(self) -> None:
+        encoded = hash_password("correct-password")
+        self.assertTrue(verify_password("correct-password", encoded))
+        self.assertFalse(verify_password("wrong-password", encoded))
+
+    def test_password_hash_uses_random_salt(self) -> None:
+        first = hash_password("same-password")
+        second = hash_password("same-password")
+        self.assertNotEqual(first, second)
+        self.assertTrue(verify_password("same-password", first))
+        self.assertTrue(verify_password("same-password", second))
+
+    def test_verify_password_rejects_malformed_hash(self) -> None:
+        self.assertFalse(verify_password("anything", "not-a-valid-hash"))
+        self.assertFalse(verify_password("anything", ""))
+
+    def test_auth_config_toml_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            config = DockwatchConfig(
+                auth=AuthConfig(
+                    username="admin",
+                    password_hash=hash_password("correct-password"),
+                    secret_key="a" * 64,
+                )
+            )
+            save_config(config, path)
+            loaded = load_config(path)
+            self.assertEqual(loaded.auth.username, "admin")
+            self.assertTrue(verify_password("correct-password", loaded.auth.password_hash))
+            self.assertEqual(loaded.auth.secret_key, "a" * 64)
+
+    def test_load_config_generates_secret_key_when_missing(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            config = load_config(path)
+            self.assertTrue(config.auth.secret_key)
+            self.assertEqual(len(config.auth.secret_key), 64)
+
+    def test_secret_key_is_stable_across_loads(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            first = load_config(path)
+            second = load_config(path)
+            self.assertEqual(first.auth.secret_key, second.auth.secret_key)
+
+    def test_bootstrap_sets_hash_when_empty(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            config = load_config(path)
+            with patch.dict("os.environ", {"DOCKWATCH_USERNAME": "admin", "DOCKWATCH_PASSWORD": "correct-password"}):
+                updated = bootstrap_auth_from_env(config, path)
+            self.assertEqual(updated.auth.username, "admin")
+            self.assertTrue(verify_password("correct-password", updated.auth.password_hash))
+
+    def test_bootstrap_does_not_overwrite_existing_hash(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            config = load_config(path)
+            with patch.dict("os.environ", {"DOCKWATCH_USERNAME": "admin", "DOCKWATCH_PASSWORD": "first-password"}):
+                bootstrap_auth_from_env(config, path)
+
+            reloaded = load_config(path)
+            with patch.dict("os.environ", {"DOCKWATCH_USERNAME": "someone-else", "DOCKWATCH_PASSWORD": "second-password"}):
+                updated = bootstrap_auth_from_env(reloaded, path)
+
+            self.assertEqual(updated.auth.username, "admin")
+            self.assertTrue(verify_password("first-password", updated.auth.password_hash))
+            self.assertFalse(verify_password("second-password", updated.auth.password_hash))
+
+    def test_bootstrap_does_nothing_without_env_vars(self) -> None:
+        import os
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            config = load_config(path)
+            saved = {k: os.environ.pop(k) for k in ("DOCKWATCH_USERNAME", "DOCKWATCH_PASSWORD") if k in os.environ}
+            try:
+                updated = bootstrap_auth_from_env(config, path)
+            finally:
+                os.environ.update(saved)
+            self.assertEqual(updated.auth.password_hash, "")
 
 
 if __name__ == "__main__":

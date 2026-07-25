@@ -153,6 +153,7 @@ dockwatch serve --host 0.0.0.0 --port 8080
 - `dockwatch pin <container>`
 - `dockwatch ignore <container>`
 - `dockwatch config list`
+- `dockwatch config set-password` — set or reset dashboard login credentials
 
 ## Configuration
 
@@ -388,6 +389,35 @@ DOCKER_GID=0
 
 Then recreate the container so `group_add` picks it up — a config change
 alone (editing `.env`) does not affect an already-running container.
+
+### Dashboard login (DOCKWATCH_USERNAME / DOCKWATCH_PASSWORD)
+
+The dashboard requires a username and password. Until credentials are
+configured, every API route returns 503 and the dashboard cannot be used.
+
+Set them once via `.env` before first start:
+
+```
+DOCKWATCH_USERNAME=admin
+DOCKWATCH_PASSWORD=changeme
+```
+
+These env vars only take effect if no credentials are already stored in
+`config.toml` — they bootstrap the account once, then config.toml's
+password hash is the source of truth. Changing `.env` and recreating the
+container later does *not* reset the password.
+
+To change the password later:
+
+```bash
+docker compose exec dockwatch dockwatch config set-password
+```
+
+Sessions last 14 days (signed cookie, no server-side session store) and
+end early via the dashboard's logout button. The session cookie is not
+marked `Secure`, since this tool is commonly reached over plain HTTP on a
+LAN — if you're exposing it over the internet, put a TLS-terminating
+reverse proxy in front of it.
 
 ### Running
 

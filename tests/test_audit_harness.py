@@ -445,10 +445,22 @@ class TestSettingsPutValidation:
         except ValueError:
             pass
 
-    def test_put_settings_route_returns_422_not_500(self):
+    def test_put_settings_route_returns_422_not_500(self, monkeypatch, tmp_path):
+        import dockwatch.config as config_module
         from fastapi.testclient import TestClient
         from dockwatch.api.app import create_app
 
+        config_path = tmp_path / "config.toml"
+        monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(config_module.load_config, "__defaults__", (config_path,))
+
+        config = config_module.load_config(config_path)
+        config.auth.username = "admin"
+        config.auth.password_hash = config_module.hash_password("correct-password")
+        config_module.save_config(config, config_path)
+
         client = TestClient(create_app())
+        client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
+
         response = client.put("/api/settings", json={"schedule_interval_seconds": "abc"})
         assert response.status_code == 422

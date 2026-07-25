@@ -6,7 +6,9 @@ import {
   Menu,
   X,
   Hexagon,
+  LogOut,
 } from 'lucide-react'
+import { api } from '../../api/client'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/', icon: LayoutGrid },
@@ -16,6 +18,14 @@ const NAV_ITEMS = [
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    try {
+      await api.auth.logout()
+    } finally {
+      navigate('/login', { replace: true })
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -36,7 +46,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               dockwatch
             </button>
           </div>
-          <span className="text-xs text-[var(--color-text-muted)]">v0.2.0</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[var(--color-text-muted)]">v0.2.0</span>
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </header>
 

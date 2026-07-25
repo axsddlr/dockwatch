@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { AlertTriangle, ShieldAlert, ShieldCheck, ExternalLink, X, Skull } from 'lucide-react'
 import type { TrivyScanResult, TrivyFinding } from '../../types'
 
@@ -60,6 +61,8 @@ export function ScanResultsPanel({
   name: string
   onClose: () => void
 }) {
+  const [activeSeverity, setActiveSeverity] = useState<string | null>(null)
+
   if (result.error) {
     return (
       <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-panel-alt)] px-4 py-3">
@@ -101,19 +104,31 @@ export function ScanResultsPanel({
       </div>
 
       <div className="flex gap-1 px-4 pb-2.5">
-        {bars.map((b) => (
-          <div key={b.label} className="flex-1" title={`${b.label}: ${b.count}`}>
-            <div className="text-center text-[10px] font-semibold text-[var(--color-text-dim)] mb-0.5">
-              {b.count}
-            </div>
-            <div className="h-1 rounded-full bg-[var(--color-border)] overflow-hidden">
-              <div
-                className={`h-full rounded-full ${b.color} transition-all`}
-                style={{ width: `${(b.count / maxCount) * 100}%` }}
-              />
-            </div>
-          </div>
-        ))}
+        {bars.map((b) => {
+          const isActive = activeSeverity === b.label
+          return (
+            <button
+              key={b.label}
+              type="button"
+              title={`${b.label}: ${b.count}`}
+              onClick={() => setActiveSeverity(isActive ? null : b.label)}
+              disabled={b.count === 0}
+              className={`flex-1 rounded px-0.5 py-0.5 transition-colors ${
+                isActive ? 'bg-[var(--color-border)]' : 'hover:bg-[var(--color-border)]/50'
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <div className="text-center text-[10px] font-semibold text-[var(--color-text-dim)] mb-0.5">
+                {b.count}
+              </div>
+              <div className="h-1 rounded-full bg-[var(--color-border)] overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${b.color} transition-all`}
+                  style={{ width: `${(b.count / maxCount) * 100}%` }}
+                />
+              </div>
+            </button>
+          )
+        })}
       </div>
 
       <div className="max-h-64 overflow-y-auto border-t border-[var(--color-border)]">
@@ -123,7 +138,18 @@ export function ScanResultsPanel({
             No vulnerabilities found.
           </p>
         ) : (
-          result.findings.map((f, i) => <FindingRow key={`${f.vulnerability_id}-${i}`} f={f} />)
+          (() => {
+            const filtered = activeSeverity
+              ? result.findings.filter((f) => f.severity === activeSeverity)
+              : result.findings
+            return filtered.length === 0 ? (
+              <p className="px-4 py-4 text-xs text-[var(--color-text-dim)]">
+                No {activeSeverity?.toLowerCase()} severity findings.
+              </p>
+            ) : (
+              filtered.map((f, i) => <FindingRow key={`${f.vulnerability_id}-${i}`} f={f} />)
+            )
+          })()
         )}
       </div>
     </div>

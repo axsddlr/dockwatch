@@ -69,7 +69,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
       </div>
 
       <div className="col-span-1">
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.color}`}>
+        <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${cfg.bg} ${cfg.color}`}>
           {cfg.label}
         </span>
       </div>

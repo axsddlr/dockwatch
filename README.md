@@ -1,44 +1,35 @@
 # dockwatch
 
-`dockwatch` is a notify-first Docker container update watcher with both:
-- a CLI for terminal-first workflows
-- a NiceGUI dashboard for browser-based monitoring
-
-It is designed as a practical Watchtower-style replacement where **you are informed first** and stay in control of updates.
+`dockwatch` is a notify-first Docker container update watcher with a CLI for terminal-first workflows and a web dashboard for browser-based monitoring. It is designed as a practical Watchtower-style replacement where **you are informed first** and stay in control of updates.
 
 ## What It Does
 
-- Discovers running Docker containers
+- Discovers running Docker containers (local Docker, Portainer-managed, or both)
 - Parses image references (Docker Hub, GHCR, and Codeberg, including digest-pinned images)
 - Checks registries for newer tags
 - Marks containers as `OUTDATED`, `UP-TO-DATE`, `UNKNOWN`, or `PINNED`
-- Scans running container images for vulnerabilities (CVEs) via Trivy
-- Supports opt-in notifications (`--notify`) via:
-  - generic webhook
-  - Discord webhook
-  - ntfy
+- Scans running container images for vulnerabilities (CVEs) via Trivy with cached results
+- Supports multi-user RBAC with self-service registration, custom roles, and per-route permissions
+- Supports opt-in notifications (`--notify`) via generic webhook, Discord webhook, and ntfy
 - Persists last-seen manifest state in SQLite to classify first discovery vs later updates
 - Supports daemon mode with scheduled checks, jitter, and overlap protection
 - Supports Docker label overrides for enable/pin/ignore/notify behavior
 - Supports label-based tag regex overrides via `dockwatch.include_tags` and `dockwatch.exclude_tags`
 - Adds registry links to notification payloads when a registry page can be derived
-- Supports optional Portainer-backed discovery/checks across Portainer-managed environments
-- Provides web dashboard actions:
-  - refresh all
-  - check per-row
-  - pin/unpin per-row
+- Provides web dashboard actions: refresh all, check/scan/pin/unpin per-row, and Trivy scan with interactive severity filtering
 
 ## Current Status
 
 Implemented:
 - Docker Hub + GHCR + Codeberg check pipeline
-- CLI commands: `list`, `check`, `scan`, `version`, `serve`, `pin`, `ignore`, `config list`, `environments`
+- CLI commands: `list`, `check`, `scan`, `version`, `serve`, `pin`, `unpin`, `ignore`, `unignore`, `config list`, `config set-password`, `environments`
 - CLI command: `daemon`
 - CLI flags: `--container`, `--notify`, `--json`, `--outdated-only`, `--source`, `--environment`
-- NiceGUI dashboard with dark mode + responsive layout
-- Config persistence and notification settings UI
+- FastAPI dashboard with dark mode + responsive layout
+- Multi-user RBAC: admin/viewer built-in roles, custom roles, self-service registration, permission-gated UI
+- Config persistence, notification settings UI, ignored-containers checklist
 - Read-only Portainer integration via API key
-- Dockerfile + docker-compose scaffolding
+- Dockerfile + docker-compose scaffolding, Trivy cache volume, healthcheck
 - CI workflow (`ruff`, `mypy`, `pytest`)
 
 In progress / pending:
@@ -142,7 +133,6 @@ dockwatch serve --host 0.0.0.0 --port 8080
 
 ## CLI Reference
 
-- `dockwatch list`
 - `dockwatch list [--source local|portainer|all] [--environment ID]`
 - `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify] [--source local|portainer|all] [--environment ID]`
 - `dockwatch scan [--container NAME] [--json] [--source local|portainer|all] [--environment ID]`
@@ -151,9 +141,12 @@ dockwatch serve --host 0.0.0.0 --port 8080
 - `dockwatch serve [--host 0.0.0.0] [--port 8080]`
 - `dockwatch daemon [--notify/--no-notify]`
 - `dockwatch pin <container>`
+- `dockwatch unpin <container>`
 - `dockwatch ignore <container>`
+- `dockwatch unignore <container>`
 - `dockwatch config list`
 - `dockwatch config set-password` — set or reset dashboard login credentials
+- `dockwatch notify test` — send a test notification
 
 ## Configuration
 
@@ -195,9 +188,10 @@ cache_ttl_minutes = 60
 ```
 
 Notes:
-- Pinned/ignored containers are **not** managed in `config.toml`. They're managed via CLI (`dockwatch pin`/`dockwatch ignore`/`dockwatch unpin`/`dockwatch unignore`) or the dashboard settings API, and are persisted in the `container_flags` table of `manifests.db`.
+- Pinned/ignored containers are persisted in the `container_flags` table of `manifests.db` and managed via CLI (`dockwatch pin`/`unpin`/`ignore`/`unignore`) or the dashboard. They are no longer `config.toml` fields.
   - Pinned containers are included in results as `PINNED`
   - Ignored containers are skipped during checks
+  - Legacy `config.toml` pinned/ignored values are migrated to the store on first startup
 - `notify_only`: optional container-name allowlist for notifications
 - `include_tags`: optional regex allowlist applied before latest-tag selection
 - `exclude_tags`: optional regex denylist applied after include filtering
@@ -390,35 +384,6 @@ DOCKER_GID=0
 Then recreate the container so `group_add` picks it up — a config change
 alone (editing `.env`) does not affect an already-running container.
 
-### Dashboard login (DOCKWATCH_USERNAME / DOCKWATCH_PASSWORD)
-
-The dashboard requires a username and password. Until credentials are
-configured, every API route returns 503 and the dashboard cannot be used.
-
-Set them once via `.env` before first start:
-
-```
-DOCKWATCH_USERNAME=admin
-DOCKWATCH_PASSWORD=changeme
-```
-
-These env vars only take effect if no credentials are already stored in
-`config.toml` — they bootstrap the account once, then config.toml's
-password hash is the source of truth. Changing `.env` and recreating the
-container later does *not* reset the password.
-
-To change the password later:
-
-```bash
-docker compose exec dockwatch dockwatch config set-password
-```
-
-Sessions last 14 days (signed cookie, no server-side session store) and
-end early via the dashboard's logout button. The session cookie is not
-marked `Secure`, since this tool is commonly reached over plain HTTP on a
-LAN — if you're exposing it over the internet, put a TLS-terminating
-reverse proxy in front of it.
-
 ### Running
 
 ```bash
@@ -437,8 +402,57 @@ DOCKWATCH_PORT=18082 docker compose up -d dockwatch
 - **Log rotation**: JSON-file driver, 10 MB per file, 3-file cap.
 - **Init process**: `tini` via `init: true` for proper signal handling and zombie reaping.
 - Config volume persists at `/home/appuser/.config/dockwatch`.
+- Trivy cache volume persists at `/home/appuser/.cache/trivy` (survives container recreates).
 
 If Docker is unavailable, CLI and dashboard show actionable error messaging.
+
+## Authentication & RBAC
+
+dockwatch supports single-user auth and multi-user RBAC with self-service registration.
+
+### Built-in Roles
+
+| Role | Permissions |
+| --- | --- |
+| admin | Full access: dashboard, settings, users, pin/unpin, update, Trivy scan |
+| viewer | Read-only: view dashboard, no mutations |
+
+Custom roles can be created from the Users page with any combination of permissions (`manage_settings`, `manage_users`, `pin_container`, `update_container`, `scan_container`).
+
+### Registration
+
+Self-service registration is gated by an env var:
+
+```env
+DOCKWATCH_ALLOW_REGISTRATION=true
+```
+
+When enabled, new users register via the `/register` page and are assigned the `viewer` role. An admin can then promote them or assign a custom role. When the users table is empty (fresh install), the first registrant always becomes admin regardless of the env var — so initial setup needs no manual user seeding beyond the first login.
+
+### First-run Bootstrap
+
+On a fresh install the users table is empty. You have two options:
+
+1. Register via the web UI — first registrant becomes admin.
+2. Set `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` in `.env` to auto-create an admin user on first start. These env vars are only consumed once; after that, the user table (not `.env`) is the source of truth.
+
+### Changing Passwords
+
+```bash
+docker compose exec dockwatch dockwatch config set-password
+```
+
+The command prompts for username and new password interactively. Only users with `manage_users` permission can change passwords via the dashboard Users page.
+
+### Legacy Auth Config
+
+If you've been using dockwatch before RBAC was added, your single-user credentials from `config.toml` are automatically migrated into the users table on startup. The legacy `[auth]` section in `config.toml` is then unused — all credentials are managed through the SQLite users store thereafter.
+
+### Dashboard Login (Credentials)
+
+The dashboard requires login. Until credentials are configured, every API route returns 401 and the dashboard cannot be used.
+
+Sessions last 14 days (signed cookie, no server-side session store) and end early via the dashboard's logout button. The session cookie is not marked `Secure`, since this tool is commonly reached over plain HTTP on a LAN — if you're exposing it over the internet, put a TLS-terminating reverse proxy in front of it.
 
 ## Development
 
@@ -454,20 +468,6 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
 - `ruff check src tests`
 - `mypy src`
 - `pytest -q`
-
-CLI commands:
-- `dockwatch list`
-- `dockwatch check [--container NAME] [--outdated-only] [--json] [--notify]`
-- `dockwatch scan [--container NAME] [--json] [--source local|portainer|all]`
-- `dockwatch version`
-- `dockwatch serve [--host 0.0.0.0] [--port 8080]`
-- `dockwatch daemon [--notify/--no-notify]`
-- `dockwatch pin <container>`
-- `dockwatch ignore <container>`
-- `dockwatch unpin <container>`
-- `dockwatch unignore <container>`
-- `dockwatch config list`
-- `dockwatch notify test`
 
 ## Troubleshooting
 

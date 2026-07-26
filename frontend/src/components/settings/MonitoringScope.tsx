@@ -14,27 +14,62 @@ function Field({ label, children }: FieldProps) {
 
 export function MonitoringScope({
   ignored,
+  containerNames,
   notifyOnly,
+  onToggleIgnored,
   onChange,
 }: {
-  ignored: string
+  ignored: string[]
+  containerNames: string[]
   notifyOnly: string
+  onToggleIgnored: (name: string) => void
   onChange: (field: string, value: string) => void
 }) {
+  // Ignored containers are excluded from check results, so an ignored name
+  // may be absent from the discovered list — union them so it can always be
+  // unchecked again.
+  const allNames = [...new Set([...containerNames, ...ignored])].sort()
+
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Monitoring Scope</h3>
       <p className="text-xs text-[var(--color-text-dim)]">
         Pin or unpin containers directly from the dashboard row actions.
       </p>
-      <Field label="Ignored containers (comma-separated)">
-        <input
-          type="text"
-          value={ignored}
-          onChange={(e) => onChange('ignored', e.target.value)}
-          placeholder="container1, container2"
-          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-dim)] focus:border-[var(--color-primary)] focus:outline-none"
-        />
+      <Field label="Ignored containers">
+        {allNames.length === 0 ? (
+          <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
+            No containers discovered yet — run a check from the dashboard first.
+          </p>
+        ) : (
+          <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2">
+            {allNames.map((name) => {
+              const discovered = containerNames.includes(name)
+              return (
+                <label
+                  key={name}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-panel)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={ignored.includes(name)}
+                    onChange={() => onToggleIgnored(name)}
+                    className="accent-[var(--color-primary)]"
+                  />
+                  <span className="truncate">{name}</span>
+                  {!discovered && (
+                    <span className="ml-auto shrink-0 text-[10px] text-[var(--color-text-dim)]">
+                      not in last check
+                    </span>
+                  )}
+                </label>
+              )
+            })}
+          </div>
+        )}
+        <p className="text-[10px] text-[var(--color-text-dim)]">
+          Checked containers are skipped during update checks. Applies on save.
+        </p>
       </Field>
       <Field label="Notify-only containers (comma-separated)">
         <input

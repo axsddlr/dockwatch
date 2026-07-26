@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { api } from '../api/client'
 import { useSettings, useSaveSettings } from '../hooks/useSettings'
 import { MonitoringScope } from '../components/settings/MonitoringScope'
 import { TagFilters } from '../components/settings/TagFilters'
@@ -28,8 +30,19 @@ export function SettingsPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
+  // Names for the ignored-containers checklist, from the last check's
+  // cached results (GET, no docker churn).
+  const { data: containerData } = useQuery({
+    queryKey: ['containers', 'cached'],
+    queryFn: () => api.containers.list(),
+    staleTime: 30_000,
+  })
+  const containerNames = [
+    ...new Set((containerData ?? []).map((r) => r.container_info.name)),
+  ].sort()
+
   const [form, setForm] = useState({
-    ignored: '',
+    ignored: [] as string[],
     notify_only: '',
     include_tags: '',
     exclude_tags: '',
@@ -63,7 +76,7 @@ export function SettingsPage() {
     if (data && !hydratedRef.current) {
       hydratedRef.current = true
       setForm({
-        ignored: formatCsv(data.ignored ?? []),
+        ignored: data.ignored ?? [],
         notify_only: formatCsv(data.notify_only ?? []),
         include_tags: formatCsv(data.include_tags ?? []),
         exclude_tags: formatCsv(data.exclude_tags ?? []),
@@ -121,10 +134,19 @@ export function SettingsPage() {
     setForm((prev) => ({ ...prev, [field]: !(prev as Record<string, unknown>)[field] }))
   }
 
+  const handleToggleIgnored = (name: string) => {
+    setForm((prev) => ({
+      ...prev,
+      ignored: prev.ignored.includes(name)
+        ? prev.ignored.filter((n) => n !== name)
+        : [...prev.ignored, name],
+    }))
+  }
+
   const handleSave = async () => {
     setSaveMessage(null)
     const payload: Partial<DockwatchSettings> = {
-      ignored: parseCsv(form.ignored),
+      ignored: form.ignored,
       notify_only: parseCsv(form.notify_only),
       include_tags: parseCsv(form.include_tags),
       exclude_tags: parseCsv(form.exclude_tags),
@@ -176,7 +198,9 @@ export function SettingsPage() {
       <div className="max-w-2xl space-y-8">
         <MonitoringScope
           ignored={form.ignored}
+          containerNames={containerNames}
           notifyOnly={form.notify_only}
+          onToggleIgnored={handleToggleIgnored}
           onChange={handleChange}
         />
 

@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -14,7 +14,15 @@ import { hasPermission } from '../RequireAuth'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [version, setVersion] = useState('')
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetch('/health')
+      .then((r) => r.json())
+      .then((d) => setVersion(d.version ?? ''))
+      .catch(() => {})
+  }, [])
 
   const handleLogout = async () => {
     try {
@@ -53,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-[var(--color-text-muted)]">v0.2.0</span>
+            {version && <span className="text-xs text-[var(--color-text-muted)]">v{version}</span>}
             <button
               onClick={handleLogout}
               title="Log out"

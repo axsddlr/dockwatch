@@ -1,6 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { api } from '../api/client'
+import type { SessionUser } from '../types'
+
+let _session: SessionUser | null = null
+
+export function getSession(): SessionUser | null {
+  return _session
+}
+
+export function hasPermission(permission: string): boolean {
+  return _session?.permissions?.includes(permission) ?? false
+}
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -17,7 +28,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       .session()
       .then((res) => {
         if (!res.authenticated) redirectToLogin()
-        else setChecked(true)
+        else {
+          _session = res
+          setChecked(true)
+        }
       })
       .catch(redirectToLogin)
 

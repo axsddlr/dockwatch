@@ -5,18 +5,28 @@ def test_static_frontend_does_not_mask_api_routes(monkeypatch, tmp_path) -> None
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
 
     import dockwatch.config as config_module
+    import dockwatch.db as db_module
 
     config_path = tmp_path / "config.toml"
+    db_path = tmp_path / "manifests.db"
     monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
     monkeypatch.setattr(config_module.load_config, "__defaults__", (config_path,))
+    monkeypatch.setattr(db_module, "STATE_DB_PATH", db_path)
+    monkeypatch.setattr(db_module.ManifestStore.__init__, "__defaults__", (db_path,))
 
     config = config_module.load_config(config_path)
     config.auth.username = "admin"
     config.auth.password_hash = config_module.hash_password("correct-password")
     config_module.save_config(config, config_path)
 
+    store = db_module.ManifestStore()
+    store.create_user("admin", config.auth.password_hash, "admin")
+
     from fastapi.testclient import TestClient
     from dockwatch.api import app as app_module
+    from dockwatch.api import deps as deps_module
+
+    deps_module._store = db_module.ManifestStore(path=db_path)
 
     dist_path = tmp_path / "dist"
     assets_path = dist_path / "assets"

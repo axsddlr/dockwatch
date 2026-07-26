@@ -5,16 +5,17 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ...config import load_config
 from ...integrations import PortainerError
 from ...sources import discover_environments
+from ..security import require_permission
 
 router = APIRouter()
 
 
-@router.get("/environments")
+@router.get("/environments", dependencies=[Depends(require_permission("manage_settings"))])
 def get_environments() -> Any:
     config = load_config()
     try:

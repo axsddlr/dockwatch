@@ -8,11 +8,10 @@ from typing import Any
 
 from packaging.version import Version
 
-from ..config import DockwatchConfig, PortainerConfig, TrivyConfig, ComposeProjectConfig
+from ..config import DockwatchConfig, ComposeProjectConfig
 from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
-    RegistryType,
     UpdateResult,
     VersionDiff,
     deployed_display_result,

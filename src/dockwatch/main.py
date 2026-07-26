@@ -17,6 +17,7 @@ from .config import (
     bootstrap_auth_from_env,
     hash_password,
     load_config,
+    migrate_auth_config_to_users,
     migrate_pinned_ignored_to_db,
     save_config,
 )
@@ -58,7 +59,9 @@ def main_callback() -> None:
     migration itself is idempotent (it only imports into an empty store),
     so calling it on every CLI startup is safe and cheap.
     """
-    migrate_pinned_ignored_to_db(CONFIG_PATH, ManifestStore())
+    store = ManifestStore()
+    migrate_pinned_ignored_to_db(CONFIG_PATH, store)
+    migrate_auth_config_to_users(load_config(), store)
 
 
 @app.command("list")

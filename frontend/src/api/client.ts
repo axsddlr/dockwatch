@@ -1,4 +1,4 @@
-import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig } from '../types'
+import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig, UserRecord, RoleRecord, SessionUser } from '../types'
 
 class ApiError extends Error {
   status: number
@@ -74,12 +74,48 @@ export const api = {
   },
   auth: {
     login: (username: string, password: string) =>
-      request<{ ok: boolean; username: string }>('/api/auth/login', {
+      request<{ ok: boolean; username: string; role: string; permissions: string[] }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
     logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
-    session: () => request<{ authenticated: boolean; username?: string }>('/api/auth/session'),
+    session: () => request<SessionUser>('/api/auth/session'),
+    register: (username: string, password: string) =>
+      request<{ ok: boolean; username: string; role: string; permissions: string[] }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    registrationEnabled: () => request<{ enabled: boolean }>('/api/auth/registration-enabled'),
+  },
+  users: {
+    list: () => request<UserRecord[]>('/api/users'),
+    create: (username: string, password: string, role_name: string) =>
+      request<{ ok: boolean; id: number; username: string; role_name: string }>('/api/users', {
+        method: 'POST',
+        body: JSON.stringify({ username, password, role_name }),
+      }),
+    updateRole: (id: number, role_name: string) =>
+      request<{ ok: boolean; id: number; role_name: string }>(`/api/users/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role_name }),
+      }),
+    delete: (id: number) =>
+      request<{ ok: boolean; id: number }>(`/api/users/${id}`, { method: 'DELETE' }),
+  },
+  roles: {
+    list: () => request<RoleRecord[]>('/api/roles'),
+    create: (name: string, permissions: string[]) =>
+      request<{ ok: boolean; name: string; permissions: string[]; is_builtin: boolean }>('/api/roles', {
+        method: 'POST',
+        body: JSON.stringify({ name, permissions }),
+      }),
+    update: (name: string, permissions: string[]) =>
+      request<{ ok: boolean; name: string; permissions: string[]; is_builtin: boolean }>(`/api/roles/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ permissions }),
+      }),
+    delete: (name: string) =>
+      request<{ ok: boolean; name: string }>(`/api/roles/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   },
 }
 

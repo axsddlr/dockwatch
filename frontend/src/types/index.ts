@@ -116,6 +116,26 @@ export interface ComposeProjectConfig {
   project_name: string
 }
 
+export interface SessionUser {
+  authenticated: boolean
+  username?: string
+  role?: string
+  permissions?: string[]
+}
+
+export interface UserRecord {
+  id: number
+  username: string
+  role_name: string
+  created_at: string
+}
+
+export interface RoleRecord {
+  name: string
+  permissions: string[]
+  is_builtin: boolean
+}
+
 export interface ComposeDetectResult {
   compose_project: string
   detected: ComposeProjectConfig

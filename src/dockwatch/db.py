@@ -6,11 +6,20 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import json as _json
 import sqlite3
 
 from .models import ContainerInfo, TrivyFinding, TrivyScanResult
 
 STATE_DB_PATH = Path.home() / ".config" / "dockwatch" / "manifests.db"
+
+VALID_PERMISSIONS = frozenset({
+    "view_containers",
+    "update_containers",
+    "scan_containers",
+    "manage_settings",
+    "manage_users",
+})
 
 
 @dataclass(slots=True)
@@ -21,6 +30,22 @@ class ManifestRecord:
     last_seen_digest: str | None
     last_seen_latest_tag: str | None
     last_checked_at: str
+
+
+@dataclass(slots=True)
+class UserRecord:
+    id: int
+    username: str
+    password_hash: str
+    role_name: str
+    created_at: str
+
+
+@dataclass(slots=True)
+class RoleRecord:
+    name: str
+    permissions: list[str]
+    is_builtin: bool
 
 
 def build_image_key(info: ContainerInfo) -> str:
@@ -105,6 +130,38 @@ class ManifestStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS roles (
+                    name TEXT PRIMARY KEY,
+                    permissions TEXT NOT NULL,
+                    is_builtin INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role_name TEXT NOT NULL REFERENCES roles(name),
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            existing_admin = connection.execute(
+                "SELECT 1 FROM roles WHERE name = 'admin'"
+            ).fetchone()
+            if existing_admin is None:
+                connection.execute(
+                    "INSERT INTO roles (name, permissions, is_builtin) VALUES (?, ?, 1)",
+                    ("admin", _json.dumps(sorted(VALID_PERMISSIONS))),
+                )
+                connection.execute(
+                    "INSERT INTO roles (name, permissions, is_builtin) VALUES (?, ?, 1)",
+                    ("viewer", _json.dumps(["view_containers"])),
+                )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
         with closing(self._connect()) as connection, connection:
@@ -313,3 +370,184 @@ class ManifestStore:
                 (name, kind),
             )
             return cursor.rowcount > 0
+
+    # --- Role methods ---
+
+    def get_role(self, name: str) -> RoleRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT name, permissions, is_builtin FROM roles WHERE name = ?",
+                (name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RoleRecord(
+            name=row[0],
+            permissions=_json.loads(row[1]),
+            is_builtin=bool(row[2]),
+        )
+
+    def list_roles(self) -> list[RoleRecord]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                "SELECT name, permissions, is_builtin FROM roles ORDER BY name"
+            ).fetchall()
+        return [
+            RoleRecord(
+                name=row[0],
+                permissions=_json.loads(row[1]),
+                is_builtin=bool(row[2]),
+            )
+            for row in rows
+        ]
+
+    def create_role(self, name: str, permissions: list[str]) -> bool:
+        name = name.strip()
+        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        if not normalized:
+            raise ValueError("Role must have at least one valid permission.")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT 1 FROM roles WHERE name = ?", (name,),
+            ).fetchone()
+            if existing is not None:
+                return False
+            connection.execute(
+                "INSERT INTO roles (name, permissions, is_builtin) VALUES (?, ?, 0)",
+                (name, _json.dumps(normalized)),
+            )
+            return True
+
+    def update_role_permissions(self, name: str, permissions: list[str]) -> bool:
+        name = name.strip()
+        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        if not normalized:
+            raise ValueError("Role must have at least one valid permission.")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            role = connection.execute(
+                "SELECT is_builtin FROM roles WHERE name = ?", (name,),
+            ).fetchone()
+            if role is None:
+                return False
+            if bool(role[0]):
+                return False
+            connection.execute(
+                "UPDATE roles SET permissions = ? WHERE name = ?",
+                (_json.dumps(normalized), name),
+            )
+            return True
+
+    def delete_role(self, name: str) -> bool:
+        name = name.strip()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            role = connection.execute(
+                "SELECT is_builtin FROM roles WHERE name = ?", (name,),
+            ).fetchone()
+            if role is None:
+                return False
+            if bool(role[0]):
+                return False
+            connection.execute("DELETE FROM roles WHERE name = ?", (name,))
+            return True
+
+    def get_users_by_role(self, role_name: str) -> list[int]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                "SELECT id FROM users WHERE role_name = ?", (role_name,),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def count_users_with_permission(self, permission: str) -> int:
+        roles_with_perm = {r.name for r in self.list_roles() if permission in r.permissions}
+        if not roles_with_perm:
+            return 0
+        with closing(self._connect()) as connection, connection:
+            placeholders = ", ".join("?" for _ in roles_with_perm)
+            row = connection.execute(
+                f"SELECT COUNT(*) FROM users WHERE role_name IN ({placeholders})",
+                tuple(roles_with_perm),
+            ).fetchone()
+        return row[0] if row else 0
+
+    # --- User methods ---
+
+    def create_user(self, username: str, password_hash: str, role_name: str) -> int:
+        username = username.strip()
+        role_name = role_name.strip()
+        created_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT 1 FROM users WHERE username = ?", (username,),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(f"User '{username}' already exists.")
+            role = connection.execute(
+                "SELECT 1 FROM roles WHERE name = ?", (role_name,),
+            ).fetchone()
+            if role is None:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+            cursor = connection.execute(
+                "INSERT INTO users (username, password_hash, role_name, created_at) VALUES (?, ?, ?, ?)",
+                (username, password_hash, role_name, created_at),
+            )
+            return cursor.lastrowid
+
+    def get_user_by_username(self, username: str) -> UserRecord | None:
+        username = username.strip()
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT id, username, password_hash, role_name, created_at FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        return UserRecord(*row)
+
+    def get_user_by_id(self, user_id: int) -> UserRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT id, username, password_hash, role_name, created_at FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return UserRecord(*row)
+
+    def list_users(self) -> list[UserRecord]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                "SELECT id, username, password_hash, role_name, created_at FROM users ORDER BY id"
+            ).fetchall()
+        return [UserRecord(*row) for row in rows]
+
+    def update_user_role(self, user_id: int, role_name: str) -> bool:
+        role_name = role_name.strip()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            role = connection.execute(
+                "SELECT 1 FROM roles WHERE name = ?", (role_name,),
+            ).fetchone()
+            if role is None:
+                raise ValueError(f"Role '{role_name}' does not exist.")
+            cursor = connection.execute(
+                "UPDATE users SET role_name = ? WHERE id = ?",
+                (role_name, user_id),
+            )
+            return cursor.rowcount > 0
+
+    def delete_user(self, user_id: int) -> bool:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "DELETE FROM users WHERE id = ?", (user_id,),
+            )
+            return cursor.rowcount > 0
+
+    def count_users(self) -> int:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute("SELECT COUNT(*) FROM users").fetchone()
+        return row[0] if row else 0

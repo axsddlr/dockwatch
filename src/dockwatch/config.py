@@ -9,7 +9,6 @@ import hmac
 import os
 import re
 import secrets
-import tempfile
 import tomllib
 
 from .db import ManifestStore
@@ -114,6 +113,14 @@ def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
         store.set_pinned(pinned)
     if ignored:
         store.set_ignored(ignored)
+
+
+def migrate_auth_config_to_users(config: DockwatchConfig, store: ManifestStore) -> None:
+    if store.count_users() > 0:
+        return
+    if not config.auth.password_hash:
+        return
+    store.create_user(config.auth.username, config.auth.password_hash, role_name="admin")
 
 
 def bootstrap_auth_from_env(config: DockwatchConfig, path: Path) -> DockwatchConfig:

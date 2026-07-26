@@ -6,13 +6,14 @@ import asyncio
 import threading
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from ...config import load_config, save_config
 from ...integrations import PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ..deps import get_config, get_store
+from ..security import require_permission
 from ..serializers import deserialize_settings, serialize_settings
 
 router = APIRouter()
@@ -22,14 +23,14 @@ router = APIRouter()
 _settings_write_lock = threading.Lock()
 
 
-@router.get("/settings")
+@router.get("/settings", dependencies=[Depends(require_permission("manage_settings"))])
 def get_settings() -> Any:
     config = get_config()
     store = get_store()
     return serialize_settings(config, store)
 
 
-@router.put("/settings")
+@router.put("/settings", dependencies=[Depends(require_permission("manage_settings"))])
 def put_settings(body: dict[str, Any]) -> Any:
     with _settings_write_lock:
         existing = load_config()
@@ -42,7 +43,7 @@ def put_settings(body: dict[str, Any]) -> Any:
     return serialize_settings(updated, store)
 
 
-@router.post("/settings/test-notification")
+@router.post("/settings/test-notification", dependencies=[Depends(require_permission("manage_settings"))])
 async def test_notification() -> Any:
     config = load_config()
     test_result = UpdateResult(
@@ -70,7 +71,7 @@ async def test_notification() -> Any:
     return {"ok": True, "message": "Test notification sent."}
 
 
-@router.post("/settings/test-portainer")
+@router.post("/settings/test-portainer", dependencies=[Depends(require_permission("manage_settings"))])
 def test_portainer(body: dict[str, str]) -> Any:
     url = body.get("url", "").strip()
     api_key = body.get("api_key", "").strip()

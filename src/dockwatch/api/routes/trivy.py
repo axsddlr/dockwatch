@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
-from ...config import TrivyConfig, load_config
+from ...config import load_config
 from ...db import ManifestStore
 from ...docker_client import get_image_id
 from ...models import TrivyScanResult
 from ...trivy import TrivyNotFoundError, scan_image
+from ..security import require_permission
 from ..ws import manager
 
 router = APIRouter()
@@ -46,7 +46,7 @@ def _serialize_scan_result(result: TrivyScanResult) -> dict[str, Any]:
     }
 
 
-@router.get("/containers/{name}/scan")
+@router.get("/containers/{name}/scan", dependencies=[Depends(require_permission("scan_containers"))])
 def get_scan(name: str) -> Any:
     image_id = get_image_id(name)
     if not image_id:
@@ -61,7 +61,7 @@ def get_scan(name: str) -> Any:
     return {"ok": True, "result": _serialize_scan_result(cached)}
 
 
-@router.post("/containers/{name}/scan")
+@router.post("/containers/{name}/scan", dependencies=[Depends(require_permission("scan_containers"))])
 async def run_scan(name: str) -> Any:
     config = load_config()
     if not config.trivy.enabled:
@@ -98,7 +98,7 @@ async def run_scan(name: str) -> Any:
     return {"ok": True, "cached": False, "result": serialized}
 
 
-@router.delete("/containers/{name}/scan")
+@router.delete("/containers/{name}/scan", dependencies=[Depends(require_permission("scan_containers"))])
 def invalidate_scan(name: str) -> Any:
     image_id = get_image_id(name)
     if not image_id:

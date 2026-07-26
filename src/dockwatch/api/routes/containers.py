@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...config import validate_compose_project_config, ComposeProjectConfig
 from ...docker_client import compose_labels_to_project_config
@@ -14,6 +14,7 @@ from ...registry import check_all
 from ...sources import discover_containers
 from ...updater import build_update_plan, execute_update
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
+from ..security import require_permission
 from ..serializers import serialize_update_results
 from ..ws import manager
 
@@ -28,13 +29,13 @@ def _find_result(name: str) -> UpdateResult:
     raise HTTPException(status_code=404, detail=f"Container '{name}' not found in results. Run a check first.")
 
 
-@router.get("/containers")
+@router.get("/containers", dependencies=[Depends(require_permission("view_containers"))])
 def list_containers() -> Any:
     cache = get_results_cache()
     return serialize_update_results(cache)
 
 
-@router.post("/containers/check")
+@router.post("/containers/check", dependencies=[Depends(require_permission("view_containers"))])
 async def check_containers(
     source: str = Query(default="local"),
     environment: str | None = Query(default=None),
@@ -58,7 +59,7 @@ async def check_containers(
         return serialized
 
 
-@router.post("/containers/{name}/update")
+@router.post("/containers/{name}/update", dependencies=[Depends(require_permission("update_containers"))])
 async def update_container(name: str) -> Any:
     match = _find_result(name)
     config = get_config()
@@ -78,7 +79,7 @@ async def update_container(name: str) -> Any:
     return {"ok": execution.success, "plan": payload}
 
 
-@router.get("/containers/{name}/compose-detect")
+@router.get("/containers/{name}/compose-detect", dependencies=[Depends(require_permission("update_containers"))])
 def detect_compose_config(name: str) -> Any:
     match = _find_result(name)
     info = match.container_info
@@ -98,7 +99,7 @@ def detect_compose_config(name: str) -> Any:
     }
 
 
-@router.post("/containers/{name}/compose-detect/validate")
+@router.post("/containers/{name}/compose-detect/validate", dependencies=[Depends(require_permission("update_containers"))])
 def validate_compose_config(name: str, body: dict[str, Any]) -> Any:
     _find_result(name)
     cfg = ComposeProjectConfig(
@@ -109,14 +110,14 @@ def validate_compose_config(name: str, body: dict[str, Any]) -> Any:
     return {"warnings": validate_compose_project_config(cfg)}
 
 
-@router.post("/containers/{name}/pin")
+@router.post("/containers/{name}/pin", dependencies=[Depends(require_permission("update_containers"))])
 def pin_container(name: str) -> Any:
     store = get_store()
     store.add_flag(name, "pinned")
     return {"ok": True, "pinned": store.get_pinned()}
 
 
-@router.delete("/containers/{name}/pin")
+@router.delete("/containers/{name}/pin", dependencies=[Depends(require_permission("update_containers"))])
 def unpin_container(name: str) -> Any:
     store = get_store()
     removed = store.remove_flag(name, "pinned")

@@ -9,7 +9,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..config import load_config
-from .security import verify_session_cookie
+from ..db import ManifestStore
+from .security import _verify_raw_cookie
 
 router = APIRouter()
 
@@ -45,9 +46,29 @@ manager = ConnectionManager()
 
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
+    config = load_config()
     try:
-        verify_session_cookie(websocket, load_config())
+        data = _verify_raw_cookie(websocket, config)
     except HTTPException:
+        await websocket.close(code=1008)
+        return
+
+    user_id = data.get("uid")
+    if user_id is None:
+        await websocket.close(code=1008)
+        return
+
+    store = ManifestStore()
+    user = store.get_user_by_id(user_id)
+    if user is None:
+        await websocket.close(code=1008)
+        return
+    role = store.get_role(user.role_name)
+    if role is None:
+        await websocket.close(code=1008)
+        return
+
+    if "view_containers" not in role.permissions:
         await websocket.close(code=1008)
         return
 

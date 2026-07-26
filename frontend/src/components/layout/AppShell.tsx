@@ -3,17 +3,14 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
   Settings,
+  Users,
   Menu,
   X,
   Hexagon,
   LogOut,
 } from 'lucide-react'
 import { api } from '../../api/client'
-
-const NAV_ITEMS = [
-  { label: 'Dashboard', path: '/', icon: LayoutGrid },
-  { label: 'Settings', path: '/settings', icon: Settings },
-]
+import { hasPermission } from '../RequireAuth'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -25,6 +22,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     } finally {
       navigate('/login', { replace: true })
     }
+  }
+
+  const navItems = [
+    { label: 'Dashboard', path: '/', icon: LayoutGrid },
+    { label: 'Settings', path: '/settings', icon: Settings },
+  ]
+
+  if (hasPermission('manage_users')) {
+    navItems.push({ label: 'Users', path: '/users', icon: Users })
   }
 
   return (
@@ -66,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           }`}
         >
           <nav className="flex flex-col gap-1 p-4 pt-6">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}

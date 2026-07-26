@@ -13,6 +13,14 @@ export function hasPermission(permission: string): boolean {
   return _session?.permissions?.includes(permission) ?? false
 }
 
+export function NoAccess({ permission }: { permission: string }) {
+  return (
+    <div className="flex items-center justify-center py-16 text-sm text-[var(--color-text-muted)]">
+      You don't have access to this page (requires {permission.replace('_', ' ')}).
+    </div>
+  )
+}
+
 export function RequireAuth({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()

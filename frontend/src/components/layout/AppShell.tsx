@@ -24,11 +24,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }
 
-  const navItems = [
-    { label: 'Dashboard', path: '/', icon: LayoutGrid },
-    { label: 'Settings', path: '/settings', icon: Settings },
-  ]
+  const navItems = [{ label: 'Dashboard', path: '/', icon: LayoutGrid }]
 
+  if (hasPermission('manage_settings')) {
+    navItems.push({ label: 'Settings', path: '/settings', icon: Settings })
+  }
   if (hasPermission('manage_users')) {
     navItems.push({ label: 'Users', path: '/users', icon: Users })
   }

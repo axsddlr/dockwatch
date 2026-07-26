@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Shield } from 'lucide-react'
 import { api, ApiError } from '../api/client'
+import { hasPermission, NoAccess } from '../components/RequireAuth'
 import type { UserRecord, RoleRecord } from '../types'
 
 export function UsersPage() {
+  if (!hasPermission('manage_users')) return <NoAccess permission="manage_users" />
+  return <UsersPageInner />
+}
+
+function UsersPageInner() {
   const [users, setUsers] = useState<UserRecord[]>([])
   const [roles, setRoles] = useState<RoleRecord[]>([])
   const [error, setError] = useState<string | null>(null)

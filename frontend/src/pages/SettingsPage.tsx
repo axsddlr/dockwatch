@@ -11,6 +11,7 @@ import { SchedulerConfig } from '../components/settings/SchedulerConfig'
 import { PortainerIntegration } from '../components/settings/PortainerIntegration'
 import { TrivyConfig } from '../components/settings/TrivyConfig'
 import { SettingsActions } from '../components/settings/SettingsActions'
+import { hasPermission, NoAccess } from '../components/RequireAuth'
 import type { DockwatchSettings } from '../types'
 
 function parseCsv(v: string): string[] {
@@ -25,6 +26,11 @@ function formatCsv(arr: string[]): string {
 }
 
 export function SettingsPage() {
+  if (!hasPermission('manage_settings')) return <NoAccess permission="manage_settings" />
+  return <SettingsPageInner />
+}
+
+function SettingsPageInner() {
   const { data, isLoading } = useSettings()
   const saveMutation = useSaveSettings()
   const [saveMessage, setSaveMessage] = useState<string | null>(null)

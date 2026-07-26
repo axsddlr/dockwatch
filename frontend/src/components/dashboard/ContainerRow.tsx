@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Pin, PinOff, RefreshCw, Rocket } from 'lucide-react'
 import { api } from '../../api/client'
+import { hasPermission } from '../RequireAuth'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { deriveStatus, STATUS_CONFIG, BUMP_COLORS, type UpdateResult } from '../../types'
 import { UpdateDialog } from './UpdateDialog'
@@ -44,7 +45,9 @@ export function ContainerRow({ result }: ContainerRowProps) {
   })
 
   const bump = result.version_diff?.bump_type
-  const showUpdateBtn = status === 'OUTDATED'
+  const canUpdate = hasPermission('update_containers')
+  const canScan = hasPermission('scan_containers')
+  const showUpdateBtn = status === 'OUTDATED' && canUpdate
 
   return (
     <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm last:border-b-0 hover:bg-[var(--color-bg-panel-alt)]/50 transition-colors">
@@ -106,18 +109,20 @@ export function ContainerRow({ result }: ContainerRowProps) {
         >
           <RefreshCw size={14} className={singleCheckMutation.isPending ? 'animate-spin' : ''} />
         </button>
-        <button
-          onClick={() => pinMutation.mutate()}
-          disabled={pinMutation.isPending}
-          className={`rounded-lg p-1.5 transition-colors ${
-            status === 'PINNED'
-              ? 'text-blue-400 hover:bg-blue-400/10'
-              : 'text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
-          }`}
-          title={status === 'PINNED' ? 'Unpin' : 'Pin'}
-        >
-          {status === 'PINNED' ? <PinOff size={14} /> : <Pin size={14} />}
-        </button>
+        {canUpdate && (
+          <button
+            onClick={() => pinMutation.mutate()}
+            disabled={pinMutation.isPending}
+            className={`rounded-lg p-1.5 transition-colors ${
+              status === 'PINNED'
+                ? 'text-blue-400 hover:bg-blue-400/10'
+                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
+            }`}
+            title={status === 'PINNED' ? 'Unpin' : 'Pin'}
+          >
+            {status === 'PINNED' ? <PinOff size={14} /> : <Pin size={14} />}
+          </button>
+        )}
         {showUpdateBtn && (
           <button
             onClick={() => setShowUpdate(true)}
@@ -127,7 +132,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
             <Rocket size={14} />
           </button>
         )}
-        <ScanButton name={result.container_info.name} />
+        {canScan && <ScanButton name={result.container_info.name} />}
       </div>
 
       {showUpdate && <UpdateDialog result={result} open={showUpdate} onClose={() => setShowUpdate(false)} />}

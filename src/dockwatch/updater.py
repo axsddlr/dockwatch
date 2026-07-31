@@ -149,6 +149,49 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
     )
 
 
+def build_rollback_plan(
+    result: UpdateResult, config: DockwatchConfig, *, old_tag: str, new_tag: str,
+) -> UpdatePlan:
+    """Build a plan that reverts a compose-managed container's image tag
+    back to `old_tag`, reusing the same compose rewrite/pull/up machinery
+    as a forward update, just with current/remote tags swapped."""
+    info = result.container_info
+    if not _is_compose_managed(result):
+        return _blocked_plan(result, "rollback is only supported for compose-managed containers")
+    if info.source != "local":
+        return _blocked_plan(result, "read-only source; only local Docker rollbacks are supported")
+
+    project = info.compose_project or ""
+    compose_cfg = config.compose_projects.get(project)
+    if compose_cfg is None:
+        return _blocked_plan(
+            result, f"compose project '{project}' is missing from config.compose_projects", mode="compose",
+        )
+    if not compose_cfg.workdir.strip():
+        return _blocked_plan(result, f"compose project '{project}' has no configured workdir", mode="compose")
+    if info.current_tag != new_tag:
+        return _blocked_plan(
+            result,
+            f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
+            mode="compose",
+        )
+
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="compose",
+        allowed=True,
+        image_ref=info.image_ref,
+        deployed_display=deployed_display_result(result),
+        remote_display=old_tag,
+        compose_project=project,
+        compose_service=info.compose_service,
+        current_tag=new_tag,
+        remote_tag=old_tag,
+    )
+
+
 def describe_update_plan(plan: UpdatePlan) -> list[str]:
     lines = [
         f"Container: {plan.container_name}",

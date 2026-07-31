@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from dockwatch.config import ComposeProjectConfig, DockwatchConfig
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
-from dockwatch.updater import build_update_plan, execute_update
+from dockwatch.updater import build_rollback_plan, build_update_plan, execute_update
 
 
 def _result(**kwargs) -> UpdateResult:
@@ -91,6 +91,69 @@ class UpdatePlannerTests(unittest.TestCase):
 
         self.assertTrue(plan.allowed)
         self.assertEqual(plan.mode, "compose")
+
+
+class RollbackPlannerTests(unittest.TestCase):
+    def test_plain_container_rollback_is_blocked(self) -> None:
+        plan = build_rollback_plan(
+            _result(), DockwatchConfig(), old_tag="1.0.0", new_tag="1.1.0",
+        )
+
+        self.assertFalse(plan.allowed)
+        self.assertIn("compose-managed", plan.reason or "")
+
+    def test_compose_container_rollback_requires_mapping(self) -> None:
+        plan = build_rollback_plan(
+            _result(container_overrides={"compose_project": "media", "compose_service": "web"}),
+            DockwatchConfig(),
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+        )
+
+        self.assertFalse(plan.allowed)
+        self.assertEqual(plan.mode, "compose")
+
+    def test_compose_container_rollback_swaps_tags(self) -> None:
+        config = DockwatchConfig(
+            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media")}
+        )
+        plan = build_rollback_plan(
+            _result(
+                container_overrides={
+                    "compose_project": "media",
+                    "compose_service": "web",
+                    "current_tag": "1.1.0",
+                }
+            ),
+            config,
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+        )
+
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.mode, "compose")
+        self.assertEqual(plan.current_tag, "1.1.0")
+        self.assertEqual(plan.remote_tag, "1.0.0")
+
+    def test_rollback_blocked_when_deployed_tag_mismatches_history(self) -> None:
+        config = DockwatchConfig(
+            compose_projects={"media": ComposeProjectConfig(workdir="/srv/media")}
+        )
+        plan = build_rollback_plan(
+            _result(
+                container_overrides={
+                    "compose_project": "media",
+                    "compose_service": "web",
+                    "current_tag": "1.2.0",
+                }
+            ),
+            config,
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+        )
+
+        self.assertFalse(plan.allowed)
+        self.assertIn("refresh", plan.reason or "")
 
 
 class UpdateExecutionTests(unittest.TestCase):

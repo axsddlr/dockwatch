@@ -9,12 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...config import validate_compose_project_config, ComposeProjectConfig
 from ...docker_client import compose_labels_to_project_config
+from ...integrations import PortainerClient, PortainerError
 from ...models import UpdateResult
-from ...registry import check_all
+from ...registry import check_all, record_digest_drift_events
 from ...sources import discover_containers
-from ...updater import build_update_plan, execute_update
+from ...updater import build_rollback_plan, build_update_plan, execute_update
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
-from ..security import require_permission
+from ..security import AuthenticatedUser, require_permission
 from ..serializers import serialize_update_results
 from ..ws import manager
 
@@ -35,7 +36,7 @@ def list_containers() -> Any:
     return serialize_update_results(cache)
 
 
-@router.post("/containers/check", dependencies=[Depends(require_permission("view_containers"))])
+@router.post("/containers/check", dependencies=[Depends(require_permission("scan_containers"))])
 async def check_containers(
     source: str = Query(default="local"),
     environment: str | None = Query(default=None),
@@ -51,6 +52,7 @@ async def check_containers(
         containers = discovery.containers
         store = get_store()
         results = await check_all(containers, config, store=store, max_concurrency=config.max_concurrent_checks)
+        record_digest_drift_events(results, store)
         cache = get_results_cache()
         cache.clear()
         cache.extend(results)
@@ -59,8 +61,11 @@ async def check_containers(
         return serialized
 
 
-@router.post("/containers/{name}/update", dependencies=[Depends(require_permission("update_containers"))])
-async def update_container(name: str) -> Any:
+@router.post("/containers/{name}/update")
+async def update_container(
+    name: str,
+    current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
+) -> Any:
     match = _find_result(name)
     config = get_config()
     plan = build_update_plan(match, config)
@@ -75,8 +80,103 @@ async def update_container(name: str) -> Any:
         "details": execution.details,
         "rollback_message": execution.rollback_message,
     }
+    store = get_store()
+    store.record_update_event(
+        container_name=name,
+        action="update",
+        source=plan.source,
+        status="success" if execution.success else "failed",
+        old_tag=plan.current_tag,
+        new_tag=plan.remote_tag,
+        error=None if execution.success else execution.message,
+        user_id=current_user.user_id,
+        username=current_user.username,
+    )
     await manager.broadcast("container_updated", payload)
     return {"ok": execution.success, "plan": payload}
+
+
+@router.post("/containers/{name}/rollback")
+async def rollback_container(
+    name: str,
+    current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
+) -> Any:
+    match = _find_result(name)
+    store = get_store()
+    last = store.get_last_successful_update(name)
+    if last is None or not last.old_tag or not last.new_tag:
+        raise HTTPException(status_code=404, detail=f"No recorded update to roll back for '{name}'.")
+
+    config = get_config()
+    plan = build_rollback_plan(match, config, old_tag=last.old_tag, new_tag=last.new_tag)
+    if not plan.allowed:
+        raise HTTPException(status_code=422, detail=plan.reason or "Rollback is blocked.")
+
+    execution = await asyncio.to_thread(execute_update, plan, config)
+    payload = {
+        "name": name,
+        "success": execution.success,
+        "message": execution.message,
+        "details": execution.details,
+        "rollback_message": execution.rollback_message,
+    }
+    store.record_update_event(
+        container_name=name,
+        action="rollback",
+        source=plan.source,
+        status="success" if execution.success else "failed",
+        old_tag=plan.current_tag,
+        new_tag=plan.remote_tag,
+        error=None if execution.success else execution.message,
+        user_id=current_user.user_id,
+        username=current_user.username,
+    )
+    await manager.broadcast("container_updated", payload)
+    return {"ok": execution.success, "plan": payload}
+
+
+@router.post("/containers/{name}/restart")
+async def restart_container(
+    name: str,
+    current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
+) -> Any:
+    match = _find_result(name)
+    info = match.container_info
+    if info.source != "portainer":
+        raise HTTPException(status_code=422, detail="Restart is only supported for Portainer-managed containers.")
+    if not info.environment_id:
+        raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
+
+    config = get_config()
+    store = get_store()
+    try:
+        client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
+        await client.restart_container(int(info.environment_id), info.container_id)
+    except PortainerError as exc:
+        store.record_update_event(
+            container_name=name,
+            action="restart",
+            source="portainer",
+            status="failed",
+            environment_id=info.environment_id,
+            error=str(exc),
+            user_id=current_user.user_id,
+            username=current_user.username,
+        )
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    store.record_update_event(
+        container_name=name,
+        action="restart",
+        source="portainer",
+        status="success",
+        environment_id=info.environment_id,
+        user_id=current_user.user_id,
+        username=current_user.username,
+    )
+    payload = {"name": name, "success": True, "message": f"Restarted '{name}' via Portainer."}
+    await manager.broadcast("container_updated", payload)
+    return {"ok": True, "plan": payload}
 
 
 @router.get("/containers/{name}/compose-detect", dependencies=[Depends(require_permission("update_containers"))])
@@ -124,3 +224,27 @@ def unpin_container(name: str) -> Any:
     if not removed:
         raise HTTPException(status_code=404, detail=f"'{name}' is not pinned.")
     return {"ok": True, "pinned": store.get_pinned()}
+
+
+@router.get("/containers/{name}/history", dependencies=[Depends(require_permission("manage_settings"))])
+def get_container_history(name: str) -> Any:
+    store = get_store()
+    records = store.list_update_history(container_name=name)
+    return [
+        {
+            "id": r.id,
+            "action": r.action,
+            "source": r.source,
+            "environment_id": r.environment_id,
+            "old_tag": r.old_tag,
+            "new_tag": r.new_tag,
+            "old_digest": r.old_digest,
+            "new_digest": r.new_digest,
+            "status": r.status,
+            "error": r.error,
+            "user_id": r.user_id,
+            "username": r.username,
+            "created_at": r.created_at,
+        }
+        for r in records
+    ]

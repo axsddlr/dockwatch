@@ -1,4 +1,4 @@
-import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig, UserRecord, RoleRecord, SessionUser } from '../types'
+import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig, UserRecord, RoleRecord, SessionUser, UpdateHistoryEntry } from '../types'
 
 class ApiError extends Error {
   status: number
@@ -55,6 +55,18 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(cfg),
       }),
+    getHistory: (name: string) =>
+      request<UpdateHistoryEntry[]>(`/api/containers/${encodeURIComponent(name)}/history`),
+    rollback: (name: string) =>
+      request<{
+        ok: boolean
+        plan: { name: string; success: boolean; message: string; details: string[]; rollback_message: string | null }
+      }>(`/api/containers/${encodeURIComponent(name)}/rollback`, { method: 'POST' }),
+    restart: (name: string) =>
+      request<{ ok: boolean; plan: { name: string; success: boolean; message: string } }>(
+        `/api/containers/${encodeURIComponent(name)}/restart`,
+        { method: 'POST' },
+      ),
   },
   settings: {
     get: () => request<DockwatchSettings>('/api/settings'),

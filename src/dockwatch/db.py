@@ -48,6 +48,27 @@ class RoleRecord:
     is_builtin: bool
 
 
+@dataclass(slots=True)
+class UpdateHistoryRecord:
+    id: int
+    container_name: str
+    action: str
+    source: str
+    environment_id: str | None
+    old_tag: str | None
+    new_tag: str | None
+    old_digest: str | None
+    new_digest: str | None
+    status: str
+    error: str | None
+    user_id: int | None
+    username: str | None
+    created_at: str
+
+
+UPDATE_HISTORY_MAX_PER_CONTAINER = 10
+
+
 def build_image_key(info: ContainerInfo) -> str:
     return f"{info.registry.value}|{info.namespace}|{info.image_name}|{info.current_tag}"
 
@@ -149,6 +170,30 @@ class ManifestStore:
                     created_at TEXT NOT NULL
                 )
                 """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS update_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    container_name TEXT NOT NULL,
+                    action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'digest_drift_detected')),
+                    source TEXT NOT NULL CHECK (source IN ('local', 'portainer')),
+                    environment_id TEXT,
+                    old_tag TEXT,
+                    new_tag TEXT,
+                    old_digest TEXT,
+                    new_digest TEXT,
+                    status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+                    error TEXT,
+                    user_id INTEGER,
+                    username TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_update_history_container "
+                "ON update_history (container_name, created_at)"
             )
             existing_admin = connection.execute(
                 "SELECT 1 FROM roles WHERE name = 'admin'"
@@ -381,9 +426,10 @@ class ManifestStore:
             ).fetchone()
         if row is None:
             return None
+        raw = _json.loads(row[1])
         return RoleRecord(
             name=row[0],
-            permissions=_json.loads(row[1]),
+            permissions=[p for p in raw if p in VALID_PERMISSIONS],
             is_builtin=bool(row[2]),
         )
 
@@ -551,3 +597,91 @@ class ManifestStore:
         with closing(self._connect()) as connection, connection:
             row = connection.execute("SELECT COUNT(*) FROM users").fetchone()
         return row[0] if row else 0
+
+    # --- Update history methods ---
+
+    def record_update_event(
+        self,
+        *,
+        container_name: str,
+        action: str,
+        source: str,
+        status: str,
+        environment_id: str | None = None,
+        old_tag: str | None = None,
+        new_tag: str | None = None,
+        old_digest: str | None = None,
+        new_digest: str | None = None,
+        error: str | None = None,
+        user_id: int | None = None,
+        username: str | None = None,
+    ) -> int:
+        created_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                """
+                INSERT INTO update_history (
+                    container_name, action, source, environment_id,
+                    old_tag, new_tag, old_digest, new_digest,
+                    status, error, user_id, username, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    container_name, action, source, environment_id,
+                    old_tag, new_tag, old_digest, new_digest,
+                    status, error, user_id, username, created_at,
+                ),
+            )
+            row_id = cursor.lastrowid
+            stale_ids = connection.execute(
+                """
+                SELECT id FROM update_history
+                WHERE container_name = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT -1 OFFSET ?
+                """,
+                (container_name, UPDATE_HISTORY_MAX_PER_CONTAINER),
+            ).fetchall()
+            if stale_ids:
+                placeholders = ", ".join("?" for _ in stale_ids)
+                connection.execute(
+                    f"DELETE FROM update_history WHERE id IN ({placeholders})",
+                    tuple(row[0] for row in stale_ids),
+                )
+            return row_id
+
+    def list_update_history(
+        self, container_name: str | None = None, limit: int = 50,
+    ) -> list[UpdateHistoryRecord]:
+        query = (
+            "SELECT id, container_name, action, source, environment_id, "
+            "old_tag, new_tag, old_digest, new_digest, status, error, "
+            "user_id, username, created_at FROM update_history"
+        )
+        params: tuple = ()
+        if container_name is not None:
+            query += " WHERE container_name = ?"
+            params = (container_name,)
+        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params = params + (limit,)
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(query, params).fetchall()
+        return [UpdateHistoryRecord(*row) for row in rows]
+
+    def get_last_successful_update(self, container_name: str) -> UpdateHistoryRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                """
+                SELECT id, container_name, action, source, environment_id,
+                    old_tag, new_tag, old_digest, new_digest, status, error,
+                    user_id, username, created_at
+                FROM update_history
+                WHERE container_name = ? AND action = 'update' AND status = 'success'
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (container_name,),
+            ).fetchone()
+        return UpdateHistoryRecord(*row) if row else None

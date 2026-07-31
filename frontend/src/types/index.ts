@@ -136,6 +136,22 @@ export interface RoleRecord {
   is_builtin: boolean
 }
 
+export interface UpdateHistoryEntry {
+  id: number
+  action: 'update' | 'rollback' | 'restart' | 'digest_drift_detected'
+  source: 'local' | 'portainer'
+  environment_id: string | null
+  old_tag: string | null
+  new_tag: string | null
+  old_digest: string | null
+  new_digest: string | null
+  status: 'success' | 'failed'
+  error: string | null
+  user_id: number | null
+  username: string | null
+  created_at: string
+}
+
 export interface ComposeDetectResult {
   compose_project: string
   detected: ComposeProjectConfig

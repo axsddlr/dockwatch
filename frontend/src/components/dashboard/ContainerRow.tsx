@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Pin, PinOff, RefreshCw, Rocket } from 'lucide-react'
+import { History, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -8,6 +8,7 @@ import { deriveStatus, STATUS_CONFIG, BUMP_COLORS, type UpdateResult } from '../
 import { UpdateDialog } from './UpdateDialog'
 import { ScanButton } from './ScanButton'
 import { ScanResultsPanel } from './ScanResultsPanel'
+import { HistoryPanel } from './HistoryPanel'
 
 interface ContainerRowProps {
   result: UpdateResult
@@ -18,6 +19,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const status = deriveStatus(result)
   const cfg = STATUS_CONFIG[status]
   const [showUpdate, setShowUpdate] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const scanResult = useDashboardStore((s) => s.scannedContainers[result.container_info.name])
   const expandedScan = useDashboardStore((s) => s.expandedScan)
@@ -44,10 +46,21 @@ export function ContainerRow({ result }: ContainerRowProps) {
     },
   })
 
+  const restartMutation = useMutation({
+    mutationFn: () => api.containers.restart(result.container_info.name),
+    onSuccess: (data) => setMessage(data.plan.message),
+    onError: (e: Error) => setMessage(e.message),
+  })
+
   const bump = result.version_diff?.bump_type
   const canUpdate = hasPermission('update_containers')
   const canScan = hasPermission('scan_containers')
+  const canViewHistory = hasPermission('manage_settings')
+  const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
   const showUpdateBtn = status === 'OUTDATED' && canUpdate
+  const tag = result.container_info.current_tag?.toLowerCase()
+  const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
+  const hasFloatingHint = isFloatingTag && result.comparison_basis === 'digest'
 
   return (
     <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm last:border-b-0 hover:bg-[var(--color-bg-panel-alt)]/50 transition-colors">
@@ -74,8 +87,18 @@ export function ContainerRow({ result }: ContainerRowProps) {
         </span>
       </div>
 
-      <div className="col-span-1 truncate text-xs text-[var(--color-text-muted)]">
-        {result.comparison_basis ?? '-'}
+      <div className="col-span-1 flex items-center gap-0.5">
+        <span className="truncate text-xs text-[var(--color-text-muted)]">
+          {result.comparison_basis ?? '-'}
+        </span>
+        {hasFloatingHint && (
+          <span
+            className="text-[var(--color-text-muted)] hover:text-[var(--color-warning)] transition-colors cursor-help"
+            title={`Tracking ${result.container_info.current_tag} by digest only. Pin to a versioned tag (e.g. 2.20.0) for full version tracking and automatic tag rewriting on update.`}
+          >
+            <Info size={11} />
+          </span>
+        )}
       </div>
 
       <div
@@ -132,7 +155,30 @@ export function ContainerRow({ result }: ContainerRowProps) {
             <Rocket size={14} />
           </button>
         )}
+        {showRestartBtn && (
+          <button
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-50"
+            title="Restart via Portainer"
+          >
+            <PowerCircle size={14} className={restartMutation.isPending ? 'animate-spin' : ''} />
+          </button>
+        )}
         {canScan && <ScanButton name={result.container_info.name} />}
+        {canViewHistory && (
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className={`rounded-lg p-1.5 transition-colors ${
+              showHistory
+                ? 'text-blue-400 bg-blue-400/10'
+                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
+            }`}
+            title="Update history"
+          >
+            <History size={14} />
+          </button>
+        )}
       </div>
 
       {showUpdate && <UpdateDialog result={result} open={showUpdate} onClose={() => setShowUpdate(false)} />}
@@ -143,6 +189,11 @@ export function ContainerRow({ result }: ContainerRowProps) {
             name={result.container_info.name}
             onClose={() => setExpandedScan(null)}
           />
+        </div>
+      )}
+      {showHistory && (
+        <div className="col-span-12">
+          <HistoryPanel name={result.container_info.name} onClose={() => setShowHistory(false)} />
         </div>
       )}
     </div>

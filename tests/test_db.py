@@ -5,7 +5,8 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from dockwatch.db import ManifestStore
-from dockwatch.models import ContainerInfo, RegistryType
+from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
+from dockwatch.registry import record_digest_drift_events
 
 
 def make_container(image_ref: str = "nginx:1.0.0", current_tag: str = "1.0.0") -> ContainerInfo:
@@ -126,6 +127,114 @@ class TestContainerFlags:
         store.add_flag("zebra", "pinned")
         store.add_flag("apple", "pinned")
         assert store.get_pinned() == ["zebra", "apple"]
+
+
+class TestUpdateHistory:
+    def test_record_and_list_update_event(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.record_update_event(
+            container_name="web",
+            action="update",
+            source="local",
+            status="success",
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+            user_id=1,
+            username="admin",
+        )
+        records = store.list_update_history(container_name="web")
+        assert len(records) == 1
+        assert records[0].old_tag == "1.0.0"
+        assert records[0].new_tag == "1.1.0"
+        assert records[0].username == "admin"
+        assert records[0].status == "success"
+
+    def test_list_update_history_orders_newest_first(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.record_update_event(
+            container_name="web", action="update", source="local",
+            status="success", old_tag="1.0.0", new_tag="1.1.0",
+        )
+        store.record_update_event(
+            container_name="web", action="update", source="local",
+            status="success", old_tag="1.1.0", new_tag="1.2.0",
+        )
+        records = store.list_update_history(container_name="web")
+        assert [r.new_tag for r in records] == ["1.2.0", "1.1.0"]
+
+    def test_update_history_prunes_beyond_max_per_container(self, tmp_path):
+        from dockwatch.db import UPDATE_HISTORY_MAX_PER_CONTAINER
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        for i in range(UPDATE_HISTORY_MAX_PER_CONTAINER + 5):
+            store.record_update_event(
+                container_name="web", action="update", source="local",
+                status="success", old_tag=str(i), new_tag=str(i + 1),
+            )
+        records = store.list_update_history(container_name="web", limit=100)
+        assert len(records) == UPDATE_HISTORY_MAX_PER_CONTAINER
+
+    def test_get_last_successful_update_ignores_failed(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.record_update_event(
+            container_name="web", action="update", source="local",
+            status="success", old_tag="1.0.0", new_tag="1.1.0",
+        )
+        store.record_update_event(
+            container_name="web", action="update", source="local",
+            status="failed", old_tag="1.1.0", new_tag="1.2.0", error="boom",
+        )
+        last = store.get_last_successful_update("web")
+        assert last is not None
+        assert last.new_tag == "1.1.0"
+
+    def test_update_history_scoped_per_container(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.record_update_event(
+            container_name="web", action="update", source="local",
+            status="success", old_tag="1.0.0", new_tag="1.1.0",
+        )
+        store.record_update_event(
+            container_name="db", action="update", source="local",
+            status="success", old_tag="2.0.0", new_tag="2.1.0",
+        )
+        assert len(store.list_update_history(container_name="web")) == 1
+        assert len(store.list_update_history(container_name="db")) == 1
+
+
+class TestDigestDriftRecording:
+    def test_record_digest_drift_events_writes_history_row(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        container = make_container(image_ref="qmcgaw/gluetun:latest", current_tag="latest")
+        result = UpdateResult(
+            container_info=container,
+            is_outdated=True,
+            digest_drift=True,
+            deployed_digest="sha256:old",
+            remote_digest="sha256:new",
+        )
+
+        record_digest_drift_events([result], store)
+
+        history = store.list_update_history(container_name="web")
+        assert len(history) == 1
+        assert history[0].action == "digest_drift_detected"
+        assert history[0].old_digest == "sha256:old"
+        assert history[0].new_digest == "sha256:new"
+
+    def test_record_digest_drift_events_skips_non_drift_results(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        container = make_container()
+        result = UpdateResult(container_info=container, is_outdated=True, digest_drift=False)
+
+        record_digest_drift_events([result], store)
+
+        assert store.list_update_history(container_name="web") == []
+
+    def test_record_digest_drift_events_noop_without_store(self) -> None:
+        container = make_container()
+        result = UpdateResult(container_info=container, is_outdated=True, digest_drift=True)
+        record_digest_drift_events([result], None)
 
 
 if __name__ == "__main__":

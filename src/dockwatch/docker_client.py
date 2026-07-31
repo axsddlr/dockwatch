@@ -235,6 +235,45 @@ def parse_image_ref(
     )
 
 
+_local_platform_cached = False
+_local_platform_value: tuple[str, str] | None = None
+
+
+def get_local_platform() -> tuple[str, str] | None:
+    """Return (os, architecture) for the local Docker daemon, e.g. ("linux", "amd64").
+
+    Used to pick the correct entry out of a multi-arch manifest list instead of
+    comparing the list's own digest, which changes whenever *any* platform's
+    image is rebuilt even if the platform actually deployed is unchanged.
+
+    Cached for the process lifetime: the daemon's own architecture cannot
+    change without a restart, and this avoids a `docker.from_env()` round
+    trip on every registry check.
+    """
+    global _local_platform_cached, _local_platform_value
+    if _local_platform_cached:
+        return _local_platform_value
+
+    result: tuple[str, str] | None = None
+    try:
+        client = docker.from_env()
+    except DockerException:
+        result = None
+    else:
+        try:
+            info = client.version()
+            arch = info.get("Arch")
+            result = ("linux", arch) if arch else None
+        except DockerException:
+            result = None
+        finally:
+            client.close()
+
+    _local_platform_value = result
+    _local_platform_cached = True
+    return result
+
+
 def get_running_containers() -> list[ContainerInfo]:
     """Return Docker containers, including non-running ones, with normalized image metadata."""
     try:

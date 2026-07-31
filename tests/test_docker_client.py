@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from dockwatch.docker_client import get_running_containers, parse_image_ref
+import dockwatch.docker_client as docker_client_module
+from dockwatch.docker_client import get_local_platform, get_running_containers, parse_image_ref
 from dockwatch.models import RegistryType
 
 
@@ -89,6 +90,44 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(info.namespace, "readeck")
         self.assertEqual(info.image_name, "readeck")
         self.assertEqual(info.current_tag, "latest")
+
+
+class LocalPlatformTests(unittest.TestCase):
+    def setUp(self) -> None:
+        docker_client_module._local_platform_cached = False
+        docker_client_module._local_platform_value = None
+        self.addCleanup(self._reset_cache)
+
+    def _reset_cache(self) -> None:
+        docker_client_module._local_platform_cached = False
+        docker_client_module._local_platform_value = None
+
+    def test_returns_linux_arch_from_daemon_version(self) -> None:
+        fake_client = FakeDockerClient()
+        fake_client.version = lambda: {"Arch": "arm64"}
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            platform = get_local_platform()
+
+        self.assertEqual(platform, ("linux", "arm64"))
+
+    def test_returns_none_when_daemon_unreachable(self) -> None:
+        from docker.errors import DockerException
+
+        with patch("dockwatch.docker_client.docker.from_env", side_effect=DockerException("no daemon")):
+            platform = get_local_platform()
+
+        self.assertIsNone(platform)
+
+    def test_result_is_cached_across_calls(self) -> None:
+        fake_client = FakeDockerClient()
+        fake_client.version = lambda: {"Arch": "amd64"}
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client) as mock_from_env:
+            first = get_local_platform()
+            second = get_local_platform()
+
+        self.assertEqual(first, ("linux", "amd64"))
+        self.assertEqual(second, ("linux", "amd64"))
+        mock_from_env.assert_called_once()
 
 
 if __name__ == "__main__":

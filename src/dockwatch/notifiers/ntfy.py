@@ -23,7 +23,8 @@ class NtfyNotifier(BaseNotifier):
         if len(results) == 1:
             result = results[0]
             registry_url = build_registry_url(result.container_info)
-            title = f"{result.container_info.name}: {result.event or 'check'}"
+            label = "digest drift" if result.digest_drift else (result.event or "check")
+            title = f"{result.container_info.name}: {label}"
             message = (
                 f"{deployed_display_result(result)} -> {remote_display(result)}\n"
                 f"{comparison_summary(result)}"
@@ -36,7 +37,8 @@ class NtfyNotifier(BaseNotifier):
             title = f"dockwatch: {len(results)} notification events"
             lines = [
                 (
-                    f"- {result.container_info.name} [{result.event or 'check'}]: "
+                    f"- {result.container_info.name} "
+                    f"[{'digest drift' if result.digest_drift else (result.event or 'check')}]: "
                     f"{deployed_display_result(result)} -> {remote_display(result)} "
                     f"({comparison_summary(result)})"
                 )

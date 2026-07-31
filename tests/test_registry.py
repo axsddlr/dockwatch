@@ -83,6 +83,15 @@ def make_container(*, registry: RegistryType, current_tag: str = "1.0.0") -> Con
 
 
 class RegistryTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        # Deterministic regardless of whether a real Docker daemon is
+        # reachable on the machine running the tests: default to "no
+        # platform resolved" (the pre-multi-arch HEAD-based behavior) unless
+        # a test explicitly patches this to exercise the GET/manifest-list path.
+        patcher = patch("dockwatch.registry.get_local_platform", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_select_latest_from_tags_honors_include_regex(self) -> None:
         include_patterns, error = _compile_tag_patterns([r"^1\."])
         self.assertIsNone(error)
@@ -399,6 +408,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         manifest_url, _ = mock_client.calls[-1]
         self.assertTrue(manifest_url.endswith("/manifests/latest"))
         self.assertEqual(latest_result.comparison_reason, "digest changed behind same tag")
+        self.assertTrue(latest_result.digest_drift)
         self.assertEqual(latest_result.deployed_tag, "latest")
         self.assertEqual(latest_result.deployed_version, "v1.5.4-ls334")
         self.assertEqual(latest_result.latest_version, "v1.5.5-ls335")
@@ -540,8 +550,94 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.is_outdated)
         self.assertEqual(result.comparison_basis, "digest")
         self.assertEqual(result.comparison_reason, "digest changed behind same tag")
+        self.assertTrue(result.digest_drift)
         # only floating tags exist, so no semver candidate to rate against
         self.assertIsNone(result.version_status)
+
+    async def test_multiarch_manifest_list_compares_platform_specific_digest(self) -> None:
+        """A manifest list's own digest can change when *any* platform is rebuilt.
+
+        If the deployed platform's own digest inside that list is unchanged,
+        this must not be reported as outdated/drifted."""
+        info = ContainerInfo(
+            name="svc",
+            container_id="abc123",
+            image_ref="owner/image:latest",
+            registry=RegistryType.DOCKERHUB,
+            namespace="owner",
+            image_name="image",
+            current_tag="latest",
+            repo_digest="sha256:amd64-digest",
+        )
+        manifest_list = {
+            "manifests": [
+                {"digest": "sha256:arm64-digest", "platform": {"os": "linux", "architecture": "arm64"}},
+                {"digest": "sha256:amd64-digest", "platform": {"os": "linux", "architecture": "amd64"}},
+            ]
+        }
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, _dh_rest_tags("latest"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(
+                    200,
+                    manifest_list,
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/latest",
+                    headers={
+                        "Docker-Content-Digest": "sha256:manifest-list-digest",
+                        "Content-Type": "application/vnd.docker.distribution.manifest.list.v2+json",
+                    },
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.get_local_platform", return_value=("linux", "amd64")):
+            with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+                result = await check_container(info)
+
+        self.assertEqual(result.comparison_basis, "digest")
+        self.assertFalse(result.is_outdated)
+        self.assertFalse(result.digest_drift)
+
+    async def test_multiarch_manifest_list_falls_back_when_platform_missing(self) -> None:
+        info = ContainerInfo(
+            name="svc",
+            container_id="abc123",
+            image_ref="owner/image:latest",
+            registry=RegistryType.DOCKERHUB,
+            namespace="owner",
+            image_name="image",
+            current_tag="latest",
+            repo_digest="sha256:manifest-list-digest",
+        )
+        manifest_list = {
+            "manifests": [
+                {"digest": "sha256:arm64-digest", "platform": {"os": "linux", "architecture": "arm64"}},
+            ]
+        }
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, _dh_rest_tags("latest"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(
+                    200,
+                    manifest_list,
+                    url="https://registry-1.docker.io/v2/owner/image/manifests/latest",
+                    headers={
+                        "Docker-Content-Digest": "sha256:manifest-list-digest",
+                        "Content-Type": "application/vnd.docker.distribution.manifest.list.v2+json",
+                    },
+                ),
+            ]
+        )
+
+        with patch("dockwatch.registry.get_local_platform", return_value=("linux", "amd64")):
+            with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+                result = await check_container(info)
+
+        # No amd64 entry in the list: falls back to the list's own digest,
+        # which happens to match here, so not reported as outdated.
+        self.assertFalse(result.is_outdated)
 
     async def test_check_dockerhub_non_floating_tag_records_version_status(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")

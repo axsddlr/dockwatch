@@ -11,7 +11,7 @@ from .db import ManifestStore
 from .docker_client import DockerConnectionError, get_running_containers
 from .models import ContainerInfo
 from .notifiers import send_configured_notifications
-from .registry import check_all
+from .registry import check_all, record_digest_drift_events
 
 
 class ScheduledCheckRunner:
@@ -52,6 +52,7 @@ class ScheduledCheckRunner:
                 store=self.store,
                 max_concurrency=self.config.max_concurrent_checks,
             )
+            record_digest_drift_events(results, self.store)
             outdated = sum(1 for result in results if result.is_outdated is True and not result.check_error)
             up_to_date = sum(1 for result in results if result.is_outdated is False and not result.check_error)
             unknown = len(results) - outdated - up_to_date

@@ -37,7 +37,8 @@ class DiscordNotifier(BaseNotifier):
                     "name": result.container_info.name or "unknown",
                     "value": (
                         f"{deployed_display_result(result)} -> {remote_display(result)}"
-                        f" ({comparison_summary(result)} / {result.event or 'check'}){link_text}"
+                        f" ({comparison_summary(result)} / "
+                        f"{'digest drift' if result.digest_drift else (result.event or 'check')}){link_text}"
                     ),
                     "inline": False,
                 }

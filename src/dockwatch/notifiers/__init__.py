@@ -35,6 +35,8 @@ def filter_notification_results(results: list[UpdateResult], config: DockwatchCo
         return not notify_only or result.container_info.name in notify_only
 
     def _matches_event_filter(result: UpdateResult) -> bool:
+        if result.digest_drift:
+            return True
         if result.event is None:
             return False
         if result.event == "new" and not config.first_check_notify:

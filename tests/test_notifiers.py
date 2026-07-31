@@ -186,6 +186,37 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual([item.event for item in sent[0]], ["update"])
 
+    async def test_digest_drift_bypasses_event_filter(self) -> None:
+        sent: list[list[UpdateResult]] = []
+        config = DockwatchConfig(webhook_url="https://example.test/webhook")
+        results = [
+            UpdateResult(
+                container_info=ContainerInfo(
+                    name="gluetun",
+                    container_id="1",
+                    image_ref="qmcgaw/gluetun:latest",
+                    registry=RegistryType.DOCKERHUB,
+                    namespace="qmcgaw",
+                    image_name="gluetun",
+                    current_tag="latest",
+                ),
+                is_outdated=True,
+                event=None,
+                comparison_basis="digest",
+                comparison_reason="digest changed behind same tag",
+                digest_drift=True,
+            ),
+        ]
+
+        async def capture_send(self_inner, r):  # noqa: ANN001
+            sent.append(r)
+
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
+            await send_configured_notifications(results, config)
+
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(sent[0][0].digest_drift)
+
     async def test_first_check_notify_allows_new_events_when_enabled(self) -> None:
         sent: list[list[UpdateResult]] = []
         config = DockwatchConfig(

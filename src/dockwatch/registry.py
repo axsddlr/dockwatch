@@ -13,7 +13,7 @@ from packaging.version import InvalidVersion, Version
 
 from .config import DockwatchConfig, load_config
 from .db import ManifestStore
-from .docker_client import DIGEST_PINNED_TAG
+from .docker_client import DIGEST_PINNED_TAG, get_local_platform
 from .models import (
     ContainerInfo,
     RegistryType,
@@ -190,6 +190,7 @@ def _build_comparison_result(
     is_outdated: bool | None = None
     version_status: str | None = None
     version_diff = None
+    digest_drift = False
     effective_remote_tag = remote_tag or latest_tag
 
     if deployed_version is not None and latest_version is not None:
@@ -211,6 +212,7 @@ def _build_comparison_result(
             if is_outdated:
                 if effective_remote_tag == info.current_tag:
                     comparison_reason = "digest changed behind same tag"
+                    digest_drift = True
                 else:
                     if latest_version and deployed_version:
                         comparison_reason = (
@@ -269,7 +271,33 @@ def _build_comparison_result(
         comparison_reason=comparison_reason,
         version_status=version_status,
         version_diff=version_diff,
+        digest_drift=digest_drift,
     )
+
+
+_MANIFEST_LIST_MEDIA_TYPES = {
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.index.v1+json",
+}
+
+
+def _select_platform_digest(
+    manifest_list: dict, *, platform: tuple[str, str],
+) -> str | None:
+    """Pick the manifest entry matching (os, architecture) out of a manifest list.
+
+    Returns None if the list has no entry for that platform, so the caller can
+    fall back to the list's own digest rather than silently misreporting.
+    """
+    target_os, target_arch = platform
+    for entry in manifest_list.get("manifests", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        entry_platform = entry.get("platform") or {}
+        if entry_platform.get("os") == target_os and entry_platform.get("architecture") == target_arch:
+            digest = entry.get("digest")
+            return str(digest) if digest else None
+    return None
 
 
 async def _fetch_manifest_digest(
@@ -280,15 +308,34 @@ async def _fetch_manifest_digest(
     image_name: str,
     tag: str,
     headers: dict[str, str] | None = None,
+    platform: tuple[str, str] | None = None,
 ) -> str | None:
+    url = f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}"
+    request_headers = {"Accept": MANIFEST_ACCEPT_HEADERS, **(headers or {})}
+
+    if platform is not None:
+        # A HEAD request only returns the top-level Docker-Content-Digest,
+        # which for a manifest list is the list's own digest — that changes
+        # whenever *any* platform is rebuilt, not just the one actually
+        # deployed here. GET the body so we can pick the deployed platform's
+        # own digest instead.
+        response = await _request_with_retry(lambda: client.get(url, headers=request_headers))
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "")
+        if content_type in _MANIFEST_LIST_MEDIA_TYPES:
+            try:
+                manifest_list = response.json()
+            except ValueError:
+                return response.headers.get("Docker-Content-Digest")
+            platform_digest = _select_platform_digest(manifest_list, platform=platform)
+            if platform_digest is not None:
+                return platform_digest
+        return response.headers.get("Docker-Content-Digest")
+
     response = await _request_with_retry(
-        lambda: client.head(
-            f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}",
-            headers={
-                "Accept": MANIFEST_ACCEPT_HEADERS,
-                **(headers or {}),
-            },
-        )
+        lambda: client.head(url, headers=request_headers)
     )
     if response.status_code == 404:
         return None
@@ -412,6 +459,7 @@ async def _check_repository_tags(
         image_name=info.image_name,
         tag=comparison_tag,
         headers=headers,
+        platform=get_local_platform(),
     )
     return _build_comparison_result(
         info,
@@ -572,6 +620,7 @@ async def check_dockerhub(
             image_name=info.image_name,
             tag=comparison_tag,
             headers=auth_headers,
+            platform=get_local_platform(),
         )
         return _build_comparison_result(
             info,
@@ -763,6 +812,24 @@ async def check_container(
             comparison_reason="locally built image; no registry to check",
         )
     return _skip_result(info, "unsupported registry")
+
+
+def record_digest_drift_events(results: list[UpdateResult], store: ManifestStore | None) -> None:
+    if store is None:
+        return
+    for result in results:
+        if not result.digest_drift:
+            continue
+        store.record_update_event(
+            container_name=result.container_info.name,
+            action="digest_drift_detected",
+            source=result.container_info.source,
+            status="success",
+            old_tag=result.container_info.current_tag,
+            new_tag=result.container_info.current_tag,
+            old_digest=result.deployed_digest,
+            new_digest=result.remote_digest,
+        )
 
 
 def _is_effectively_ignored(info: ContainerInfo, ignored: set[str]) -> bool:

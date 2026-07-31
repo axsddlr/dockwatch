@@ -97,6 +97,7 @@ class UpdateResult:
     comparison_reason: str | None = None
     version_status: str | None = None
     version_diff: VersionDiff | None = None
+    digest_drift: bool = False
 
 
 def resolved_deployed_version(result: UpdateResult) -> str | None:

@@ -42,6 +42,7 @@ class WebhookNotifier(BaseNotifier):
                     "remote_digest": result.remote_digest,
                     "comparison_basis": result.comparison_basis,
                     "comparison_reason": comparison_summary(result),
+                    "digest_drift": result.digest_drift,
                 }
                 for result in results
             ],

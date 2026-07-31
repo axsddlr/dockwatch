@@ -1,4 +1,5 @@
-"""Read-only Portainer integration."""
+"""Portainer integration: read-only discovery plus a small set of write actions
+(currently just container restart) proxied through Portainer's Docker API."""
 
 from __future__ import annotations
 
@@ -88,3 +89,16 @@ class PortainerClient:
 
     async def test_connection(self) -> list[PortainerEnvironment]:
         return await self.list_environments()
+
+    async def restart_container(self, endpoint_id: int, container_id: str) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/endpoints/{endpoint_id}/docker/containers/{container_id}/restart",
+                    headers=self._headers,
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(
+                f"portainer restart request failed for container {container_id} on environment {endpoint_id}: {exc}"
+            ) from exc

@@ -37,6 +37,10 @@ class _MockAsyncClient:
         self.calls.append((url, headers, params))
         return self.responses.pop(0)
 
+    async def post(self, url: str, headers: dict | None = None, params: dict | None = None):
+        self.calls.append((url, headers, params))
+        return self.responses.pop(0)
+
 
 class PortainerTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_environments_uses_api_key_header(self) -> None:
@@ -63,6 +67,23 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             client = PortainerClient(base_url="https://portainer.test", api_key="token")
             with self.assertRaises(PortainerError):
                 await client.list_environments()
+
+    async def test_restart_container_posts_to_docker_proxy(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.restart_container(4, "abc123")
+
+        url, headers, _ = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/containers/abc123/restart")
+        self.assertEqual(headers, {"X-API-Key": "token"})
+
+    async def test_restart_container_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(404, {"message": "not found"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.restart_container(4, "abc123")
 
 
 if __name__ == "__main__":

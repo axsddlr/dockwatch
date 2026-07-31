@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import threading
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -21,6 +23,25 @@ router = APIRouter()
 # PUT handlers run in FastAPI's threadpool; serialize the config
 # read-modify-write cycle so concurrent saves cannot drop each other's changes.
 _settings_write_lock = threading.Lock()
+
+
+def _validate_public_url(raw: str) -> str:
+    url = raw.strip()
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported URL scheme: {parsed.scheme}")
+    host = parsed.hostname
+    if host is None:
+        raise HTTPException(status_code=422, detail="URL must include a hostname.")
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback or ip.is_private or ip.is_link_local:
+            raise HTTPException(status_code=422, detail=f"URL must not target private or loopback addresses: {host}")
+    except ValueError:
+        pass
+    return url
 
 
 @router.get("/settings", dependencies=[Depends(require_permission("manage_settings"))])
@@ -77,6 +98,8 @@ def test_portainer(body: dict[str, str]) -> Any:
     api_key = body.get("api_key", "").strip()
     if not url or not api_key:
         raise HTTPException(status_code=422, detail="Both 'url' and 'api_key' are required.")
+
+    url = _validate_public_url(url)
 
     try:
         client = PortainerClient(base_url=url, api_key=api_key)

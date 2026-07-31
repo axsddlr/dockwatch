@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -33,10 +34,9 @@ class AuthenticatedUser:
 
 def issue_session_cookie(response: Response, username: str, user_id: int, secret_key: str) -> None:
     token = _serializer(secret_key).dumps({"u": username, "uid": user_id})
-    # secure=False: this tool is commonly reached over plain HTTP on a LAN.
-    # Put a TLS-terminating reverse proxy in front of it for internet exposure.
+    secure = os.environ.get("DOCKWATCH_SECURE_COOKIE", "").strip().lower() == "true"
     response.set_cookie(
-        _COOKIE_NAME, token, httponly=True, samesite="lax", max_age=_MAX_AGE,
+        _COOKIE_NAME, token, httponly=True, secure=secure, samesite="lax", max_age=_MAX_AGE,
     )
 
 
@@ -58,14 +58,6 @@ def _verify_raw_cookie(conn: _HasCookies, config: DockwatchConfig) -> dict:
     if "uid" not in data:
         raise HTTPException(status_code=401, detail="Session needs re-authentication.")
     return data
-
-
-def verify_session_cookie(conn: _HasCookies, config: DockwatchConfig) -> str:
-    """Returns the signed-in username, or raises HTTPException(401).
-    Legacy method kept for backward compatibility.
-    """
-    data = _verify_raw_cookie(conn, config)
-    return data["u"]
 
 
 def require_auth(request: Request) -> AuthenticatedUser:

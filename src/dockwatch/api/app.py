@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from .deps import get_store
 from .routes import auth, containers, environments, settings, trivy, users
-from .security import require_permission
+from .security import require_auth, require_permission
 from .ws import router as ws_router
 from .. import __version__
 from ..config import CONFIG_PATH, migrate_auth_config_to_users, migrate_pinned_ignored_to_db, load_config
@@ -30,17 +30,17 @@ def _find_frontend_dist() -> Path:
 
 
 def _is_reserved_backend_path(path: str) -> bool:
-    normalized = path.lstrip("/")
-    if normalized in {"api", "ws", "debug", "health"}:
-        return True
-    return normalized.startswith(("api/", "ws/", "debug/", "health/"))
+    parts = path.lstrip("/").split("/")
+    if not parts or not parts[0]:
+        return False
+    return parts[0] in {"api", "ws", "debug", "health"}
 
 
 def _frontend_file_path(dist_path: Path, requested_path: str) -> Path:
     root = dist_path.resolve()
     candidate = (dist_path / requested_path).resolve()
     try:
-        candidate.relative_to(root)
+        candidate.relative_to(os.path.realpath(str(root)))
     except ValueError as exc:
         raise HTTPException(status_code=404) from exc
     if not candidate.is_file():
@@ -60,17 +60,13 @@ async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
 def create_app() -> FastAPI:
     app = FastAPI(title="dockwatch", version=__version__, lifespan=_lifespan)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__}
+        return {"status": "ok"}
+
+    @app.get("/api/version", dependencies=[Depends(require_auth)])
+    async def api_version() -> dict[str, str]:
+        return {"version": __version__}
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(containers.router, prefix="/api")

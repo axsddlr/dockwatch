@@ -90,6 +90,10 @@ def _mask_api_key(key: str) -> str:
     return "****" + key[-4:] if len(key) > 4 else "****"
 
 
+def _is_masked_key(key: str) -> bool:
+    return bool(key) and key.startswith("****")
+
+
 def _ensure_list(value: Any, fallback: list[Any]) -> list[Any]:
     if isinstance(value, list):
         return value
@@ -162,7 +166,8 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
     if isinstance(portainer_data, dict):
         existing.portainer.enabled = bool(portainer_data.get("enabled", existing.portainer.enabled))
         existing.portainer.url = str(portainer_data.get("url", existing.portainer.url))
-        existing.portainer.api_key = str(portainer_data.get("api_key", existing.portainer.api_key))
+        new_key = str(portainer_data.get("api_key", existing.portainer.api_key))
+        existing.portainer.api_key = existing.portainer.api_key if _is_masked_key(new_key) else new_key
         existing.portainer.environments = _ensure_list(
             portainer_data.get("environments", existing.portainer.environments),
             existing.portainer.environments,

@@ -6,14 +6,15 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ...config import hash_password, load_config, verify_password
 from ...db import ManifestStore
 from ..security import (
+    AuthenticatedUser,
     clear_session_cookie,
     issue_session_cookie,
-    verify_session_cookie,
+    require_auth,
 )
 
 router = APIRouter()
@@ -21,17 +22,37 @@ router = APIRouter()
 _failed_attempts: dict[str, list[float]] = {}
 _LOCKOUT_THRESHOLD = 5
 _LOCKOUT_WINDOW_SECONDS = 300
+_REGISTRATION_RATE_LIMIT = 3
+_REGISTRATION_RATE_WINDOW = 60
+
+_cleanup_counter = 0
+_CLEANUP_EVERY_N = 100
 
 
 def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _is_locked_out(key: str) -> bool:
+def _sweep_stale() -> None:
+    global _cleanup_counter
+    _cleanup_counter += 1
+    if _cleanup_counter % _CLEANUP_EVERY_N != 0:
+        return
     now = time.monotonic()
-    attempts = [t for t in _failed_attempts.get(key, []) if now - t < _LOCKOUT_WINDOW_SECONDS]
+    stale = [
+        k for k, v in _failed_attempts.items()
+        if not v or all(now - t >= _LOCKOUT_WINDOW_SECONDS for t in v)
+    ]
+    for k in stale:
+        del _failed_attempts[k]
+
+
+def _is_locked_out(key: str, threshold: int = _LOCKOUT_THRESHOLD, window: int = _LOCKOUT_WINDOW_SECONDS) -> bool:
+    _sweep_stale()
+    now = time.monotonic()
+    attempts = [t for t in _failed_attempts.get(key, []) if now - t < window]
     _failed_attempts[key] = attempts
-    return len(attempts) >= _LOCKOUT_THRESHOLD
+    return len(attempts) >= threshold
 
 
 def _record_failure(key: str) -> None:
@@ -68,25 +89,12 @@ def logout(response: Response) -> Any:
 
 
 @router.get("/auth/session")
-def session_status(request: Request) -> Any:
-    config = load_config()
-    store = ManifestStore()
-    try:
-        username = verify_session_cookie(request, config)
-    except HTTPException:
-        return {"authenticated": False}
-
-    user = store.get_user_by_username(username)
-    if user is None:
-        return {"authenticated": False}
-
-    role = store.get_role(user.role_name)
-    permissions = role.permissions if role else []
+def session_status(user: AuthenticatedUser = Depends(require_auth)) -> Any:
     return {
         "authenticated": True,
         "username": user.username,
         "role": user.role_name,
-        "permissions": permissions,
+        "permissions": list(user.permissions),
     }
 
 
@@ -112,6 +120,10 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
     else:
         raise HTTPException(status_code=403, detail="Registration is disabled.")
 
+    key = "reg:" + _client_key(request)
+    if _is_locked_out(key, threshold=_REGISTRATION_RATE_LIMIT, window=_REGISTRATION_RATE_WINDOW):
+        raise HTTPException(status_code=429, detail="Too many registration attempts. Try again later.")
+
     username = body.get("username", "").strip()
     password = body.get("password", "")
 
@@ -125,6 +137,7 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
     try:
         user_id = store.create_user(username, hash_password(password), role_name)
     except ValueError as exc:
+        _record_failure(key)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     issue_session_cookie(response, username, user_id, config.auth.secret_key)

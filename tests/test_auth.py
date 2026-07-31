@@ -215,8 +215,7 @@ def test_session_status_reports_unauthenticated_without_cookie(monkeypatch, tmp_
 
     response = client.get("/api/auth/session")
 
-    assert response.status_code == 200
-    assert response.json() == {"authenticated": False}
+    assert response.status_code == 401
 
 
 def test_session_status_reports_authenticated_with_cookie(monkeypatch, tmp_path) -> None:

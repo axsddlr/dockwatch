@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Monitor, Globe, Server, Layers } from 'lucide-react'
+import { useEffect } from 'react'
+import { RefreshCw, Monitor, Server, Layers } from 'lucide-react'
 import { api } from '../../api/client'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useEnvironments } from '../../hooks/useEnvironments'
+import { useSettings } from '../../hooks/useSettings'
 
 export function Toolbar() {
   const queryClient = useQueryClient()
@@ -17,6 +19,15 @@ export function Toolbar() {
   const setAutoRefresh = useDashboardStore((s) => s.setAutoRefresh)
   const setAutoRefreshInterval = useDashboardStore((s) => s.setAutoRefreshInterval)
 
+  const { data: settings } = useSettings()
+  const portainerEnabled = settings?.portainer?.enabled ?? false
+
+  useEffect(() => {
+    if (!portainerEnabled && source !== 'local') {
+      setSource('local')
+    }
+  }, [portainerEnabled, source, setSource])
+
   const checkMutation = useMutation({
     mutationFn: () => api.containers.check(source, environment ?? undefined),
     onSuccess: (data) => {
@@ -27,6 +38,10 @@ export function Toolbar() {
 
   const { data: envData } = useEnvironments(source === 'portainer' || source === 'all')
   const environments = envData?.environments ?? []
+
+  const sources: ('local' | 'portainer' | 'all')[] = portainerEnabled
+    ? ['local', 'portainer', 'all']
+    : ['local']
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -68,11 +83,13 @@ export function Toolbar() {
       </div>
 
       <div className="flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)]">
-        {(['local', 'portainer', 'all'] as const).map((s) => (
+        {sources.map((s, i) => (
           <button
             key={s}
             onClick={() => setSource(s)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+              i === 0 ? 'rounded-l-lg' : ''
+            } ${i === sources.length - 1 ? 'rounded-r-lg' : ''} ${
               source === s
                 ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                 : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'

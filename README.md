@@ -353,6 +353,28 @@ Docker label overrides:
 - On Linux, bind mount: `/var/run/docker.sock:/var/run/docker.sock`
 - On Windows, Docker Desktop/npipe access must be available to the environment.
 
+### How Updates Work with Compose
+
+dockwatch handles multi-service compose files safely. Each service shows as a separate row on the dashboard, and updates are per-service — clicking Update on one container does not touch the others.
+
+For compose-managed containers, the update flow is:
+
+1. **Tag rewrite** — if the service pins an exact tag (not `latest`/`edge`/`dev`), dockwatch rewrites only that service's `image:` line to the new remote tag. Rewriting is scoped by indentation depth, so sibling services are never affected.
+2. **Pull + up** — `docker compose pull <service>` and `docker compose up -d <service>` run scoped to that single service. The rest of the stack keeps running.
+3. **Floating tags** — for `latest`/`edge`/`dev`/`nightly`, dockwatch skips tag rewriting and just does `pull` + `up -d`, gated by digest comparison (if no newer digest exists, the update is blocked).
+
+Requirements for compose updates to work:
+
+- The compose project must be configured in Settings (workdir path, compose file names).
+- dockwatch must be able to reach the compose files from inside its container.
+- On Docker Desktop (Windows/macOS): mount `- /:/hostroot` and set `HOST_MOUNT_PREFIX=/hostroot`. Dockwatch auto-translates Windows paths to the VM mount convention.
+- On native Linux: do **not** mount the entire host root. Instead, bind-mount only the directories containing your compose stacks:
+  ```yaml
+  volumes:
+    - /opt/stacks:/opt/stacks  # your compose files live here
+  ```
+  Leave `HOST_MOUNT_PREFIX` unset (or set to empty). Paths recorded by compose labels on Linux are native POSIX paths, so no translation is needed — dockwatch uses them directly.
+
 ### DOCKER_GID (docker.sock permission)
 
 The container runs as non-root `appuser` and needs group membership matching
@@ -470,6 +492,12 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
 - `pytest -q`
 
 ## Troubleshooting
+
+### Updates not available for `:latest` containers
+
+Containers using `:latest` (or `:edge`, `:dev`, `:nightly`) can only be checked via digest comparison — there's no version number to compare. If the registry doesn't return a digest, or the digest matches what's already running, the Update button won't appear even if a newer image exists upstream.
+
+**Fix**: pin to a versioned tag (e.g., `ghcr.io/advplyr/audiobookshelf:2.20.0` instead of `:latest`). dockwatch can then compare versions numerically and rewrite the tag on update.
 
 ### `Could not connect to Docker`
 

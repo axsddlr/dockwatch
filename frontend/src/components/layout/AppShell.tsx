@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetch('/health')
+    fetch('/api/version')
       .then((r) => r.json())
       .then((d) => setVersion(d.version ?? ''))
       .catch(() => {})

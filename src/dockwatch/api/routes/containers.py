@@ -7,8 +7,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from docker.errors import DockerException
+
+from ... import docker_client
 from ...config import validate_compose_project_config, ComposeProjectConfig
-from ...docker_client import compose_labels_to_project_config
 from ...integrations import PortainerClient, PortainerError
 from ...models import UpdateResult
 from ...registry import check_all, record_digest_drift_events
@@ -20,6 +22,28 @@ from ..serializers import serialize_update_results
 from ..ws import manager
 
 router = APIRouter()
+
+
+def _log_action(
+    name: str,
+    action: str,
+    source: str,
+    *,
+    success: bool,
+    error: str | None,
+    current_user: AuthenticatedUser,
+    **extra: Any,
+) -> None:
+    get_store().record_update_event(
+        container_name=name,
+        action=action,
+        source=source,
+        status="success" if success else "failed",
+        error=error,
+        user_id=current_user.user_id,
+        username=current_user.username,
+        **extra,
+    )
 
 
 def _find_result(name: str) -> UpdateResult:
@@ -80,17 +104,13 @@ async def update_container(
         "details": execution.details,
         "rollback_message": execution.rollback_message,
     }
-    store = get_store()
-    store.record_update_event(
-        container_name=name,
-        action="update",
-        source=plan.source,
-        status="success" if execution.success else "failed",
+    _log_action(
+        name, "update", plan.source,
+        success=execution.success,
+        error=None if execution.success else execution.message,
+        current_user=current_user,
         old_tag=plan.current_tag,
         new_tag=plan.remote_tag,
-        error=None if execution.success else execution.message,
-        user_id=current_user.user_id,
-        username=current_user.username,
     )
     await manager.broadcast("container_updated", payload)
     return {"ok": execution.success, "plan": payload}
@@ -120,16 +140,13 @@ async def rollback_container(
         "details": execution.details,
         "rollback_message": execution.rollback_message,
     }
-    store.record_update_event(
-        container_name=name,
-        action="rollback",
-        source=plan.source,
-        status="success" if execution.success else "failed",
+    _log_action(
+        name, "rollback", plan.source,
+        success=execution.success,
+        error=None if execution.success else execution.message,
+        current_user=current_user,
         old_tag=plan.current_tag,
         new_tag=plan.remote_tag,
-        error=None if execution.success else execution.message,
-        user_id=current_user.user_id,
-        username=current_user.username,
     )
     await manager.broadcast("container_updated", payload)
     return {"ok": execution.success, "plan": payload}
@@ -148,35 +165,98 @@ async def restart_container(
         raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
 
     config = get_config()
-    store = get_store()
     try:
         client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
         await client.restart_container(int(info.environment_id), info.container_id)
     except PortainerError as exc:
-        store.record_update_event(
-            container_name=name,
-            action="restart",
-            source="portainer",
-            status="failed",
+        _log_action(
+            name, "restart", "portainer",
+            success=False, error=str(exc), current_user=current_user,
             environment_id=info.environment_id,
-            error=str(exc),
-            user_id=current_user.user_id,
-            username=current_user.username,
         )
         raise HTTPException(status_code=502, detail=str(exc))
 
-    store.record_update_event(
-        container_name=name,
-        action="restart",
-        source="portainer",
-        status="success",
+    _log_action(
+        name, "restart", "portainer",
+        success=True, error=None, current_user=current_user,
         environment_id=info.environment_id,
-        user_id=current_user.user_id,
-        username=current_user.username,
     )
     payload = {"name": name, "success": True, "message": f"Restarted '{name}' via Portainer."}
     await manager.broadcast("container_updated", payload)
     return {"ok": True, "plan": payload}
+
+
+@router.delete("/containers/{name}")
+async def delete_container(
+    name: str,
+    force: bool = Query(default=False),
+    current_user: AuthenticatedUser = Depends(require_permission("delete_containers")),
+) -> Any:
+    match = _find_result(name)
+    info = match.container_info
+
+    if info.source == "portainer":
+        if not info.environment_id:
+            raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
+        config = get_config()
+        try:
+            client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
+            await client.delete_container(int(info.environment_id), info.container_id, force=force)
+        except PortainerError as exc:
+            _log_action(
+                name, "delete_container", "portainer",
+                success=False, error=str(exc), current_user=current_user,
+                environment_id=info.environment_id,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        _log_action(
+            name, "delete_container", "portainer",
+            success=True, error=None, current_user=current_user,
+            environment_id=info.environment_id,
+        )
+    else:
+        try:
+            await asyncio.to_thread(docker_client.delete_container, name, force=force)
+        except DockerException as exc:
+            _log_action(name, "delete_container", "local", success=False, error=str(exc), current_user=current_user)
+            raise HTTPException(status_code=502, detail=str(exc))
+        _log_action(name, "delete_container", "local", success=True, error=None, current_user=current_user)
+
+    cache = get_results_cache()
+    cache[:] = [r for r in cache if r.container_info.name != name]
+    await manager.broadcast("container_deleted", {"name": name})
+    return {"ok": True, "name": name}
+
+
+@router.delete("/containers/{name}/image")
+async def delete_container_image(
+    name: str,
+    force: bool = Query(default=False),
+    current_user: AuthenticatedUser = Depends(require_permission("delete_containers")),
+) -> Any:
+    match = _find_result(name)
+    info = match.container_info
+    if info.source != "local":
+        raise HTTPException(status_code=422, detail="Image delete is only supported for local Docker containers.")
+
+    image_id = docker_client.get_image_id(name)
+    if not image_id:
+        raise HTTPException(status_code=404, detail=f"Could not resolve an image ID for '{name}'.")
+
+    try:
+        await asyncio.to_thread(docker_client.delete_image, image_id, force=force)
+    except DockerException as exc:
+        _log_action(
+            name, "delete_image", "local", success=False, error=str(exc), current_user=current_user,
+            old_digest=image_id,
+        )
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    _log_action(
+        name, "delete_image", "local", success=True, error=None, current_user=current_user,
+        old_digest=image_id,
+    )
+    return {"ok": True, "name": name, "image_id": image_id}
 
 
 @router.get("/containers/{name}/compose-detect", dependencies=[Depends(require_permission("update_containers"))])
@@ -186,7 +266,7 @@ def detect_compose_config(name: str) -> Any:
     if not info.compose_project:
         raise HTTPException(status_code=422, detail=f"'{name}' is not a compose-managed container.")
 
-    detected = compose_labels_to_project_config(info.labels, project_name=info.compose_project)
+    detected = docker_client.compose_labels_to_project_config(info.labels, project_name=info.compose_project)
     warnings = validate_compose_project_config(detected)
     return {
         "compose_project": info.compose_project,

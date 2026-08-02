@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import docker
 from docker.errors import DockerException
 
@@ -235,10 +237,7 @@ def parse_image_ref(
     )
 
 
-_local_platform_cached = False
-_local_platform_value: tuple[str, str] | None = None
-
-
+@lru_cache(maxsize=1)
 def get_local_platform() -> tuple[str, str] | None:
     """Return (os, architecture) for the local Docker daemon, e.g. ("linux", "amd64").
 
@@ -250,28 +249,17 @@ def get_local_platform() -> tuple[str, str] | None:
     change without a restart, and this avoids a `docker.from_env()` round
     trip on every registry check.
     """
-    global _local_platform_cached, _local_platform_value
-    if _local_platform_cached:
-        return _local_platform_value
-
-    result: tuple[str, str] | None = None
     try:
         client = docker.from_env()
     except DockerException:
-        result = None
-    else:
-        try:
-            info = client.version()
-            arch = info.get("Arch")
-            result = ("linux", arch) if arch else None
-        except DockerException:
-            result = None
-        finally:
-            client.close()
-
-    _local_platform_value = result
-    _local_platform_cached = True
-    return result
+        return None
+    try:
+        arch = client.version().get("Arch")
+    except DockerException:
+        return None
+    finally:
+        client.close()
+    return ("linux", arch) if arch else None
 
 
 def get_running_containers() -> list[ContainerInfo]:
@@ -335,5 +323,29 @@ def get_image_id(container_name: str) -> str | None:
         return image_id.removeprefix("sha256:") if image_id else None
     except Exception:  # noqa: BLE001
         return None
+    finally:
+        client.close()
+
+
+def delete_container(name: str, *, force: bool = False) -> None:
+    """Stop (if running) and remove a local container by name or ID.
+
+    Raises DockerException on failure (not found, still running without
+    force, etc.) so the caller can surface a specific error message.
+    """
+    client = docker.from_env()
+    try:
+        container = client.containers.get(name)
+        container.remove(force=force)
+    finally:
+        client.close()
+
+
+def delete_image(image_id: str, *, force: bool = False) -> None:
+    """Remove a local image by ID. Raises DockerException if the image is
+    still in use by another container and `force` is not set."""
+    client = docker.from_env()
+    try:
+        client.images.remove(image_id, force=force)
     finally:
         client.close()

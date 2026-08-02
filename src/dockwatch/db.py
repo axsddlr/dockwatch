@@ -16,6 +16,7 @@ STATE_DB_PATH = Path.home() / ".config" / "dockwatch" / "manifests.db"
 VALID_PERMISSIONS = frozenset({
     "view_containers",
     "update_containers",
+    "delete_containers",
     "scan_containers",
     "manage_settings",
     "manage_users",
@@ -176,7 +177,7 @@ class ManifestStore:
                 CREATE TABLE IF NOT EXISTS update_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     container_name TEXT NOT NULL,
-                    action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'digest_drift_detected')),
+                    action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
                     source TEXT NOT NULL CHECK (source IN ('local', 'portainer')),
                     environment_id TEXT,
                     old_tag TEXT,
@@ -190,10 +191,6 @@ class ManifestStore:
                     created_at TEXT NOT NULL
                 )
                 """
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_update_history_container "
-                "ON update_history (container_name, created_at)"
             )
             existing_admin = connection.execute(
                 "SELECT 1 FROM roles WHERE name = 'admin'"
@@ -635,21 +632,18 @@ class ManifestStore:
                 ),
             )
             row_id = cursor.lastrowid
-            stale_ids = connection.execute(
+            connection.execute(
                 """
-                SELECT id FROM update_history
-                WHERE container_name = ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT -1 OFFSET ?
-                """,
-                (container_name, UPDATE_HISTORY_MAX_PER_CONTAINER),
-            ).fetchall()
-            if stale_ids:
-                placeholders = ", ".join("?" for _ in stale_ids)
-                connection.execute(
-                    f"DELETE FROM update_history WHERE id IN ({placeholders})",
-                    tuple(row[0] for row in stale_ids),
+                DELETE FROM update_history
+                WHERE container_name = ? AND id NOT IN (
+                    SELECT id FROM update_history
+                    WHERE container_name = ?
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
                 )
+                """,
+                (container_name, container_name, UPDATE_HISTORY_MAX_PER_CONTAINER),
+            )
             return row_id
 
     def list_update_history(

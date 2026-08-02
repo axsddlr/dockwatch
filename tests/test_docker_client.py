@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import dockwatch.docker_client as docker_client_module
-from dockwatch.docker_client import get_local_platform, get_running_containers, parse_image_ref
+from dockwatch.docker_client import delete_container, delete_image, get_local_platform, get_running_containers, parse_image_ref
 from dockwatch.models import RegistryType
 
 
@@ -35,11 +35,22 @@ class FakeContainer:
 class FakeDockerClient:
     def __init__(self) -> None:
         self.containers = self
+        self.images = self
         self.list_kwargs: dict[str, object] | None = None
+        self.removed_container: tuple[str, bool] | None = None
+        self.removed_image: tuple[str, bool] | None = None
 
     def list(self, **kwargs) -> list[FakeContainer]:
         self.list_kwargs = kwargs
         return [FakeContainer()]
+
+    def get(self, name: str) -> FakeContainer:
+        container = FakeContainer()
+        container.remove = lambda force=False: setattr(self, "removed_container", (name, force))
+        return container
+
+    def remove(self, image_id: str, force: bool = False) -> None:
+        self.removed_image = (image_id, force)
 
     def close(self) -> None:
         pass
@@ -92,15 +103,33 @@ class DockerClientTests(unittest.TestCase):
         self.assertEqual(info.current_tag, "latest")
 
 
+class DeleteTests(unittest.TestCase):
+    def test_delete_container_calls_remove_with_force(self) -> None:
+        fake_client = FakeDockerClient()
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            delete_container("web", force=True)
+
+        self.assertEqual(fake_client.removed_container, ("web", True))
+
+    def test_delete_container_defaults_force_false(self) -> None:
+        fake_client = FakeDockerClient()
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            delete_container("web")
+
+        self.assertEqual(fake_client.removed_container, ("web", False))
+
+    def test_delete_image_calls_images_remove(self) -> None:
+        fake_client = FakeDockerClient()
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            delete_image("sha256:abc123", force=True)
+
+        self.assertEqual(fake_client.removed_image, ("sha256:abc123", True))
+
+
 class LocalPlatformTests(unittest.TestCase):
     def setUp(self) -> None:
-        docker_client_module._local_platform_cached = False
-        docker_client_module._local_platform_value = None
-        self.addCleanup(self._reset_cache)
-
-    def _reset_cache(self) -> None:
-        docker_client_module._local_platform_cached = False
-        docker_client_module._local_platform_value = None
+        docker_client_module.get_local_platform.cache_clear()
+        self.addCleanup(docker_client_module.get_local_platform.cache_clear)
 
     def test_returns_linux_arch_from_daemon_version(self) -> None:
         fake_client = FakeDockerClient()

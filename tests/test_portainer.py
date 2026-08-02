@@ -41,6 +41,10 @@ class _MockAsyncClient:
         self.calls.append((url, headers, params))
         return self.responses.pop(0)
 
+    async def delete(self, url: str, headers: dict | None = None, params: dict | None = None):
+        self.calls.append((url, headers, params))
+        return self.responses.pop(0)
+
 
 class PortainerTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_environments_uses_api_key_header(self) -> None:
@@ -84,6 +88,34 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             client = PortainerClient(base_url="https://portainer.test", api_key="token")
             with self.assertRaises(PortainerError):
                 await client.restart_container(4, "abc123")
+
+    async def test_delete_container_deletes_via_docker_proxy_with_force_param(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_container(4, "abc123", force=True)
+
+        url, headers, params = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/containers/abc123")
+        self.assertEqual(headers, {"X-API-Key": "token"})
+        self.assertEqual(params, {"force": "true"})
+
+    async def test_delete_container_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(404, {"message": "not found"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.delete_container(4, "abc123")
+
+    async def test_delete_image_deletes_via_docker_proxy(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_image(4, "sha256:abc123", force=False)
+
+        url, _, params = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/images/sha256:abc123")
+        self.assertEqual(params, {"force": "false"})
 
 
 if __name__ == "__main__":

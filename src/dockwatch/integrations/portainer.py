@@ -102,3 +102,31 @@ class PortainerClient:
             raise PortainerError(
                 f"portainer restart request failed for container {container_id} on environment {endpoint_id}: {exc}"
             ) from exc
+
+    async def delete_container(self, endpoint_id: int, container_id: str, *, force: bool = False) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(
+                    f"{self.base_url}/api/endpoints/{endpoint_id}/docker/containers/{container_id}",
+                    headers=self._headers,
+                    params={"force": "true" if force else "false"},
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(
+                f"portainer delete request failed for container {container_id} on environment {endpoint_id}: {exc}"
+            ) from exc
+
+    async def delete_image(self, endpoint_id: int, image_id: str, *, force: bool = False) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(
+                    f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/{image_id}",
+                    headers=self._headers,
+                    params={"force": "true" if force else "false"},
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(
+                f"portainer delete request failed for image {image_id} on environment {endpoint_id}: {exc}"
+            ) from exc

@@ -67,6 +67,16 @@ export const api = {
         `/api/containers/${encodeURIComponent(name)}/restart`,
         { method: 'POST' },
       ),
+    deleteContainer: (name: string, force = false) =>
+      request<{ ok: boolean; name: string }>(
+        `/api/containers/${encodeURIComponent(name)}?force=${force}`,
+        { method: 'DELETE' },
+      ),
+    deleteImage: (name: string, force = false) =>
+      request<{ ok: boolean; name: string; image_id: string }>(
+        `/api/containers/${encodeURIComponent(name)}/image?force=${force}`,
+        { method: 'DELETE' },
+      ),
   },
   settings: {
     get: () => request<DockwatchSettings>('/api/settings'),

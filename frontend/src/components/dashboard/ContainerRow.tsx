@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { History, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket } from 'lucide-react'
+import { History, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, Trash2 } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -52,11 +52,28 @@ export function ContainerRow({ result }: ContainerRowProps) {
     onError: (e: Error) => setMessage(e.message),
   })
 
+  const deleteContainerMutation = useMutation({
+    mutationFn: () => api.containers.deleteContainer(result.container_info.name),
+    onSuccess: () => {
+      setMessage('Container deleted.')
+      queryClient.invalidateQueries({ queryKey: ['containers'] })
+    },
+    onError: (e: Error) => setMessage(e.message),
+  })
+
+  const deleteImageMutation = useMutation({
+    mutationFn: () => api.containers.deleteImage(result.container_info.name),
+    onSuccess: () => setMessage('Image deleted.'),
+    onError: (e: Error) => setMessage(e.message),
+  })
+
   const bump = result.version_diff?.bump_type
   const canUpdate = hasPermission('update_containers')
   const canScan = hasPermission('scan_containers')
+  const canDelete = hasPermission('delete_containers')
   const canViewHistory = hasPermission('manage_settings')
   const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
+  const showDeleteImageBtn = canDelete && result.container_info.source === 'local'
   const showUpdateBtn = status === 'OUTDATED' && canUpdate
   const tag = result.container_info.current_tag?.toLowerCase()
   const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
@@ -166,6 +183,34 @@ export function ContainerRow({ result }: ContainerRowProps) {
           </button>
         )}
         {canScan && <ScanButton name={result.container_info.name} />}
+        {showDeleteImageBtn && (
+          <button
+            onClick={() => {
+              if (window.confirm(`Delete the image for '${result.container_info.name}'? This cannot be undone.`)) {
+                deleteImageMutation.mutate()
+              }
+            }}
+            disabled={deleteImageMutation.isPending}
+            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-orange-400 transition-colors disabled:opacity-50"
+            title="Delete image"
+          >
+            <ImageOff size={14} />
+          </button>
+        )}
+        {canDelete && (
+          <button
+            onClick={() => {
+              if (window.confirm(`Delete container '${result.container_info.name}'? This cannot be undone.`)) {
+                deleteContainerMutation.mutate()
+              }
+            }}
+            disabled={deleteContainerMutation.isPending}
+            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-red-400 transition-colors disabled:opacity-50"
+            title="Delete container"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
         {canViewHistory && (
           <button
             onClick={() => setShowHistory((v) => !v)}

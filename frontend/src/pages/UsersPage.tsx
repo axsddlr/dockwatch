@@ -277,6 +277,7 @@ function DeleteRoleButton({ roleName, onDeleted, setPageError }: {
 const ALL_PERMISSIONS = [
   'view_containers',
   'update_containers',
+  'delete_containers',
   'scan_containers',
   'manage_settings',
   'manage_users',

@@ -335,12 +335,16 @@ def serve(
     from .api.app import create_app
 
     config = bootstrap_auth_from_env(load_config(), CONFIG_PATH)
-    if not config.auth.password_hash:
+    store = ManifestStore()
+    migrate_auth_config_to_users(config, store)
+    if store.count_users() == 0:
         typer.echo(
-            "WARNING: no dashboard credentials configured — set "
-            "DOCKWATCH_USERNAME/DOCKWATCH_PASSWORD or run "
-            "'dockwatch config set-password'. The dashboard will reject "
-            "all requests until credentials exist.",
+            "WARNING: no dashboard user exists yet — the FIRST person to "
+            "open this dashboard and register will become admin, with no "
+            "further check. If this instance is reachable by anyone other "
+            "than you right now, set DOCKWATCH_USERNAME/DOCKWATCH_PASSWORD "
+            "in .env and restart before exposing it, or register "
+            "immediately.",
             err=True,
         )
     uvicorn.run(create_app(), host=host, port=port)

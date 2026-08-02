@@ -37,7 +37,7 @@ export function HistoryPanel({ name, onClose }: { name: string; onClose: () => v
   })
 
   const lastSuccessfulUpdate = data?.find((e) => e.action === 'update' && e.status === 'success')
-  const canOfferRollback = canRollback && lastSuccessfulUpdate && lastSuccessfulUpdate.id === data?.[0]?.id
+  const canOfferRollback = canRollback && !!lastSuccessfulUpdate
 
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-panel-alt)]">

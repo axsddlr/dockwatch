@@ -193,7 +193,7 @@ class ManifestStore:
                 """
             )
             existing_admin = connection.execute(
-                "SELECT 1 FROM roles WHERE name = 'admin'"
+                "SELECT permissions FROM roles WHERE name = 'admin'"
             ).fetchone()
             if existing_admin is None:
                 connection.execute(
@@ -204,6 +204,13 @@ class ManifestStore:
                     "INSERT INTO roles (name, permissions, is_builtin) VALUES (?, ?, 1)",
                     ("viewer", _json.dumps(["view_containers"])),
                 )
+            else:
+                current = set(_json.loads(existing_admin[0]))
+                if not VALID_PERMISSIONS.issubset(current):
+                    connection.execute(
+                        "UPDATE roles SET permissions = ? WHERE name = 'admin'",
+                        (_json.dumps(sorted(current | VALID_PERMISSIONS)),),
+                    )
 
     def get(self, info: ContainerInfo) -> ManifestRecord | None:
         with closing(self._connect()) as connection, connection:

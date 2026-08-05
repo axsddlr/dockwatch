@@ -30,36 +30,57 @@ def _merge_check_results(
 ) -> list[UpdateResult]:
     """Merge a fresh check's results into the existing cache.
 
-    A check for one source shouldn't erase what's known about a container
-    discoverable via the other source too -- most importantly, a plain
-    local check must not downgrade a container Portainer already reported
-    as managed back to source=local just because it's also visible on the
-    same Docker socket Portainer proxies. The fresh check data is kept
-    (it's still an accurate re-verification); only the Portainer identity
-    fields are preserved.
-    """
-    if source == "all":
-        return results
+    Fresh results are deduplicated by container name: when the same
+    container appears more than once (e.g. via both local Docker and
+    Portainer in an "all" check), the Portainer entry wins.
 
-    prior_portainer = {
-        r.container_info.name: r.container_info for r in cache if r.container_info.source == "portainer"
+    A subsequent local-only check must not downgrade a container that
+    Portainer previously reported as managed; Portainer identity
+    (source, environment_id, environment_name) is preserved.
+
+    Stale cache entries whose names are absent from the fresh results
+    survive so that e.g. a Portainer-only check doesn't erase containers
+    only visible on the local Docker socket, and vice versa.
+    """
+    # Step 1: deduplicate fresh results within themselves.
+    deduped: dict[str, UpdateResult] = {}
+    for r in results:
+        name = r.container_info.name
+        existing = deduped.get(name)
+        if existing is None:
+            deduped[name] = r
+        elif r.container_info.source == "portainer" and existing.container_info.source != "portainer":
+            deduped[name] = r
+    deduped_list = list(deduped.values())
+
+    # Step 2: build a map of prior Portainer identities from the cache.
+    prior_portainer: dict[str, ContainerInfo] = {
+        r.container_info.name: r.container_info
+        for r in cache
+        if r.container_info.source == "portainer"
     }
-    if source == "local":
-        for i, result in enumerate(results):
-            prior_info = prior_portainer.get(result.container_info.name)
-            if prior_info is not None:
-                results[i] = replace(
+
+    # Step 3: apply prior Portainer identity to fresh results whose name
+    # matches a known Portainer container from the cache.
+    if source != "portainer":
+        for i, result in enumerate(deduped_list):
+            prior = prior_portainer.get(result.container_info.name)
+            if prior is not None and result.container_info.source != "portainer":
+                deduped_list[i] = replace(
                     result,
                     container_info=replace(
                         result.container_info,
-                        source=prior_info.source,
-                        environment_id=prior_info.environment_id,
-                        environment_name=prior_info.environment_name,
+                        source=prior.source,
+                        environment_id=prior.environment_id,
+                        environment_name=prior.environment_name,
                     ),
                 )
 
-    fresh_names = {r.container_info.name for r in results}
-    return [r for r in cache if r.container_info.name not in fresh_names] + results
+    # Step 4: keep stale cache entries not present in fresh results.
+    fresh_names = {r.container_info.name for r in deduped_list}
+    stale = [r for r in cache if r.container_info.name not in fresh_names]
+
+    return stale + deduped_list
 
 
 def _log_action(

@@ -120,6 +120,20 @@ async def discover_containers(
         result.containers.extend(portainer_result.containers)
         result.environments = portainer_result.environments
         result.errors.extend(portainer_result.errors)
+
+    # Deduplicate: when source=all and the same container name appears
+    # from both local Docker and Portainer, keep the Portainer identity
+    # and discard the local one.  This prevents double-checking and
+    # ensures a single authoritative source per container.
+    seen: dict[str, ContainerInfo] = {}
+    for c in result.containers:
+        existing = seen.get(c.name)
+        if existing is None:
+            seen[c.name] = c
+        elif c.source == "portainer" and existing.source != "portainer":
+            seen[c.name] = c
+    result.containers = list(seen.values())
+
     return result
 
 

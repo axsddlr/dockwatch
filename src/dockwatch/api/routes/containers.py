@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +23,43 @@ from ..serializers import serialize_update_results
 from ..ws import manager
 
 router = APIRouter()
+
+
+def _merge_check_results(
+    cache: list[UpdateResult], results: list[UpdateResult], source: str,
+) -> list[UpdateResult]:
+    """Merge a fresh check's results into the existing cache.
+
+    A check for one source shouldn't erase what's known about a container
+    discoverable via the other source too -- most importantly, a plain
+    local check must not downgrade a container Portainer already reported
+    as managed back to source=local just because it's also visible on the
+    same Docker socket Portainer proxies. The fresh check data is kept
+    (it's still an accurate re-verification); only the Portainer identity
+    fields are preserved.
+    """
+    if source == "all":
+        return results
+
+    prior_portainer = {
+        r.container_info.name: r.container_info for r in cache if r.container_info.source == "portainer"
+    }
+    if source == "local":
+        for i, result in enumerate(results):
+            prior_info = prior_portainer.get(result.container_info.name)
+            if prior_info is not None:
+                results[i] = replace(
+                    result,
+                    container_info=replace(
+                        result.container_info,
+                        source=prior_info.source,
+                        environment_id=prior_info.environment_id,
+                        environment_name=prior_info.environment_name,
+                    ),
+                )
+
+    fresh_names = {r.container_info.name for r in results}
+    return [r for r in cache if r.container_info.name not in fresh_names] + results
 
 
 def _log_action(
@@ -77,9 +115,11 @@ async def check_containers(
         store = get_store()
         results = await check_all(containers, config, store=store, max_concurrency=config.max_concurrent_checks)
         record_digest_drift_events(results, store)
+
         cache = get_results_cache()
-        cache.clear()
-        cache.extend(results)
+        merged = _merge_check_results(cache, results, source)
+        cache[:] = merged
+
         serialized = serialize_update_results(results)
         await manager.broadcast("check_complete", {"results": serialized})
         return serialized

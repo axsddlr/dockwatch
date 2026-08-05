@@ -131,13 +131,13 @@ export function ContainerRow({ result }: ContainerRowProps) {
 
       <div className="col-span-3 flex items-center gap-1.5 min-w-0">
         <span
-          className="truncate font-mono text-xs text-[var(--color-text-primary)]"
+          className="truncate font-mono text-xs text-[var(--color-text-primary)] min-w-0"
           title={result.latest_version ?? result.remote_tag ?? undefined}
         >
           {result.latest_version ?? result.remote_tag ?? '-'}
         </span>
         {bump && BUMP_COLORS[bump] && (
-          <span className={`inline-flex rounded border px-1.5 py-px text-[10px] font-semibold ${BUMP_COLORS[bump]}`}>
+          <span className={`flex-shrink-0 inline-flex rounded border px-1.5 py-px text-[10px] font-semibold ${BUMP_COLORS[bump]}`}>
             {bump}
           </span>
         )}

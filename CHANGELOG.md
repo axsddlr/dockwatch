@@ -5,6 +5,15 @@ All notable changes to dockwatch.
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.6.0] - 2026-08-05
+
+### Added
+- **Delete container & image** — admins (with a new `delete_containers` permission) can delete a container directly from the dashboard, for both local Docker and Portainer-managed containers, plus delete the underlying image for local containers. Both actions require confirmation and are logged to the update history like every other action.
 - **Update history & rollback** — every update/rollback attempt is recorded (who, when, old→new tag, success/failure) in a new `update_history` table, visible via a per-container history panel (admin-gated) with a one-click rollback for compose-managed containers.
 - **Digest drift alerts** — when a floating tag (e.g. `latest`) silently points at a new image digest, it's now surfaced as a distinct `digest_drift` notification and history entry instead of being folded into an ordinary update event.
 - **Portainer container restart** — Portainer-managed containers can now be restarted directly from the dashboard (`POST /containers/{name}/restart`, proxied through Portainer's Docker API). Full pull+recreate for Portainer-managed containers is not yet supported — only local Docker containers can be updated in place today.

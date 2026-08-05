@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useDashboardStore } from '../store/dashboardStore'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { StatCards } from '../components/dashboard/StatCards'
@@ -6,9 +6,6 @@ import { Toolbar } from '../components/dashboard/Toolbar'
 import { FilterBar } from '../components/dashboard/FilterBar'
 import { ContainerTable } from '../components/dashboard/ContainerTable'
 import { ConnectionStatus } from '../components/dashboard/ConnectionStatus'
-import { ErrorBanner } from '../components/dashboard/ErrorBanner'
-import { api } from '../api/client'
-import { useMutation } from '@tanstack/react-query'
 
 export function DashboardPage() {
   useWebSocket()
@@ -17,23 +14,26 @@ export function DashboardPage() {
   const autoRefreshInterval = useDashboardStore((s) => s.autoRefreshInterval)
   const source = useDashboardStore((s) => s.selectedSource)
   const environment = useDashboardStore((s) => s.selectedEnvironment)
-
-  const initialCheck = useMutation({
-    mutationFn: () => api.containers.check(source, environment ?? undefined),
-    onSuccess: (data) => setResults(data),
-  })
+  const isChecking = useDashboardStore((s) => s.isChecking)
+  const isCheckingRef = useRef(false)
 
   useEffect(() => {
-    initialCheck.mutate()
-  }, [source, environment])
+    isCheckingRef.current = isChecking
+  }, [isChecking])
 
   useEffect(() => {
     if (!autoRefresh) return
     const timer = setInterval(() => {
-      initialCheck.mutate()
+      if (isCheckingRef.current) return
+      const params = new URLSearchParams({ source })
+      if (environment) params.set('environment', environment)
+      fetch(`/api/containers/check?${params}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } })
+        .then((r) => { if (r.ok) return r.json(); throw new Error(`HTTP ${r.status}`) })
+        .then((data) => setResults(data))
+        .catch(() => {})
     }, autoRefreshInterval * 1000)
     return () => clearInterval(timer)
-  }, [autoRefresh, autoRefreshInterval, source, environment])
+  }, [autoRefresh, autoRefreshInterval, source, environment, setResults])
 
   return (
     <div className="space-y-6">
@@ -41,11 +41,6 @@ export function DashboardPage() {
         <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">Dashboard</h1>
         <ConnectionStatus />
       </div>
-
-      <ErrorBanner
-        message={initialCheck.error instanceof Error ? initialCheck.error.message : null}
-        onDismiss={() => initialCheck.reset()}
-      />
 
       <StatCards />
 

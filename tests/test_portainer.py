@@ -117,6 +117,63 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/images/sha256:abc123")
         self.assertEqual(params, {"force": "false"})
 
+    async def test_delete_container_force_false_sends_string_false(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_container(4, "abc123", force=False)
+
+        _, _, params = mock_client.calls[0]
+        self.assertEqual(params, {"force": "false"})
+
+    async def test_delete_container_default_force_is_false(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_container(4, "abc123")
+
+        _, _, params = mock_client.calls[0]
+        self.assertEqual(params, {"force": "false"})
+
+    async def test_delete_container_404_wraps_as_portainer_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(404, {"message": "container not found"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.delete_container(4, "nonexistent")
+
+    async def test_delete_image_force_true_sends_string_true(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_image(4, "sha256:abc123", force=True)
+
+        _, _, params = mock_client.calls[0]
+        self.assertEqual(params, {"force": "true"})
+
+    async def test_delete_image_default_force_is_false(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(204, None)])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.delete_image(4, "sha256:abc123")
+
+        _, _, params = mock_client.calls[0]
+        self.assertEqual(params, {"force": "false"})
+
+    async def test_delete_image_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(500, {"message": "internal server error"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.delete_image(4, "sha256:abc123")
+
+    async def test_delete_image_404_wraps_as_portainer_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(404, {"message": "image not found"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.delete_image(4, "nonexistent")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { RefreshCw, Monitor, Server, Layers } from 'lucide-react'
 import { api } from '../../api/client'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -16,6 +16,7 @@ export function Toolbar() {
   const setSource = useDashboardStore((s) => s.setSelectedSource)
   const setEnvironment = useDashboardStore((s) => s.setSelectedEnvironment)
   const setResults = useDashboardStore((s) => s.setResults)
+  const setIsChecking = useDashboardStore((s) => s.setIsChecking)
   const setAutoRefresh = useDashboardStore((s) => s.setAutoRefresh)
   const setAutoRefreshInterval = useDashboardStore((s) => s.setAutoRefreshInterval)
 
@@ -28,16 +29,27 @@ export function Toolbar() {
     }
   }, [portainerEnabled, source, setSource])
 
+  const pendingRef = useRef(false)
+
   const checkMutation = useMutation({
     mutationFn: () => api.containers.check(source, environment ?? undefined),
+    onMutate: () => {
+      pendingRef.current = true
+      setIsChecking(true)
+    },
     onSuccess: (data) => {
       setResults(data)
       queryClient.invalidateQueries({ queryKey: ['containers'] })
+    },
+    onSettled: () => {
+      pendingRef.current = false
+      setIsChecking(false)
     },
   })
 
   const { mutate: runCheck } = checkMutation
   useEffect(() => {
+    if (pendingRef.current) return
     runCheck()
     // Re-run whenever the selected source/environment changes -- otherwise
     // the dashboard keeps showing results from whichever source was last

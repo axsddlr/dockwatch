@@ -5,7 +5,7 @@ from .docker_client import DockerConnectionError, get_running_containers, parse_
 from .models import ContainerInfo, RegistryType, UpdateResult
 from .registry import check_all, check_container, check_dockerhub, check_ghcr
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "__version__",

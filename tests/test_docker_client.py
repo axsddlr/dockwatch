@@ -39,21 +39,28 @@ class FakeDockerClient:
         self.list_kwargs: dict[str, object] | None = None
         self.removed_container: tuple[str, bool] | None = None
         self.removed_image: tuple[str, bool] | None = None
+        self.close_called = False
+        self.container_get_raises: Exception | None = None
+        self.image_remove_raises: Exception | None = None
 
     def list(self, **kwargs) -> list[FakeContainer]:
         self.list_kwargs = kwargs
         return [FakeContainer()]
 
     def get(self, name: str) -> FakeContainer:
+        if self.container_get_raises:
+            raise self.container_get_raises
         container = FakeContainer()
         container.remove = lambda force=False: setattr(self, "removed_container", (name, force))
         return container
 
     def remove(self, image_id: str, force: bool = False) -> None:
+        if self.image_remove_raises:
+            raise self.image_remove_raises
         self.removed_image = (image_id, force)
 
     def close(self) -> None:
-        pass
+        self.close_called = True
 
 
 class DockerClientTests(unittest.TestCase):
@@ -124,6 +131,53 @@ class DeleteTests(unittest.TestCase):
             delete_image("sha256:abc123", force=True)
 
         self.assertEqual(fake_client.removed_image, ("sha256:abc123", True))
+
+    def test_delete_container_propagates_docker_exception_on_get(self) -> None:
+        from docker.errors import DockerException
+
+        fake_client = FakeDockerClient()
+        fake_client.container_get_raises = DockerException("container not found")
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            with self.assertRaises(DockerException) as ctx:
+                delete_container("nonexistent")
+
+        self.assertIn("container not found", str(ctx.exception))
+        self.assertTrue(fake_client.close_called)
+
+    def test_delete_container_propagates_docker_exception_on_remove(self) -> None:
+        from docker.errors import DockerException
+
+        fake_client = FakeDockerClient()
+        container = FakeContainer()
+        container.remove = lambda force=False: (_ for _ in ()).throw(
+            DockerException("container in use")
+        )
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            with patch.object(fake_client, "get", return_value=container):
+                with self.assertRaises(DockerException) as ctx:
+                    delete_container("web")
+
+        self.assertIn("container in use", str(ctx.exception))
+        self.assertTrue(fake_client.close_called)
+
+    def test_delete_image_propagates_docker_exception(self) -> None:
+        from docker.errors import DockerException
+
+        fake_client = FakeDockerClient()
+        fake_client.image_remove_raises = DockerException("image in use")
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            with self.assertRaises(DockerException) as ctx:
+                delete_image("sha256:abc123")
+
+        self.assertIn("image in use", str(ctx.exception))
+        self.assertTrue(fake_client.close_called)
+
+    def test_delete_image_defaults_force_false(self) -> None:
+        fake_client = FakeDockerClient()
+        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
+            delete_image("sha256:abc123")
+
+        self.assertEqual(fake_client.removed_image, ("sha256:abc123", False))
 
 
 class LocalPlatformTests(unittest.TestCase):

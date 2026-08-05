@@ -17,6 +17,7 @@ It ships as a CLI for scripts and cron jobs, and a web dashboard for day-to-day 
   - [Update Checking](#update-checking)
   - [Updating Containers](#updating-containers)
   - [Rollback](#rollback)
+  - [Deleting Containers & Images](#deleting-containers--images)
   - [Update History / Audit Log](#update-history--audit-log)
   - [Digest Drift Alerts](#digest-drift-alerts)
   - [Multi-Arch Images](#multi-arch-images)
@@ -108,7 +109,8 @@ Requires Python 3.11+. The web dashboard (`dockwatch serve`) still needs access 
    - **Update** — pulls the new image and recreates the container (or rewrites the compose file's tag and runs `docker compose up -d` for compose-managed services).
    - **Pin** — exclude a container from being marked outdated, without hiding it.
    - **Scan** — run a Trivy vulnerability scan against the running image.
-   - **History** (admin only) — see every update/rollback/restart recorded for that container, with a one-click **Rollback** to the last known-good tag.
+   - **Delete Container** / **Delete Image** (requires `delete_containers`) — remove a container outright, or its underlying image (local containers only); both ask for confirmation first.
+   - **History** (admin only) — see every update/rollback/restart/delete recorded for that container, with a one-click **Rollback** to the last known-good tag.
 5. **Settings page** (requires `manage_settings`) — notification URLs, Portainer connection, Trivy config, and the ignored-containers checklist.
 6. **Users page** (requires `manage_users`) — create custom roles, promote/demote users, reset passwords.
 
@@ -246,9 +248,13 @@ Every successful update is remembered. If it turns out to be a bad update, click
 
 Current scope: **compose-managed containers only**. Plain (non-compose) containers don't have a rollback path yet, since there's no compose file to revert.
 
+### Deleting Containers & Images
+
+Requires the `delete_containers` permission. Delete a container directly from its row — works for both local Docker and Portainer-managed containers, with a confirmation prompt before anything happens. Delete the underlying image too (local containers only; Docker refuses removal if another container still depends on it). Both actions are logged to the update history like every other action.
+
 ### Update History / Audit Log
 
-Every update, rollback, restart, and digest-drift detection is recorded: who did it, when, old tag → new tag, and whether it succeeded. Visible per-container via the History panel (requires `manage_settings`), which also surfaces the Rollback action.
+Every update, rollback, restart, delete, and digest-drift detection is recorded: who did it, when, old tag → new tag, and whether it succeeded. Visible per-container via the History panel (requires `manage_settings`), which also surfaces the Rollback action.
 
 ### Digest Drift Alerts
 
@@ -288,11 +294,11 @@ dockwatch check --source all                        # local + Portainer together
 
 ### Authentication & RBAC
 
-Multi-user with permission-based access control — five fixed permissions (`view_containers`, `update_containers`, `scan_containers`, `manage_settings`, `manage_users`), combinable into custom roles.
+Multi-user with permission-based access control — six fixed permissions (`view_containers`, `update_containers`, `delete_containers`, `scan_containers`, `manage_settings`, `manage_users`), combinable into custom roles.
 
 | Built-in role | Permissions |
 | --- | --- |
-| `admin` | all five |
+| `admin` | all six |
 | `viewer` | `view_containers` only |
 
 Create additional roles with any subset of permissions from the Users page (requires `manage_users`).
@@ -307,7 +313,7 @@ After the first account exists, `DOCKWATCH_ALLOW_REGISTRATION=true` allows furth
 
 Sessions are signed cookies, 14-day expiry, no server-side session store. Set `DOCKWATCH_SECURE_COOKIE=true` if serving over HTTPS.
 
-**Trust boundary**: `manage_settings` and `update_containers` are effectively admin-equivalent, not safely delegable to a semi-trusted user. Both permissions can reach the host's Docker daemon indirectly — `manage_settings` can point a compose project at an arbitrary path, and `update_containers` can trigger `docker compose up` against it. Only grant these to people you'd trust with direct `docker.sock` access.
+**Trust boundary**: `manage_settings`, `update_containers`, and `delete_containers` are effectively admin-equivalent, not safely delegable to a semi-trusted user. All three can reach the host's Docker daemon indirectly — `manage_settings` can point a compose project at an arbitrary path, `update_containers` can trigger `docker compose up` against it, and `delete_containers` can remove any container or (locally) any image outright. Only grant these to people you'd trust with direct `docker.sock` access.
 
 ### Notifications
 

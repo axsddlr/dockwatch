@@ -36,6 +36,17 @@ export function Toolbar() {
     },
   })
 
+  const { mutate: runCheck } = checkMutation
+  useEffect(() => {
+    runCheck()
+    // Re-run whenever the selected source/environment changes -- otherwise
+    // the dashboard keeps showing results from whichever source was last
+    // checked (cache is a single shared list, not per-source), so e.g.
+    // switching to "Portainer" silently shows stale local-sourced rows
+    // filtered against a source they were never tagged with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, environment])
+
   const { data: envData } = useEnvironments(source === 'portainer' || source === 'all')
   const environments = envData?.environments ?? []
 

@@ -87,6 +87,26 @@ class PortainerClient:
             raise PortainerError("portainer containers response was not a list")
         return [item for item in payload if isinstance(item, dict)]
 
+    async def list_images(self, endpoint_id: int) -> list[dict]:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/endpoints/{endpoint_id}/docker/images/json",
+                    headers=self._headers,
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(
+                f"portainer images request failed for environment {endpoint_id}: {exc}"
+            ) from exc
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
+        if not isinstance(payload, list):
+            raise PortainerError("portainer images response was not a list")
+        return [item for item in payload if isinstance(item, dict)]
+
     async def test_connection(self) -> list[PortainerEnvironment]:
         return await self.list_environments()
 

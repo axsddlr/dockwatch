@@ -24,7 +24,22 @@ def _clean_container_name(payload: dict) -> str:
     return str(payload.get("Names") or payload.get("Id") or "unknown").lstrip("/")
 
 
-def _map_portainer_container(payload: dict, environment: PortainerEnvironment) -> ContainerInfo:
+def _build_image_digest_map(images: list[dict]) -> dict[str, str]:
+    """Map an image ID to its first RepoDigest, so container listings (which
+    only carry an ImageID, not RepoDigests) can resolve a real registry
+    digest the same way local Docker SDK discovery does."""
+    digest_map: dict[str, str] = {}
+    for image in images:
+        image_id = image.get("Id")
+        repo_digests = image.get("RepoDigests") or []
+        if image_id and repo_digests:
+            digest_map[image_id] = repo_digests[0]
+    return digest_map
+
+
+def _map_portainer_container(
+    payload: dict, environment: PortainerEnvironment, image_digests: dict[str, str],
+) -> ContainerInfo:
     labels = dict(payload.get("Labels") or {})
     image_ref = str(payload.get("Image") or "")
     info = parse_image_ref(
@@ -33,7 +48,7 @@ def _map_portainer_container(payload: dict, environment: PortainerEnvironment) -
         container_id=str(payload.get("Id") or "")[:12],
         labels=labels,
         compose_image_digest=labels.get("com.docker.compose.image"),
-        repo_digest=None,
+        repo_digest=image_digests.get(str(payload.get("ImageID") or "")),
     )
     info.source = "portainer"
     info.environment_id = str(environment.id)
@@ -75,7 +90,14 @@ async def discover_portainer(
         except PortainerError as exc:
             result.errors.append(str(exc))
             continue
-        result.containers.extend(_map_portainer_container(item, environment) for item in payload)
+        try:
+            images = await client.list_images(environment.id)
+        except PortainerError:
+            images = []
+        image_digests = _build_image_digest_map(images)
+        result.containers.extend(
+            _map_portainer_container(item, environment, image_digests) for item in payload
+        )
     return result
 
 

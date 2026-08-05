@@ -310,8 +310,16 @@ async def _fetch_manifest_digest(
     headers: dict[str, str] | None = None,
     platform: tuple[str, str] | None = None,
 ) -> str | None:
+    cache_key = f"{base_url}/{namespace}/{image_name}:{tag}:{platform!r}"
+    now = asyncio.get_event_loop().time()
+    cached = _manifest_digest_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _MANIFEST_DIGEST_CACHE_TTL_SECONDS:
+        return cached[1]
+
     url = f"{base_url}/v2/{namespace}/{image_name}/manifests/{tag}"
     request_headers = {"Accept": MANIFEST_ACCEPT_HEADERS, **(headers or {})}
+
+    result: str | None = None
 
     if platform is not None:
         # A HEAD request only returns the top-level Docker-Content-Digest,
@@ -321,26 +329,32 @@ async def _fetch_manifest_digest(
         # own digest instead.
         response = await _request_with_retry(lambda: client.get(url, headers=request_headers))
         if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "")
-        if content_type in _MANIFEST_LIST_MEDIA_TYPES:
-            try:
-                manifest_list = response.json()
-            except ValueError:
-                return response.headers.get("Docker-Content-Digest")
-            platform_digest = _select_platform_digest(manifest_list, platform=platform)
-            if platform_digest is not None:
-                return platform_digest
-        return response.headers.get("Docker-Content-Digest")
+            result = None
+        else:
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
+            if content_type in _MANIFEST_LIST_MEDIA_TYPES:
+                try:
+                    manifest_list = response.json()
+                except ValueError:
+                    result = response.headers.get("Docker-Content-Digest")
+                else:
+                    platform_digest = _select_platform_digest(manifest_list, platform=platform)
+                    result = platform_digest if platform_digest is not None else response.headers.get("Docker-Content-Digest")
+            else:
+                result = response.headers.get("Docker-Content-Digest")
+    else:
+        response = await _request_with_retry(
+            lambda: client.head(url, headers=request_headers)
+        )
+        if response.status_code == 404:
+            result = None
+        else:
+            response.raise_for_status()
+            result = response.headers.get("Docker-Content-Digest")
 
-    response = await _request_with_retry(
-        lambda: client.head(url, headers=request_headers)
-    )
-    if response.status_code == 404:
-        return None
-    response.raise_for_status()
-    return response.headers.get("Docker-Content-Digest")
+    _manifest_digest_cache[cache_key] = (now, result)
+    return result
 
 
 def _parse_bearer_challenge(header: str | None) -> dict[str, str] | None:
@@ -522,11 +536,15 @@ _DH_REST_TAGS_URL = "https://hub.docker.com/v2/repositories"
 _DH_REST_PAGE_SIZE = 100
 _DH_REST_MAX_PAGES = 10
 _DH_TAGS_CACHE_TTL_SECONDS = 300
+_MANIFEST_DIGEST_CACHE_TTL_SECONDS = 60
+_TOKEN_CACHE_TTL_SECONDS = 60
 
 # ponytail: per-process in-memory cache, cleared on restart, no size cap.
 # Fine for dockwatch's scale (dozens of images, not thousands); revisit if
 # that assumption stops holding.
 _dockerhub_tags_cache: dict[str, tuple[float, list[str]]] = {}
+_manifest_digest_cache: dict[str, tuple[float, str | None]] = {}
+_token_cache: dict[str, tuple[float, str]] = {}
 
 
 async def _fetch_dockerhub_tags_via_rest(
@@ -612,14 +630,19 @@ async def check_dockerhub(
                 status="UNKNOWN",
             )
 
-        token_response = await _request_with_retry(lambda: client.get(token_url))
-        if token_response.status_code == 404:
-            return _skip_result(info, "docker hub image not found")
-        token_response.raise_for_status()
-        token_payload = token_response.json()
-        token = token_payload.get("token") if isinstance(token_payload, dict) else None
-        if not token:
-            return _skip_result(info, "docker hub token response missing token")
+        cached_token_entry = _token_cache.get(token_url)
+        if cached_token_entry is not None and asyncio.get_event_loop().time() - cached_token_entry[0] < _TOKEN_CACHE_TTL_SECONDS:
+            token = cached_token_entry[1]
+        else:
+            token_response = await _request_with_retry(lambda: client.get(token_url))
+            if token_response.status_code == 404:
+                return _skip_result(info, "docker hub image not found")
+            token_response.raise_for_status()
+            token_payload = token_response.json()
+            token = token_payload.get("token") if isinstance(token_payload, dict) else None
+            if not token:
+                return _skip_result(info, "docker hub token response missing token")
+            _token_cache[token_url] = (asyncio.get_event_loop().time(), token)
         auth_headers = {"Authorization": f"Bearer {token}"}
 
         comparison_tag = latest_tag

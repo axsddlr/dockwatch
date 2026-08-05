@@ -93,6 +93,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         dockwatch.registry._dockerhub_tags_cache.clear()
+        dockwatch.registry._manifest_digest_cache.clear()
+        dockwatch.registry._token_cache.clear()
 
     def test_select_latest_from_tags_honors_include_regex(self) -> None:
         include_patterns, error = _compile_tag_patterns([r"^1\."])

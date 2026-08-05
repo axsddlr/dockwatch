@@ -74,7 +74,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const canViewHistory = hasPermission('manage_settings')
   const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
   const showDeleteImageBtn = canDelete && result.container_info.source === 'local'
-  const showUpdateBtn = status === 'OUTDATED' && canUpdate
+  const showUpdateBtn = status === 'OUTDATED' && canUpdate && result.container_info.source === 'local'
   const tag = result.container_info.current_tag?.toLowerCase()
   const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
   const hasFloatingHint = isFloatingTag && result.comparison_basis === 'digest'

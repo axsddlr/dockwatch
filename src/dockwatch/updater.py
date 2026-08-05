@@ -13,6 +13,7 @@ from docker.models.containers import Container
 
 from .config import ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError
+from .integrations import PortainerClient, PortainerError
 from .models import UpdateResult, deployed_display_result, remote_display
 
 # Upper bound for docker compose pull/up; prevents a hung compose command
@@ -41,6 +42,7 @@ class UpdatePlan:
     compose_service: str | None = None
     current_tag: str | None = None
     remote_tag: str | None = None
+    environment_id: str | None = None
     warnings: list[str] = field(default_factory=list)
 
 
@@ -74,10 +76,57 @@ def _blocked_plan(result: UpdateResult, reason: str, *, mode: str = "blocked") -
     )
 
 
+def _build_portainer_update_plan(result: UpdateResult) -> UpdatePlan:
+    info = result.container_info
+    if result.status == "PINNED":
+        return _blocked_plan(result, "pinned containers cannot be updated from dockwatch")
+    if result.check_error:
+        return _blocked_plan(result, "container check failed; refresh the row before updating")
+    if result.is_outdated is not True:
+        return _blocked_plan(result, "container is not marked outdated")
+    if not _is_compose_managed(result):
+        return _blocked_plan(result, "only compose-managed Portainer stacks can be updated from dockwatch")
+    if not info.environment_id:
+        return _blocked_plan(result, f"'{info.name}' has no associated Portainer environment")
+    if info.current_tag == DIGEST_PINNED_TAG or "@" in info.image_ref:
+        return _blocked_plan(result, "digest-pinned images are blocked for safe updates")
+    if info.current_tag.lower() in _FLOATING_TAGS and result.comparison_basis != "digest":
+        return _blocked_plan(result, "floating tags require digest-backed outdated detection")
+
+    remote_tag = result.remote_tag or result.latest_tag
+    if (
+        info.current_tag.lower() not in _FLOATING_TAGS
+        and remote_tag
+        and remote_tag != info.current_tag
+        and not remote_tag.lower().startswith("sha256:")
+    ):
+        plan_remote_tag = remote_tag
+    else:
+        plan_remote_tag = None
+
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="portainer-compose",
+        allowed=True,
+        image_ref=info.image_ref,
+        deployed_display=deployed_display_result(result),
+        remote_display=remote_display(result),
+        compose_project=info.compose_project,
+        compose_service=info.compose_service,
+        current_tag=info.current_tag,
+        remote_tag=plan_remote_tag,
+        environment_id=info.environment_id,
+    )
+
+
 def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePlan:
     info = result.container_info
+    if info.source == "portainer":
+        return _build_portainer_update_plan(result)
     if info.source != "local":
-        return _blocked_plan(result, "read-only source; only local Docker updates are supported")
+        return _blocked_plan(result, "read-only source; only local Docker and Portainer stack updates are supported")
     if result.status == "PINNED":
         return _blocked_plan(result, "pinned containers cannot be updated from dockwatch")
     if result.check_error:
@@ -577,3 +626,51 @@ def execute_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecution
     if plan.mode == "compose":
         return _execute_compose_update(plan, config)
     return _execute_plain_update(plan)
+
+
+async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
+    """Update a Portainer-managed compose stack: rewrite the service's image
+    tag in the stack's compose file and redeploy with pullImage=True so
+    Portainer pulls the new image and recreates the changed service.
+    """
+    if not plan.allowed:
+        return UpdateExecutionResult(False, plan.mode, plan.reason or "update is blocked")
+    if not plan.compose_project or not plan.compose_service or not plan.environment_id:
+        return UpdateExecutionResult(False, plan.mode, "Portainer stack metadata is incomplete")
+
+    client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
+    try:
+        stack = await client.find_stack_by_name(plan.compose_project)
+        if stack is None:
+            return UpdateExecutionResult(
+                False, plan.mode, f"no Portainer stack found named '{plan.compose_project}'",
+            )
+        stack_id = stack["Id"]
+        text = await client.get_stack_file(stack_id)
+
+        new_text = text
+        if plan.remote_tag and plan.current_tag:
+            repo = plan.image_ref.rsplit(":", 1)[0]
+            old_image = f"{repo}:{plan.current_tag}"
+            new_image = f"{repo}:{plan.remote_tag}"
+            rewritten = _replace_service_image(text, plan.compose_service, old_image, new_image)
+            if rewritten is None:
+                return UpdateExecutionResult(
+                    False, plan.mode,
+                    f"could not find 'image: {old_image}' for service '{plan.compose_service}' in stack file",
+                )
+            new_text = rewritten
+
+        await client.update_stack(
+            stack_id, int(plan.environment_id), stack_file_content=new_text, env=stack.get("Env"),
+        )
+    except PortainerError as exc:
+        return UpdateExecutionResult(False, plan.mode, f"Portainer stack update failed: {exc}")
+
+    details = []
+    if plan.remote_tag:
+        details.append(f"rewrote stack image tag: {plan.current_tag} -> {plan.remote_tag}")
+    details.append("Portainer stack redeployed with pullImage=true")
+    return UpdateExecutionResult(
+        True, plan.mode, f"updated Portainer stack service '{plan.compose_service}'", details=details,
+    )

@@ -72,9 +72,13 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const canScan = hasPermission('scan_containers')
   const canDelete = hasPermission('delete_containers')
   const canViewHistory = hasPermission('manage_settings')
+  const isComposeManaged = !!result.container_info.compose_project && !!result.container_info.compose_service
   const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
   const showDeleteImageBtn = canDelete && result.container_info.source === 'local'
-  const showUpdateBtn = status === 'OUTDATED' && canUpdate && result.container_info.source === 'local'
+  const showUpdateBtn =
+    status === 'OUTDATED' &&
+    canUpdate &&
+    (result.container_info.source === 'local' || (result.container_info.source === 'portainer' && isComposeManaged))
   const tag = result.container_info.current_tag?.toLowerCase()
   const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
   const hasFloatingHint = isFloatingTag && result.comparison_basis === 'digest'

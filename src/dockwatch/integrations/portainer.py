@@ -130,3 +130,65 @@ class PortainerClient:
             raise PortainerError(
                 f"portainer delete request failed for image {image_id} on environment {endpoint_id}: {exc}"
             ) from exc
+
+    async def find_stack_by_name(self, name: str) -> dict | None:
+        """Look up a Portainer stack by its compose project name. Returns the
+        raw stack dict (has Id, EndpointId) or None if no stack matches."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/stacks",
+                    headers=self._headers,
+                    params={"filters": f'{{"StackName":"{name}"}}'},
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(f"portainer stack lookup failed for '{name}': {exc}") from exc
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
+        if not isinstance(payload, list) or not payload:
+            return None
+        return payload[0]
+
+    async def get_stack_file(self, stack_id: int) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/api/stacks/{stack_id}/file",
+                    headers=self._headers,
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(f"portainer stack file request failed for stack {stack_id}: {exc}") from exc
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
+        content = payload.get("StackFileContent") if isinstance(payload, dict) else None
+        if not isinstance(content, str):
+            raise PortainerError(f"portainer stack {stack_id} file response was missing StackFileContent")
+        return content
+
+    async def update_stack(
+        self, stack_id: int, endpoint_id: int, *, stack_file_content: str, env: list[dict] | None = None,
+    ) -> None:
+        """Redeploy a stack with new compose content, pulling any updated
+        images. Portainer recreates whichever containers changed."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.put(
+                    f"{self.base_url}/api/stacks/{stack_id}",
+                    headers=self._headers,
+                    params={"endpointId": endpoint_id},
+                    json={
+                        "stackFileContent": stack_file_content,
+                        "env": env or [],
+                        "prune": True,
+                        "pullImage": True,
+                    },
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(f"portainer stack update failed for stack {stack_id}: {exc}") from exc

@@ -15,7 +15,7 @@ from ...integrations import PortainerClient, PortainerError
 from ...models import UpdateResult
 from ...registry import check_all, record_digest_drift_events
 from ...sources import discover_containers
-from ...updater import build_rollback_plan, build_update_plan, execute_update
+from ...updater import build_rollback_plan, build_update_plan, execute_portainer_compose_update, execute_update
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
 from ..security import AuthenticatedUser, require_permission
 from ..serializers import serialize_update_results
@@ -96,7 +96,10 @@ async def update_container(
     if not plan.allowed:
         raise HTTPException(status_code=422, detail=plan.reason or "Update is blocked.")
 
-    execution = await asyncio.to_thread(execute_update, plan, config)
+    if plan.mode == "portainer-compose":
+        execution = await execute_portainer_compose_update(plan, config)
+    else:
+        execution = await asyncio.to_thread(execute_update, plan, config)
     payload = {
         "name": name,
         "success": execution.success,
@@ -111,6 +114,7 @@ async def update_container(
         current_user=current_user,
         old_tag=plan.current_tag,
         new_tag=plan.remote_tag,
+        environment_id=plan.environment_id,
     )
     await manager.broadcast("container_updated", payload)
     return {"ok": execution.success, "plan": payload}

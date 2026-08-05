@@ -521,6 +521,12 @@ def _resolve_effective_tag_filters(
 _DH_REST_TAGS_URL = "https://hub.docker.com/v2/repositories"
 _DH_REST_PAGE_SIZE = 100
 _DH_REST_MAX_PAGES = 10
+_DH_TAGS_CACHE_TTL_SECONDS = 300
+
+# ponytail: per-process in-memory cache, cleared on restart, no size cap.
+# Fine for dockwatch's scale (dozens of images, not thousands); revisit if
+# that assumption stops holding.
+_dockerhub_tags_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 async def _fetch_dockerhub_tags_via_rest(
@@ -528,6 +534,12 @@ async def _fetch_dockerhub_tags_via_rest(
     image_name: str,
     client: httpx.AsyncClient,
 ) -> list[str]:
+    cache_key = f"{namespace}/{image_name}"
+    now = asyncio.get_event_loop().time()
+    cached = _dockerhub_tags_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _DH_TAGS_CACHE_TTL_SECONDS:
+        return cached[1]
+
     all_tags: list[str] = []
     page = 1
     for _ in range(_DH_REST_MAX_PAGES):
@@ -552,6 +564,7 @@ async def _fetch_dockerhub_tags_via_rest(
             "REST API fetched %d tags for %s/%s, top 3: %r",
             len(all_tags), namespace, image_name, all_tags[:3],
         )
+        _dockerhub_tags_cache[cache_key] = (now, all_tags)
     return all_tags
 
 

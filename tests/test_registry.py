@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
+import dockwatch.registry
 from dockwatch.config import DockwatchConfig
 from dockwatch.models import ContainerInfo, RegistryType
 from dockwatch.registry import (
@@ -91,6 +92,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         patcher = patch("dockwatch.registry.get_local_platform", return_value=None)
         patcher.start()
         self.addCleanup(patcher.stop)
+        dockwatch.registry._dockerhub_tags_cache.clear()
 
     def test_select_latest_from_tags_honors_include_regex(self) -> None:
         include_patterns, error = _compile_tag_patterns([r"^1\."])
@@ -176,6 +178,37 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.latest_tag, "1.2.0")
         self.assertTrue(result.is_outdated)
         self.assertIsNone(result.check_error)
+
+    async def test_dockerhub_tags_are_cached_across_checks(self) -> None:
+        info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
+
+        def make_responses() -> list[MockResponse]:
+            return [
+                MockResponse(200, _dh_rest_tags("1.2.0"), url="https://hub.docker.com/v2/repositories/owner/image/tags"),
+                MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+                MockResponse(
+                    200, {}, url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.0",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=MockAsyncClient(make_responses())):
+            first = await check_dockerhub(info, config=DockwatchConfig())
+        self.assertEqual(first.latest_tag, "1.2.0")
+
+        # Second call reuses a client with only a manifest-check response --
+        # no tags-list entry. If the tag fetch weren't cached, this would
+        # exhaust the mock and fail instead of resolving from cache.
+        second_responses = [
+            MockResponse(200, {"token": "dh-token"}, url="https://auth.docker.io/token"),
+            MockResponse(
+                200, {}, url="https://registry-1.docker.io/v2/owner/image/manifests/1.2.0",
+                headers={"Docker-Content-Digest": "sha256:dh-digest"},
+            ),
+        ]
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=MockAsyncClient(second_responses)):
+            second = await check_dockerhub(info, config=DockwatchConfig())
+        self.assertEqual(second.latest_tag, "1.2.0")
 
     async def test_container_label_tag_filters_override_config(self) -> None:
         info = ContainerInfo(

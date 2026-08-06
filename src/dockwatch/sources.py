@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .config import DockwatchConfig
-from .docker_client import DockerConnectionError, get_running_containers, parse_image_ref
+from .docker_client import DockerConnectionError, get_running_containers, parse_image_ref, _detect_portainer_source
 from .integrations import PortainerClient, PortainerEnvironment, PortainerError
 from .models import ContainerInfo
 
@@ -50,7 +50,15 @@ def _map_portainer_container(
         compose_image_digest=labels.get("com.docker.compose.image"),
         repo_digest=image_digests.get(str(payload.get("ImageID") or "")),
     )
-    info.source = "portainer"
+    # When labels can't determine the deployment source, trust Portainer
+    # discovery: a container only visible through Portainer's Docker proxy
+    # (no compose labels at all, e.g. a standalone `docker run` container)
+    # is assumed Portainer-managed.  But when labels definitively identify
+    # a local compose project, don't override -- the container was deployed
+    # outside Portainer and is merely visible through it.
+    detected = _detect_portainer_source(labels)
+    if detected is None or detected == "portainer":
+        info.source = "portainer"
     info.environment_id = str(environment.id)
     info.environment_name = environment.name
     return info

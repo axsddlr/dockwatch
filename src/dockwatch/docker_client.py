@@ -52,6 +52,34 @@ def _parse_label_list(labels: dict[str, str], key: str) -> list[str] | None:
     return unique
 
 
+_PORTAINER_COMPOSE_CONFIG_PREFIX = "/data/compose/"
+
+
+def _detect_portainer_source(labels: dict[str, str]) -> str | None:
+    """Check container labels for Portainer deployment markers.
+
+    Portainer stores compose files under /data/compose/{stack_id}/, so a
+    container whose ``com.docker.compose.project.config_files`` label starts
+    with that prefix was deployed via Portainer.
+
+    Returns ``"portainer"`` when labels indicate Portainer deployment,
+    ``"local"`` when labels indicate a local (non-Portainer) compose
+    project, or ``None`` when the source cannot be determined from labels
+    alone (caller should decide based on the discovery mechanism).
+    """
+    config_files = labels.get("com.docker.compose.project.config_files", "")
+    project_name = labels.get("com.docker.compose.project", "")
+    if config_files and config_files.startswith(_PORTAINER_COMPOSE_CONFIG_PREFIX):
+        return "portainer"
+    if project_name and project_name.startswith(_PORTAINER_COMPOSE_CONFIG_PREFIX):
+        return "portainer"
+    # If there are compose labels but they DON'T point to Portainer's
+    # storage prefix, the container was deployed from a local workdir.
+    if project_name and config_files:
+        return "local"
+    return None
+
+
 def compose_labels_to_project_config(
     labels: dict[str, str], *, project_name: str | None = None
 ) -> ComposeProjectConfig:
@@ -88,6 +116,11 @@ def _build_container_info(
     compose_image_digest: str | None,
     repo_digest: str | None,
 ) -> ContainerInfo:
+    detected_source = _detect_portainer_source(labels)
+    source = detected_source if detected_source is not None else "local"
+    # When labels definitively say "local", trust them over any discovery
+    # mechanism -- a locally-deployed container visible via Portainer's
+    # Docker proxy should still be tagged as local.
     return ContainerInfo(
         name=name,
         container_id=container_id,
@@ -106,6 +139,7 @@ def _build_container_info(
         notify_enabled=_parse_label_flag(labels, "dockwatch.notify"),
         compose_project=labels.get("com.docker.compose.project"),
         compose_service=labels.get("com.docker.compose.service"),
+        source=source,
         **_tag_override_kwargs(labels),
     )
 

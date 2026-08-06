@@ -323,6 +323,17 @@ def resolve_host_path(path: str) -> Path:
     return Path(prefix + path) if path.startswith("/") else Path(prefix) / path
 
 
+def strip_host_mount_prefix(path: str) -> str:
+    """Undo host_mount_prefix() if a caller pasted an already-resolved
+    path (e.g. copied from dockwatch's own error/debug output) into a
+    field that must hold the host-real path, like compose_projects.workdir.
+    """
+    prefix = host_mount_prefix()
+    if prefix and path.startswith(prefix + "/"):
+        return path[len(prefix):]
+    return path
+
+
 def resolve_compose_file(file: str, workdir: str) -> Path:
     """Translate a compose file entry (host-real, absolute or workdir-relative)
     into the path dockwatch's own process should use, applying

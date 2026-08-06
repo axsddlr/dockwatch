@@ -8,7 +8,7 @@ from typing import Any
 
 from packaging.version import Version
 
-from ..config import DockwatchConfig, ComposeProjectConfig
+from ..config import DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
 from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
@@ -193,7 +193,7 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
             if not project_key:
                 continue
             projects[project_key] = ComposeProjectConfig(
-                workdir=str(raw_cfg.get("workdir", "")),
+                workdir=strip_host_mount_prefix(str(raw_cfg.get("workdir", ""))),
                 files=_ensure_list(raw_cfg.get("files", []), []),
                 project_name=str(raw_cfg.get("project_name", "")),
             )

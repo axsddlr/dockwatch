@@ -6,7 +6,7 @@ All notable changes to dockwatch.
 
 ### Added
 - **Background scheduled check in web server** — the `serve` command now runs a background asyncio task that periodically checks all containers on the configured schedule, keeps the results cache warm, and broadcasts fresh data to connected dashboards via WebSocket. No need to click Refresh to see current state.
-- **Portainer stack creation API** — `PortainerClient.create_stack()` deploys compose stacks programmatically via the Portainer API (`POST /api/stacks/create/standalone/string`), complementing the existing find/read/update stack methods.
+- **Portainer stack creation API** — `PortainerClient.create_stack()` deploys compose stacks programmatically via the Portainer API (`POST /api/stacks/create/standalone/string`), complementing the existing find/read/update stack methods. Includes a runnable `deploy_to_portainer.py` example in the README that reads a compose file and adjacent `.env`, then deploys it as a Portainer-managed stack with automatic source tagging.
 
 ### Changed
 - **Source filter is now client-side only** — switching between Local / Portainer / All filters no longer triggers a full `check_all()` API call. The dashboard filters already-loaded results in memory, eliminating unnecessary Docker Hub registry calls.

@@ -191,6 +191,31 @@ class PortainerClient:
             raise PortainerError(f"portainer stack {stack_id} file response was missing StackFileContent")
         return content
 
+    async def create_stack(
+        self, *, name: str, stack_file_content: str, env: list[dict] | None = None, endpoint_id: int,
+    ) -> dict:
+        """Create a new Portainer stack from compose content via the
+        standalone string endpoint."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/stacks/create/standalone/string",
+                    headers=self._headers,
+                    params={"endpointId": endpoint_id},
+                    json={
+                        "name": name,
+                        "stackFileContent": stack_file_content,
+                        "env": env or [],
+                    },
+                )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise PortainerError(f"portainer stack creation failed for '{name}': {exc}") from exc
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise PortainerError(f"portainer returned invalid JSON: {exc}") from exc
+
     async def update_stack(
         self, stack_id: int, endpoint_id: int, *, stack_file_content: str, env: list[dict] | None = None,
     ) -> None:

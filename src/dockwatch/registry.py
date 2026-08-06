@@ -309,6 +309,7 @@ async def _fetch_manifest_digest(
     tag: str,
     headers: dict[str, str] | None = None,
     platform: tuple[str, str] | None = None,
+    local_digest: str | None = None,
 ) -> str | None:
     cache_key = f"{base_url}/{namespace}/{image_name}:{tag}:{platform!r}"
     now = asyncio.get_event_loop().time()
@@ -333,16 +334,39 @@ async def _fetch_manifest_digest(
         else:
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
+            index_digest = response.headers.get("Docker-Content-Digest")
             if content_type in _MANIFEST_LIST_MEDIA_TYPES:
-                try:
-                    manifest_list = response.json()
-                except ValueError:
-                    result = response.headers.get("Docker-Content-Digest")
+                # Docker Engine's RepoDigests always records the *index*
+                # digest for a multi-arch pull, never a per-platform one —
+                # so if local_digest already matches the index digest,
+                # nothing has changed and there's no false-positive to
+                # guard against. Only fall through to the platform-specific
+                # entry (to avoid flagging a sibling arch's rebuild) when
+                # local_digest looks like it was itself platform-specific,
+                # i.e. it does NOT match the index digest but DOES appear
+                # inside the list.
+                if local_digest and local_digest != index_digest:
+                    try:
+                        manifest_list = response.json()
+                    except ValueError:
+                        manifest_list = None
+                    if manifest_list is not None:
+                        platform_digest = _select_platform_digest(manifest_list, platform=platform)
+                        entry_digests = {
+                            entry.get("digest")
+                            for entry in manifest_list.get("manifests", []) or []
+                            if isinstance(entry, dict)
+                        }
+                        if local_digest in entry_digests:
+                            result = platform_digest if platform_digest is not None else index_digest
+                        else:
+                            result = index_digest
+                    else:
+                        result = index_digest
                 else:
-                    platform_digest = _select_platform_digest(manifest_list, platform=platform)
-                    result = platform_digest if platform_digest is not None else response.headers.get("Docker-Content-Digest")
+                    result = index_digest
             else:
-                result = response.headers.get("Docker-Content-Digest")
+                result = index_digest
     else:
         response = await _request_with_retry(
             lambda: client.head(url, headers=request_headers)
@@ -474,6 +498,7 @@ async def _check_repository_tags(
         tag=comparison_tag,
         headers=headers,
         platform=get_local_platform(),
+        local_digest=deployed_digest(info),
     )
     return _build_comparison_result(
         info,
@@ -657,6 +682,7 @@ async def check_dockerhub(
             tag=comparison_tag,
             headers=auth_headers,
             platform=get_local_platform(),
+            local_digest=deployed_digest(info),
         )
         return _build_comparison_result(
             info,

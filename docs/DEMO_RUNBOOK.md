@@ -50,7 +50,9 @@ lets you act on it — without you needing to SSH in or remember every stack."
 
 - Click **Update** on `jackett`.
 - Narrate: dockwatch rewrites the compose file's pinned tag, runs
-  `docker compose pull` + `up -d`, and the container restarts on the new image.
+  `docker compose pull jackett` + `up -d jackett`, and the container restarts
+  on the new image. Only `jackett` is touched — sibling services in the same
+  compose file stay running untouched.
 - Open **History** (clock icon) on the row afterward — show the audit log:
   who did it, when, old tag → new tag, success/failure.
 - Mention: rollback is one click from the same panel if an update goes bad.
@@ -66,8 +68,10 @@ lets you act on it — without you needing to SSH in or remember every stack."
   if asked to prove it, `docker inspect dwtest-stack-web --format '{{.State.StartedAt}}'`).
 - If it's showing OUTDATED: click **Update** — same tag-rewrite-and-redeploy
   story, but done through Portainer's stack API instead of a local compose file.
-  This is the harder problem most competitors don't solve — updating containers
-  you don't have filesystem/socket access to.
+  Only the target service's image line is rewritten; Portainer diffs the stack
+  file and recreates only the changed service. This is the harder problem most
+  competitors don't solve — updating containers you don't have filesystem/socket
+  access to.
 
 ## 5. Safety and admin controls (3 min)
 

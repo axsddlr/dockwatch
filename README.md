@@ -238,7 +238,7 @@ dockwatch discovers containers (local Docker, Portainer, or both), resolves each
 
 Clicking **Update** (or `dockwatch update <container>`) does a real update, not just a metadata change:
 
-- **Compose-managed containers** — rewrites the service's `image:` tag in the compose file (if pinned to an exact tag), then runs `docker compose pull <service>` and `docker compose up -d <service>`, scoped to that one service. Sibling services in the same file are untouched.
+- **Compose-managed containers** — rewrites the service's `image:` tag in the compose file (if pinned to an exact tag), then runs `docker compose pull <service>` and `docker compose up -d <service>`, scoped to that one service. Sibling services in the same file are untouched. The same applies to Portainer stacks — only the target service's image line is rewritten in the stack file; Portainer diffs the compose content and recreates only the changed service.
 - **Plain containers** — pulls the new image, then does a full recreate via the Docker SDK (stop → rename to backup → create replacement with the same host/network config → start → remove old). Automatically rolls back to the original container if the replacement fails to start.
 - **Floating tags** (`latest`, `edge`, `dev`, `nightly`) — skips tag rewriting, just pulls and recreates, and only proceeds if digest comparison confirmed something actually changed.
 

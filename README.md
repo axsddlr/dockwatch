@@ -285,7 +285,15 @@ Use Portainer as an additional container source — inspect and check containers
 - **Discovery & checking**: fully supported. Reads environments and containers via the Portainer API (`X-API-Key` header), then runs the normal comparison pipeline against them exactly as it would for local containers.
 - **Restart**: supported — proxied through Portainer's Docker API (`POST .../docker/containers/{id}/restart`).
 - **Delete**: supported — container deletion and (for local containers) image deletion, with confirmation and audit logging.
-- **Full update (pull + recreate)**: supported for Portainer-managed compose stacks. Dockwatch rewrites the stack's compose file image tag and redeploys via Portainer with `pullImage=true`. Non-compose Portainer containers are restart-only.
+- **Full update (pull + recreate)**: supported for Portainer-managed compose stacks. When you click Update on a Portainer-sourced container, here's what happens:
+
+  1. **Build update plan** — verifies the container is Portainer-managed, compose-backed, not pinned, and that the comparison result is valid (digest-backed for floating tags).
+  2. **Find the stack** — queries Portainer `GET /api/stacks` filtered by the stack name (the compose project name from container labels).
+  3. **Read the stack file** — fetches the current compose file via Portainer `GET /api/stacks/{id}/file`.
+  4. **Rewrite the image tag** — finds the service's `image:` line and replaces the old tag with the new one (e.g. `nginx:1.25` → `nginx:1.27`).
+  5. **Redeploy via Portainer** — `PUT /api/stacks/{id}` with the updated file, `pullImage: true`, and `prune: true`. Portainer pulls the new image and recreates only the changed service, leaving sibling services untouched.
+
+  Non-compose Portainer containers are restart-only — the full update path requires compose stack metadata.
 - **Source detection**: containers deployed via Portainer stacks get `/data/compose/{id}/` labels. Dockwatch detects these automatically and tags them as `source=portainer`, even when discovered via the local Docker socket. The dashboard's Local / Portainer / All filter groups containers by their actual deployment source, not just whichever API happened to query them.
 
 #### Programmatic Stack Deployment

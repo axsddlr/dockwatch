@@ -3,13 +3,8 @@ import { deriveStatus } from '../../types'
 
 export function StatCards() {
   const results = useDashboardStore((s) => s.results)
-  const selectedSource = useDashboardStore((s) => s.selectedSource)
 
-  const sourceFiltered = selectedSource === 'all'
-    ? results
-    : results.filter((r) => r.container_info.source === selectedSource)
-
-  const counts = sourceFiltered.reduce(
+  const counts = results.reduce(
     (acc, r) => {
       acc.total++
       const s = deriveStatus(r)

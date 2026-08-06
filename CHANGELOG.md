@@ -9,6 +9,8 @@ All notable changes to dockwatch.
 ### Changed
 
 ### Fixed
+- **Manifest digest & token caching** — Docker Hub manifest digests and `auth.docker.io` bearer tokens are now cached in-memory for 60 seconds, dramatically reducing API calls and eliminating 429 rate-limit errors on rapid successive checks (page refreshes, source/environment switches, auto-refresh).
+- **409 race condition on refresh** — concurrent container checks are now properly guarded: `Toolbar` sets `isChecking` optimistically before the WebSocket round-trip, and the redundant `initialCheck` mutation is removed from `DashboardPage`. The auto-refresh interval also skips firing when a check is already in flight.
 
 ## [0.6.0] - 2026-08-05
 
@@ -22,9 +24,11 @@ All notable changes to dockwatch.
 - **Authentication** — username/password login via PBKDF2-SHA256 cookies, login lockout, and login/register pages in the dashboard.
 - **Container checkboxes** — ignored-containers text input replaced with a discovered-container checklist in Settings.
 - **SQLite-backed pinned/ignored** — `container_flags` table replaces TOML fields for pin/ignore, with one-time migration from legacy config.
+- **Portainer compose stack updates** — Portainer-managed compose containers can now be fully updated (pull + recreate) via the dashboard. Previously only local Docker containers supported in-place updates; Portainer containers were limited to restart-only.
 
 ### Changed
 - **Settings page streamlined** — duplicate "Pinned containers" text field removed (dashboard row buttons are the canonical path); Portainer & Trivy sections collapsed under an "Advanced" disclosure.
+- **Docker Hub tag lists cached** — Docker Hub REST API tag lists are now cached in-memory for 5 minutes per image, avoiding rate-limit errors on repeated checks. Tag list pagination shared across containers for the same image within a single scan.
 
 ### Fixed
 - Permission-gated UI controls now hidden from users lacking the permission (Nav, row actions, direct page access).
@@ -44,3 +48,7 @@ All notable changes to dockwatch.
 - `dockwatch serve`'s startup warning now checks the actual users table instead of the stale legacy single-credential config, and warns explicitly that an empty users table means the next visitor to register becomes admin.
 - Upgraded `react-router-dom` to 7.18.2, fixing an open-redirect/XSS advisory (GHSA-jjmj-jmhj-qwj2) and an SSR-hydration constructor-injection advisory (GHSA-337j-9hxr-rhxg) present in the prior 6.x pin; upgraded `postcss` to fix a source-map path-traversal advisory (GHSA-r28c-9q8g-f849).
 - Pinned all Dockerfile base images (`python:3.12-slim`, `node:22-slim`, `docker:27-cli`, `aquasec/trivy`, `ghcr.io/astral-sh/uv`) to a specific version and digest — two of these were previously floating on `:latest`, so a malicious or broken upstream push could silently change the next build.
+- Portainer-discovered containers now resolve repo digests correctly for outdated/drift comparison.
+- Update button hidden on Portainer-sourced rows for containers whose update path is not yet supported.
+- New permissions are now synced into the existing admin role on startup, so upgrades automatically grant admins access to newly introduced features.
+- Auth hardening: session cookie scoped consistently, registration endpoint returns correct error codes, Portainer settings endpoint requires authentication.

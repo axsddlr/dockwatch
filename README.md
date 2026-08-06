@@ -284,7 +284,42 @@ Use Portainer as an additional container source — inspect and check containers
 
 - **Discovery & checking**: fully supported. Reads environments and containers via the Portainer API (`X-API-Key` header), then runs the normal comparison pipeline against them exactly as it would for local containers.
 - **Restart**: supported — proxied through Portainer's Docker API (`POST .../docker/containers/{id}/restart`).
-- **Full update (pull + recreate)**: **not yet supported** for Portainer-managed containers — only local Docker containers can be updated in place today. This is the one capability gap between the two sources; tracked as a follow-up.
+- **Delete**: supported — container deletion and (for local containers) image deletion, with confirmation and audit logging.
+- **Full update (pull + recreate)**: supported for Portainer-managed compose stacks. Dockwatch rewrites the stack's compose file image tag and redeploys via Portainer with `pullImage=true`. Non-compose Portainer containers are restart-only.
+- **Source detection**: containers deployed via Portainer stacks get `/data/compose/{id}/` labels. Dockwatch detects these automatically and tags them as `source=portainer`, even when discovered via the local Docker socket. The dashboard's Local / Portainer / All filter groups containers by their actual deployment source, not just whichever API happened to query them.
+
+#### Programmatic Stack Deployment
+
+The `PortainerClient` class in `dockwatch.integrations.portainer` supports creating stacks from compose content:
+
+```python
+from dockwatch.integrations import PortainerClient
+
+client = PortainerClient(base_url="http://portainer:9000", api_key="ptr_...")
+stack = await client.create_stack(
+    name="my-stack",
+    stack_file_content="version: '3.8'\nservices:\n  web:\n    image: nginx:alpine\n",
+    env=[{"name": "TAG", "value": "alpine"}],
+    endpoint_id=1,
+)
+# stack["Id"] -> Portainer stack ID
+# stack["ProjectPath"] -> /data/compose/{id}
+```
+
+Other programmatic Portainer operations:
+
+| Method | Description |
+|--------|-------------|
+| `list_environments()` | List all Portainer environments |
+| `list_containers(endpoint_id)` | List containers on an endpoint |
+| `list_images(endpoint_id)` | List images on an endpoint |
+| `restart_container(endpoint_id, container_id)` | Restart a container via Docker API proxy |
+| `delete_container(endpoint_id, container_id, force)` | Delete a container |
+| `delete_image(endpoint_id, image_id, force)` | Delete an image |
+| `find_stack_by_name(name)` | Look up a stack by its compose project name |
+| `get_stack_file(stack_id)` | Read a stack's compose file content |
+| `create_stack(name, stack_file_content, env, endpoint_id)` | Create a new stack from compose content |
+| `update_stack(stack_id, endpoint_id, stack_file_content, env)` | Redeploy a stack with updated compose content |
 
 ```bash
 dockwatch environments                              # list Portainer environments

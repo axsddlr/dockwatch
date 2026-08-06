@@ -30,6 +30,7 @@ export function Toolbar() {
   }, [portainerEnabled, source, setSource])
 
   const pendingRef = useRef(false)
+  const initialCheckRef = useRef(false)
 
   const checkMutation = useMutation({
     mutationFn: () => api.containers.check(source, environment ?? undefined),
@@ -48,16 +49,15 @@ export function Toolbar() {
   })
 
   const { mutate: runCheck } = checkMutation
+
+  // Initial check on mount only — switching between Local / Portainer / All
+  // filters client-side without re-pulling from Docker Hub.
   useEffect(() => {
-    if (pendingRef.current) return
+    if (initialCheckRef.current) return
+    initialCheckRef.current = true
     runCheck()
-    // Re-run whenever the selected source/environment changes -- otherwise
-    // the dashboard keeps showing results from whichever source was last
-    // checked (cache is a single shared list, not per-source), so e.g.
-    // switching to "Portainer" silently shows stale local-sourced rows
-    // filtered against a source they were never tagged with.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, environment])
+  }, [])
 
   const { data: envData } = useEnvironments(source === 'portainer' || source === 'all')
   const environments = envData?.environments ?? []

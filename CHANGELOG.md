@@ -5,12 +5,15 @@ All notable changes to dockwatch.
 ## [Unreleased]
 
 ### Added
+- **Background scheduled check in web server** — the `serve` command now runs a background asyncio task that periodically checks all containers on the configured schedule, keeps the results cache warm, and broadcasts fresh data to connected dashboards via WebSocket. No need to click Refresh to see current state.
 
 ### Changed
+- **Source filter is now client-side only** — switching between Local / Portainer / All filters no longer triggers a full `check_all()` API call. The dashboard filters already-loaded results in memory, eliminating unnecessary Docker Hub registry calls.
 
 ### Fixed
 - **Manifest digest & token caching** — Docker Hub manifest digests and `auth.docker.io` bearer tokens are now cached in-memory for 60 seconds, dramatically reducing API calls and eliminating 429 rate-limit errors on rapid successive checks (page refreshes, source/environment switches, auto-refresh).
 - **409 race condition on refresh** — concurrent container checks are now properly guarded: `Toolbar` sets `isChecking` optimistically before the WebSocket round-trip, and the redundant `initialCheck` mutation is removed from `DashboardPage`. The auto-refresh interval also skips firing when a check is already in flight.
+- **Portainer identity tracking** — containers are now tagged with the correct deployment source based on compose labels (`/data/compose/` prefix for Portainer, local workdir paths for direct Docker). Portainer-discovered containers with local compose labels are no longer mis-tagged as "portainer". Source identity survives across check cycles and is properly deduplicated when the same container is visible on both sources.
 
 ## [0.6.0] - 2026-08-05
 

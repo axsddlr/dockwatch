@@ -306,6 +306,53 @@ stack = await client.create_stack(
 # stack["ProjectPath"] -> /data/compose/{id}
 ```
 
+**Real-world example** — deploy a compose file from disk, reading env vars from an adjacent `.env`:
+
+```python
+# deploy_to_portainer.py
+import asyncio, json, os, sys
+from dockwatch.integrations import PortainerClient
+
+PORTAINER_URL = os.environ["PORTAINER_URL"]       # e.g. http://portainer:9000
+PORTAINER_KEY = os.environ["PORTAINER_API_KEY"]   # e.g. ptr_...
+ENDPOINT_ID   = int(os.environ.get("PORTAINER_ENDPOINT", "1"))
+STACK_NAME    = sys.argv[1]                       # project name
+COMPOSE_FILE  = sys.argv[2]                       # path to docker-compose.yml
+
+compose = open(COMPOSE_FILE).read()
+
+# Read .env from same directory, convert to Portainer's [{name, value}] format
+env_file = os.path.join(os.path.dirname(COMPOSE_FILE), ".env")
+env_vars = []
+if os.path.isfile(env_file):
+    for line in open(env_file):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            env_vars.append({"name": k, "value": v})
+
+async def main():
+    client = PortainerClient(base_url=PORTAINER_URL, api_key=PORTAINER_KEY)
+    stack = await client.create_stack(
+        name=STACK_NAME,
+        stack_file_content=compose,
+        env=env_vars,
+        endpoint_id=ENDPOINT_ID,
+    )
+    print(f"Stack created: ID={stack['Id']}, path={stack['ProjectPath']}")
+
+asyncio.run(main())
+```
+
+Usage:
+
+```bash
+export PORTAINER_URL=http://portainer:9000
+export PORTAINER_API_KEY=ptr_yourkeyhere
+python deploy_to_portainer.py plausible ./stacks/plausible/compose.yml
+# Stack created: ID=3, path=/data/compose/3
+```
+
 Other programmatic Portainer operations:
 
 | Method | Description |

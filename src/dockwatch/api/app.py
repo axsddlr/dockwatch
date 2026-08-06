@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
-from .deps import get_store
+from .deps import get_config, get_results_cache, get_results_lock, get_store
 from .routes import auth, containers, environments, settings, trivy, users
 from .security import require_auth, require_permission
 from .ws import router as ws_router
@@ -50,11 +50,60 @@ def _frontend_file_path(dist_path: Path, requested_path: str) -> Path:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
+    import asyncio, random
+    from ..registry import check_all, record_digest_drift_events
+    from ..sources import discover_containers
+    from .serializers import serialize_update_results
+    from .routes.containers import _merge_check_results
+    from .ws import manager
+
     store = get_store()
     config = load_config()
     migrate_pinned_ignored_to_db(CONFIG_PATH, store)
     migrate_auth_config_to_users(config, store)
+
+    async def _scheduled_check() -> None:
+        while True:
+            try:
+                interval = float(config.schedule_interval_seconds)
+                jitter = random.uniform(0, float(config.schedule_jitter_seconds))
+                await asyncio.sleep(interval + jitter)
+
+                cache = get_results_cache()
+                lock = get_results_lock()
+                if lock.locked():
+                    continue
+
+                async with lock:
+                    discovery = await discover_containers(config, source="all")
+                    if not discovery.containers:
+                        continue
+                    results = await check_all(
+                        discovery.containers,
+                        config,
+                        store=store,
+                        max_concurrency=config.max_concurrent_checks,
+                    )
+                    record_digest_drift_events(results, store)
+                    merged = _merge_check_results(cache, results, source="all")
+                    cache[:] = merged
+                    serialized = serialize_update_results(results)
+                    try:
+                        await manager.broadcast("check_complete", {"results": serialized})
+                    except Exception:
+                        pass
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    task = asyncio.create_task(_scheduled_check())
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 def create_app() -> FastAPI:

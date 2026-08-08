@@ -80,6 +80,7 @@ export interface TrivyScanResult {
 export interface DockwatchSettings {
   pinned: string[]
   ignored: string[]
+  auto_update: string[]
   notify_only: string[]
   include_tags: string[]
   exclude_tags: string[]

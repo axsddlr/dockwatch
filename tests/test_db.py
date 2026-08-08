@@ -128,6 +128,46 @@ class TestContainerFlags:
         store.add_flag("apple", "pinned")
         assert store.get_pinned() == ["zebra", "apple"]
 
+    def test_auto_update_flag_independent_of_pinned_and_ignored(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "auto_update")
+        assert store.get_auto_update() == ["nginx"]
+        assert store.get_pinned() == []
+        assert store.get_ignored() == []
+
+    def test_set_auto_update_bulk_replace(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "auto_update")
+        store.set_auto_update(["redis", "postgres"])
+        assert sorted(store.get_auto_update()) == ["postgres", "redis"]
+
+    def test_container_flags_check_constraint_migrates_from_pre_auto_update_schema(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "test.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            """
+            CREATE TABLE container_flags (
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored')),
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (name, kind)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO container_flags (name, kind, added_at) VALUES ('nginx', 'pinned', '2026-01-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        store = ManifestStore(path=path)
+        assert store.get_pinned() == ["nginx"]
+        added = store.add_flag("nginx", "auto_update")
+        assert added is True
+        assert store.get_auto_update() == ["nginx"]
+
 
 class TestUpdateHistory:
     def test_record_and_list_update_event(self, tmp_path):

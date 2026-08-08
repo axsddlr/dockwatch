@@ -114,6 +114,33 @@ class ManifestStore:
             return legacy_key, legacy
         return None
 
+    def _migrate_container_flags_check(self, connection: sqlite3.Connection) -> None:
+        """Widen container_flags.kind's CHECK constraint to allow 'auto_update'
+        on databases created before that kind existed. SQLite can't ALTER a
+        CHECK constraint in place, so rebuild the table when the old one is
+        detected.
+        """
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'container_flags'"
+        ).fetchone()
+        if row is None or row[0] is None or "'auto_update'" in row[0]:
+            return
+        connection.execute("ALTER TABLE container_flags RENAME TO container_flags_old")
+        connection.execute(
+            """
+            CREATE TABLE container_flags (
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update')),
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (name, kind)
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO container_flags (name, kind, added_at) SELECT name, kind, added_at FROM container_flags_old"
+        )
+        connection.execute("DROP TABLE container_flags_old")
+
     def _initialize(self) -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
@@ -146,12 +173,13 @@ class ManifestStore:
                 """
                 CREATE TABLE IF NOT EXISTS container_flags (
                     name TEXT NOT NULL,
-                    kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored')),
+                    kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update')),
                     added_at TEXT NOT NULL,
                     PRIMARY KEY (name, kind)
                 )
                 """
             )
+            self._migrate_container_flags_check(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS roles (
@@ -376,6 +404,9 @@ class ManifestStore:
     def get_ignored(self) -> list[str]:
         return self._get_flags("ignored")
 
+    def get_auto_update(self) -> list[str]:
+        return self._get_flags("auto_update")
+
     def _set_flags(self, kind: str, names: list[str]) -> None:
         deduped = list(dict.fromkeys(n.strip() for n in names if n.strip()))
         observed_at = datetime.now(timezone.utc).isoformat()
@@ -392,6 +423,9 @@ class ManifestStore:
 
     def set_ignored(self, names: list[str]) -> None:
         self._set_flags("ignored", names)
+
+    def set_auto_update(self, names: list[str]) -> None:
+        self._set_flags("auto_update", names)
 
     def add_flag(self, name: str, kind: str) -> bool:
         name = name.strip()

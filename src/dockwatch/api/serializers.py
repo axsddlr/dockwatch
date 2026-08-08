@@ -106,6 +106,7 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
     return {
         "pinned": store.get_pinned(),
         "ignored": store.get_ignored(),
+        "auto_update": store.get_auto_update(),
         "notify_only": config.notify_only,
         "include_tags": config.include_tags,
         "exclude_tags": config.exclude_tags,
@@ -149,6 +150,8 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         store.set_pinned(_ensure_list(data.get("pinned"), store.get_pinned()))
     if "ignored" in data:
         store.set_ignored(_ensure_list(data.get("ignored"), store.get_ignored()))
+    if "auto_update" in data:
+        store.set_auto_update(_ensure_list(data.get("auto_update"), store.get_auto_update()))
     existing.notify_only = _ensure_list(data.get("notify_only", existing.notify_only), existing.notify_only)
     existing.include_tags = _ensure_list(data.get("include_tags", existing.include_tags), existing.include_tags)
     existing.exclude_tags = _ensure_list(data.get("exclude_tags", existing.exclude_tags), existing.exclude_tags)

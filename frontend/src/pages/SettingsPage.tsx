@@ -49,6 +49,7 @@ function SettingsPageInner() {
 
   const [form, setForm] = useState({
     ignored: [] as string[],
+    auto_update: [] as string[],
     notify_only: '',
     include_tags: '',
     exclude_tags: '',
@@ -83,6 +84,7 @@ function SettingsPageInner() {
       hydratedRef.current = true
       setForm({
         ignored: data.ignored ?? [],
+        auto_update: data.auto_update ?? [],
         notify_only: formatCsv(data.notify_only ?? []),
         include_tags: formatCsv(data.include_tags ?? []),
         exclude_tags: formatCsv(data.exclude_tags ?? []),
@@ -149,10 +151,20 @@ function SettingsPageInner() {
     }))
   }
 
+  const handleToggleAutoUpdate = (name: string) => {
+    setForm((prev) => ({
+      ...prev,
+      auto_update: prev.auto_update.includes(name)
+        ? prev.auto_update.filter((n) => n !== name)
+        : [...prev.auto_update, name],
+    }))
+  }
+
   const handleSave = async () => {
     setSaveMessage(null)
     const payload: Partial<DockwatchSettings> = {
       ignored: form.ignored,
+      auto_update: form.auto_update,
       notify_only: parseCsv(form.notify_only),
       include_tags: parseCsv(form.include_tags),
       exclude_tags: parseCsv(form.exclude_tags),
@@ -204,9 +216,11 @@ function SettingsPageInner() {
       <div className="max-w-2xl space-y-8">
         <MonitoringScope
           ignored={form.ignored}
+          autoUpdate={form.auto_update}
           containerNames={containerNames}
           notifyOnly={form.notify_only}
           onToggleIgnored={handleToggleIgnored}
+          onToggleAutoUpdate={handleToggleAutoUpdate}
           onChange={handleChange}
         />
 

@@ -186,6 +186,7 @@ enabled = false
 url = ""
 api_key = ""
 environments = []
+deploy_timeout = 120.0
 
 [trivy]
 enabled = false
@@ -208,6 +209,7 @@ cache_ttl_minutes = 60
 - `max_concurrent_checks` — parallel registry check limit
 - `portainer.enabled` — turns on the Portainer source in CLI and dashboard
 - `portainer.environments` — optional environment ID allowlist; empty means all visible environments
+- `portainer.deploy_timeout` — seconds allowed for stack create/redeploy (image pull + recreate); default 120, raise it for large images
 - `trivy.enabled` — must be `true` for scanning to work; opt-in by design (network + CPU cost)
 - `trivy.cache_ttl_minutes` — how long a scan result is reused before re-scanning the same image ID
 
@@ -294,6 +296,8 @@ Use Portainer as an additional container source — inspect and check containers
   5. **Redeploy via Portainer** — `PUT /api/stacks/{id}` with the updated file, `pullImage: true`, and `prune: true`. Portainer pulls the new image and recreates only the changed service, leaving sibling services untouched.
 
   Non-compose Portainer containers are restart-only — the full update path requires compose stack metadata.
+
+  **Timeout caveat**: step 5 (`create_stack`/`update_stack`) blocks on Portainer's synchronous pull-and-recreate, which can take well over a few seconds for a real image pull. These two calls use a dedicated `portainer.deploy_timeout` (default 120s, configurable in Settings or `config.toml`) separate from the short timeout used for restart/delete/list calls. If a redeploy still times out on very large images, Portainer generally finishes the deploy server-side anyway — check the container/stack state in Portainer before retrying, since a retry against an in-flight or already-completed deploy can produce duplicate or conflicting stack state.
 - **Source detection**: containers deployed via Portainer stacks get `/data/compose/{id}/` labels. Dockwatch detects these automatically and tags them as `source=portainer`, even when discovered via the local Docker socket. The dashboard's Local / Portainer / All filter groups containers by their actual deployment source, not just whichever API happened to query them.
 
 #### Programmatic Stack Deployment
@@ -373,8 +377,10 @@ Other programmatic Portainer operations:
 | `delete_image(endpoint_id, image_id, force)` | Delete an image |
 | `find_stack_by_name(name)` | Look up a stack by its compose project name |
 | `get_stack_file(stack_id)` | Read a stack's compose file content |
-| `create_stack(name, stack_file_content, env, endpoint_id)` | Create a new stack from compose content |
-| `update_stack(stack_id, endpoint_id, stack_file_content, env)` | Redeploy a stack with updated compose content |
+| `create_stack(name, stack_file_content, env, endpoint_id)` | Create a new stack from compose content (uses `deploy_timeout`) |
+| `update_stack(stack_id, endpoint_id, stack_file_content, env)` | Redeploy a stack with updated compose content (uses `deploy_timeout`) |
+
+`PortainerClient(base_url, api_key, timeout=15.0, deploy_timeout=120.0)` — `timeout` covers restart/delete/list calls; `deploy_timeout` covers `create_stack`/`update_stack` only, since those block on Portainer's image pull.
 
 ```bash
 dockwatch environments                              # list Portainer environments

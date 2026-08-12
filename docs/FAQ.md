@@ -39,6 +39,8 @@ If your Portainer instance connects to the same Docker daemon as your local sock
 4. Rewrites the target service's `image:` line (e.g. `nginx:1.25` → `nginx:1.27`)
 5. Redeploys via Portainer (`PUT /api/stacks/{id}`) with `pullImage: true`
 
+Step 5 blocks until Portainer finishes pulling the new image and recreating the container, which can take a while for large images. This uses a longer, separate timeout (`portainer.deploy_timeout`, default 120s) than other Portainer calls — raise it in Settings if large-image redeploys still time out. If a redeploy does time out, Portainer usually completes it server-side anyway; check the stack's status in Portainer before retrying to avoid a duplicate/conflicting deploy.
+
 ### If I update one service in a multi-service stack, does it restart everything?
 No. Only the target service is affected:
 - **Local compose**: runs `docker compose pull <service>` and `docker compose up -d <service>` — scoped to that one service.

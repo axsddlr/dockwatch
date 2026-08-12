@@ -640,7 +640,11 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
     if not plan.compose_project or not plan.compose_service or not plan.environment_id:
         return UpdateExecutionResult(False, plan.mode, "Portainer stack metadata is incomplete")
 
-    client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
+    client = PortainerClient(
+        base_url=config.portainer.url,
+        api_key=config.portainer.api_key,
+        deploy_timeout=config.portainer.deploy_timeout,
+    )
     try:
         stack = await client.find_stack_by_name(plan.compose_project)
         if stack is None:

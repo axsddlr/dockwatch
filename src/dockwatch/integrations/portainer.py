@@ -22,10 +22,16 @@ class PortainerEnvironment:
 
 
 class PortainerClient:
-    def __init__(self, *, base_url: str, api_key: str, timeout: float = 15.0) -> None:
+    def __init__(
+        self, *, base_url: str, api_key: str, timeout: float = 15.0, deploy_timeout: float = 120.0,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key.strip()
         self.timeout = timeout
+        # Stack create/update block on Portainer's synchronous compose pull +
+        # recreate, which routinely exceeds the short per-call timeout for
+        # non-trivial images -- even though the deploy succeeds server-side.
+        self.deploy_timeout = deploy_timeout
         if not self.base_url:
             raise PortainerError("portainer URL is not configured")
         if not self.api_key:
@@ -197,7 +203,7 @@ class PortainerClient:
         """Create a new Portainer stack from compose content via the
         standalone string endpoint."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.deploy_timeout) as client:
                 response = await client.post(
                     f"{self.base_url}/api/stacks/create/standalone/string",
                     headers=self._headers,
@@ -222,7 +228,7 @@ class PortainerClient:
         """Redeploy a stack with new compose content, pulling any updated
         images. Portainer recreates whichever containers changed."""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.deploy_timeout) as client:
                 response = await client.put(
                     f"{self.base_url}/api/stacks/{stack_id}",
                     headers=self._headers,

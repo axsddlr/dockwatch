@@ -90,6 +90,7 @@ class ConfigTests(unittest.TestCase):
                     url="https://portainer.example.test:9443",
                     api_key="secret-token",
                     environments=["1", "2"],
+                    deploy_timeout=180.0,
                 ),
                 compose_projects={
                     "media": ComposeProjectConfig(
@@ -117,6 +118,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.portainer.url, "https://portainer.example.test:9443")
             self.assertEqual(loaded.portainer.api_key, "secret-token")
             self.assertEqual(loaded.portainer.environments, ["1", "2"])
+            self.assertEqual(loaded.portainer.deploy_timeout, 180.0)
             self.assertIn("media", loaded.compose_projects)
             self.assertEqual(loaded.compose_projects["media"].workdir, "/srv/media")
             self.assertEqual(loaded.compose_projects["media"].files, ["compose.yml", "compose.override.yml"])

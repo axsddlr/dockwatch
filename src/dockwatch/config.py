@@ -26,6 +26,7 @@ class PortainerConfig:
     url: str = ""
     api_key: str = ""
     environments: list[str] = field(default_factory=list)
+    deploy_timeout: float = 120.0
 
 
 @dataclass(slots=True)
@@ -170,6 +171,14 @@ def _parse_int(data: object, default: int, *, minimum: int) -> int:
     return max(minimum, value)
 
 
+def _parse_float(data: object, default: float, *, minimum: float) -> float:
+    try:
+        value = float(data)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, value)
+
+
 def _bool_toml(value: bool) -> str:
     return "true" if value else "false"
 
@@ -241,6 +250,7 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"url = {_toml_string(config.portainer.url)}\n"
         f"api_key = {_toml_string(config.portainer.api_key)}\n"
         f"environments = {_toml_array(config.portainer.environments)}\n"
+        f"deploy_timeout = {config.portainer.deploy_timeout}\n"
     )
     trivy_section = (
         "\n[trivy]\n"
@@ -413,6 +423,7 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             url=config.portainer.url.strip(),
             api_key=config.portainer.api_key.strip(),
             environments=_unique_ordered(config.portainer.environments),
+            deploy_timeout=max(15.0, float(config.portainer.deploy_timeout)),
         ),
         compose_projects={
             key: ComposeProjectConfig(
@@ -514,6 +525,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
             url=str(portainer.get("url", "")) if isinstance(portainer, dict) else "",
             api_key=str(portainer.get("api_key", "")) if isinstance(portainer, dict) else "",
             environments=_parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
+            deploy_timeout=_parse_float(portainer.get("deploy_timeout") if isinstance(portainer, dict) else None, 120.0, minimum=15.0),
         ),
         compose_projects=_parse_compose_projects(compose_projects),
         trivy=_parse_trivy_config(trivy_raw),

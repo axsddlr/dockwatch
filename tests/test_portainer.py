@@ -37,11 +37,15 @@ class _MockAsyncClient:
         self.calls.append((url, headers, params))
         return self.responses.pop(0)
 
-    async def post(self, url: str, headers: dict | None = None, params: dict | None = None):
+    async def post(self, url: str, headers: dict | None = None, params: dict | None = None, json: dict | None = None):
         self.calls.append((url, headers, params))
         return self.responses.pop(0)
 
     async def delete(self, url: str, headers: dict | None = None, params: dict | None = None):
+        self.calls.append((url, headers, params))
+        return self.responses.pop(0)
+
+    async def put(self, url: str, headers: dict | None = None, params: dict | None = None, json: dict | None = None):
         self.calls.append((url, headers, params))
         return self.responses.pop(0)
 
@@ -173,6 +177,120 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             client = PortainerClient(base_url="https://portainer.test", api_key="token")
             with self.assertRaises(PortainerError):
                 await client.delete_image(4, "nonexistent")
+
+    async def test_list_images_returns_dict_items_only(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, [{"Id": "sha256:a"}, "garbage", {"Id": "sha256:b"}])])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            images = await client.list_images(4)
+
+        self.assertEqual([i["Id"] for i in images], ["sha256:a", "sha256:b"])
+        url, headers, _ = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/images/json")
+
+    async def test_list_images_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(500, {"message": "boom"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.list_images(4)
+
+    async def test_connection_delegates_to_list_environments(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, [{"Id": 1, "Name": "local"}])])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            environments = await client.test_connection()
+
+        self.assertEqual(environments[0].name, "local")
+
+    async def test_connection_wraps_auth_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(401, {"message": "Unauthorized"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="wrong")
+            with self.assertRaises(PortainerError):
+                await client.test_connection()
+
+    async def test_find_stack_by_name_returns_first_match(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, [{"Id": 7, "Name": "mystack", "EndpointId": 1}])])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            stack = await client.find_stack_by_name("mystack")
+
+        self.assertEqual(stack["Id"], 7)
+        _, _, params = mock_client.calls[0]
+        self.assertEqual(params, {"filters": '{"StackName":"mystack"}'})
+
+    async def test_find_stack_by_name_returns_none_when_empty(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, [])])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            stack = await client.find_stack_by_name("missing")
+
+        self.assertIsNone(stack)
+
+    async def test_get_stack_file_returns_content(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, {"StackFileContent": "services:\n  web:\n"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            content = await client.get_stack_file(7)
+
+        self.assertIn("services:", content)
+
+    async def test_get_stack_file_missing_content_raises(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, {"NotStackFileContent": "x"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.get_stack_file(7)
+
+    async def test_create_stack_posts_expected_payload(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, {"Id": 9, "Name": "newstack"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            result = await client.create_stack(
+                name="newstack", stack_file_content="services: {}", endpoint_id=1,
+            )
+
+        self.assertEqual(result["Id"], 9)
+        url, headers, params = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/stacks/create/standalone/string")
+        self.assertEqual(params, {"endpointId": 1})
+
+    async def test_create_stack_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(409, {"message": "name already in use"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.create_stack(name="dup", stack_file_content="services: {}", endpoint_id=1)
+
+    async def test_update_stack_puts_with_pull_and_prune(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(200, {"Id": 7})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            await client.update_stack(7, 1, stack_file_content="services: {}", env=[])
+
+        url, headers, params = mock_client.calls[0]
+        self.assertEqual(url, "https://portainer.test/api/stacks/7")
+        self.assertEqual(params, {"endpointId": 1})
+
+    async def test_update_stack_wraps_http_error(self) -> None:
+        mock_client = _MockAsyncClient([_MockResponse(500, {"message": "boom"})])
+        with patch("dockwatch.integrations.portainer.httpx.AsyncClient", return_value=mock_client):
+            client = PortainerClient(base_url="https://portainer.test", api_key="token")
+            with self.assertRaises(PortainerError):
+                await client.update_stack(7, 1, stack_file_content="services: {}")
+
+    async def test_stack_deploy_calls_use_dedicated_longer_timeout(self) -> None:
+        """Live-verified: redeploying a stack with pullImage=True blocks on
+        Portainer's synchronous compose-up call, which can take well over the
+        general per-call timeout for a real image pull -- Portainer completes
+        the deploy successfully server-side even after the client times out.
+        create_stack/update_stack use a separate, longer deploy_timeout so
+        that gap doesn't produce false failures on real deploys."""
+        client = PortainerClient(base_url="https://portainer.test", api_key="token")
+        self.assertEqual(client.timeout, 15.0)
+        self.assertEqual(client.deploy_timeout, 120.0)
+        self.assertGreater(client.deploy_timeout, client.timeout)
 
 
 if __name__ == "__main__":

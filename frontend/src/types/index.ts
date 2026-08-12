@@ -98,6 +98,7 @@ export interface DockwatchSettings {
     url: string
     api_key: string
     environments: string[]
+    deploy_timeout: number
   }
   trivy?: {
     enabled: boolean

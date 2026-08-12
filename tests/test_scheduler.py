@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from dockwatch.config import DockwatchConfig
 from dockwatch.db import ManifestStore
@@ -86,6 +86,48 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(history), 1)
             self.assertEqual(history[0].username, "scheduler (auto-update)")
             self.assertEqual(history[0].status, "success")
+
+    async def test_auto_update_routes_portainer_compose_plan_to_portainer_executor(self) -> None:
+        """When build_update_plan returns mode='portainer-compose', the scheduler
+        must call execute_portainer_compose_update, not the local execute_update."""
+        config = DockwatchConfig(run_on_startup=False)
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(Path(tmp_dir) / "manifests.db")
+            store.set_auto_update(["web"])
+            result = _outdated_result("web")
+            result.container_info.source = "portainer"
+            result.container_info.compose_project = "stack"
+            result.container_info.compose_service = "web"
+            result.container_info.environment_id = "1"
+            runner = ScheduledCheckRunner(
+                config=config,
+                store=store,
+                notify=False,
+                container_loader=lambda: [],
+            )
+
+            portainer_plan = MagicMock(
+                mode="portainer-compose",
+                allowed=True,
+                container_name="web",
+                source="portainer",
+                current_tag="1.0.0",
+                remote_tag="1.1.0",
+                environment_id="1",
+            )
+
+            with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
+                "dockwatch.scheduler.build_update_plan", return_value=portainer_plan,
+            ), patch(
+                "dockwatch.scheduler.execute_portainer_compose_update",
+                new=AsyncMock(return_value=UpdateExecutionResult(success=True, mode="portainer-compose", message="ok")),
+            ) as mock_portainer_execute, patch(
+                "dockwatch.scheduler.execute_update",
+            ) as mock_local_execute:
+                await runner.run_once()
+
+            mock_portainer_execute.assert_called_once_with(portainer_plan, config)
+            mock_local_execute.assert_not_called()
 
     async def test_auto_update_skips_container_not_flagged(self) -> None:
         config = DockwatchConfig(run_on_startup=False)

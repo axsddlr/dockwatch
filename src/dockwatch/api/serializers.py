@@ -124,6 +124,7 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
             "url": config.portainer.url,
             "api_key": _mask_api_key(config.portainer.api_key),
             "environments": config.portainer.environments,
+            "deploy_timeout": config.portainer.deploy_timeout,
         },
         "trivy": {
             "enabled": config.trivy.enabled,
@@ -174,6 +175,9 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         existing.portainer.environments = _ensure_list(
             portainer_data.get("environments", existing.portainer.environments),
             existing.portainer.environments,
+        )
+        existing.portainer.deploy_timeout = max(
+            15.0, float(portainer_data.get("deploy_timeout", existing.portainer.deploy_timeout))
         )
 
     trivy_data = data.get("trivy", {})

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Protocol
@@ -11,6 +12,8 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ..config import DockwatchConfig, load_config
 from ..db import ManifestStore
+
+logger = logging.getLogger("dockwatch.auth")
 
 _COOKIE_NAME = "dockwatch_session"
 _MAX_AGE = 60 * 60 * 24 * 14  # 14 days
@@ -53,7 +56,8 @@ def _verify_raw_cookie(conn: _HasCookies, config: DockwatchConfig) -> dict:
         raise HTTPException(status_code=401, detail="Not authenticated.")
     try:
         data = _serializer(config.auth.secret_key).loads(token, max_age=_MAX_AGE)
-    except (BadSignature, SignatureExpired):
+    except (BadSignature, SignatureExpired) as exc:
+        logger.warning("rejected session cookie: %s", type(exc).__name__)
         raise HTTPException(status_code=401, detail="Session expired or invalid.")
     if "uid" not in data:
         raise HTTPException(status_code=401, detail="Session needs re-authentication.")
@@ -82,6 +86,10 @@ def require_auth(request: Request) -> AuthenticatedUser:
 def require_permission(permission: str):
     def _check(user: AuthenticatedUser = Depends(require_auth)) -> AuthenticatedUser:
         if permission not in user.permissions:
+            logger.warning(
+                "permission denied: user %r (role=%s) missing %r",
+                user.username, user.role_name, permission,
+            )
             raise HTTPException(status_code=403, detail=f"Missing permission: {permission}")
         return user
     return _check

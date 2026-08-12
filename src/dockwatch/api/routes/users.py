@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ...config import hash_password
 from ...db import ManifestStore, UserRecord, VALID_PERMISSIONS
 from ..deps import get_store
+from ..rate_limit import rate_limit
 from ..security import AuthenticatedUser, require_permission
 
 router = APIRouter()
@@ -37,7 +38,7 @@ def list_users() -> Any:
     ]
 
 
-@router.post("/users", dependencies=[Depends(require_permission("manage_users"))])
+@router.post("/users", dependencies=[Depends(require_permission("manage_users")), Depends(rate_limit(10, 60))])
 def create_user(body: dict[str, str]) -> Any:
     store = get_store()
     username = body.get("username", "").strip()

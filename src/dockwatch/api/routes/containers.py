@@ -18,11 +18,13 @@ from ...registry import check_all, record_digest_drift_events
 from ...sources import discover_containers
 from ...updater import build_rollback_plan, build_update_plan, execute_portainer_compose_update, execute_update
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
+from ..rate_limit import rate_limit
 from ..security import AuthenticatedUser, require_permission
 from ..serializers import serialize_update_results
 from ..ws import manager
 
 router = APIRouter()
+_mutate_limit = Depends(rate_limit(10, 60))
 
 
 def _merge_check_results(
@@ -146,7 +148,7 @@ async def check_containers(
         return serialized
 
 
-@router.post("/containers/{name}/update")
+@router.post("/containers/{name}/update", dependencies=[_mutate_limit])
 async def update_container(
     name: str,
     current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
@@ -181,7 +183,7 @@ async def update_container(
     return {"ok": execution.success, "plan": payload}
 
 
-@router.post("/containers/{name}/rollback")
+@router.post("/containers/{name}/rollback", dependencies=[_mutate_limit])
 async def rollback_container(
     name: str,
     current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
@@ -217,7 +219,7 @@ async def rollback_container(
     return {"ok": execution.success, "plan": payload}
 
 
-@router.post("/containers/{name}/restart")
+@router.post("/containers/{name}/restart", dependencies=[_mutate_limit])
 async def restart_container(
     name: str,
     current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
@@ -251,7 +253,7 @@ async def restart_container(
     return {"ok": True, "plan": payload}
 
 
-@router.delete("/containers/{name}")
+@router.delete("/containers/{name}", dependencies=[_mutate_limit])
 async def delete_container(
     name: str,
     force: bool = Query(default=False),
@@ -293,7 +295,7 @@ async def delete_container(
     return {"ok": True, "name": name}
 
 
-@router.delete("/containers/{name}/image")
+@router.delete("/containers/{name}/image", dependencies=[_mutate_limit])
 async def delete_container_image(
     name: str,
     force: bool = Query(default=False),
@@ -355,7 +357,7 @@ def validate_compose_config(name: str, body: dict[str, Any]) -> Any:
     return {"warnings": validate_compose_project_config(cfg)}
 
 
-@router.post("/containers/{name}/pin", dependencies=[Depends(require_permission("update_containers"))])
+@router.post("/containers/{name}/pin", dependencies=[Depends(require_permission("update_containers")), _mutate_limit])
 def pin_container(name: str) -> Any:
     store = get_store()
     store.add_flag(name, "pinned")

@@ -48,14 +48,31 @@ def _frontend_file_path(dist_path: Path, requested_path: str) -> Path:
     return candidate
 
 
+_BACKUP_DIR = Path.home() / ".config" / "dockwatch" / "backups"
+_BACKUP_INTERVAL_SECONDS = 60 * 60 * 24
+_BACKUP_KEEP = 7
+
+
+def _prune_old_backups(logger) -> None:
+    backups = sorted(_BACKUP_DIR.glob("manifests-*.db"))
+    for stale in backups[:-_BACKUP_KEEP]:
+        try:
+            stale.unlink()
+        except OSError:
+            logger.warning("failed to prune old backup %s", stale)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
-    import asyncio, random
+    import asyncio, logging, random
+    from datetime import datetime, timezone
     from ..registry import check_all, record_digest_drift_events
     from ..sources import discover_containers
     from .serializers import serialize_update_results
     from .routes.containers import _merge_check_results
     from .ws import manager
+
+    logger = logging.getLogger("dockwatch")
 
     store = get_store()
     config = load_config()
@@ -95,15 +112,31 @@ async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
             except asyncio.CancelledError:
                 break
             except Exception:
-                pass
+                logger.exception("scheduled check failed")
 
-    task = asyncio.create_task(_scheduled_check())
+    async def _scheduled_backup() -> None:
+        while True:
+            try:
+                await asyncio.sleep(_BACKUP_INTERVAL_SECONDS)
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                dest = _BACKUP_DIR / f"manifests-{stamp}.db"
+                await asyncio.to_thread(store.backup_to, dest)
+                _prune_old_backups(logger)
+                logger.info("database backup written to %s", dest)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("scheduled backup failed")
+
+    tasks = [asyncio.create_task(_scheduled_check()), asyncio.create_task(_scheduled_backup())]
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:

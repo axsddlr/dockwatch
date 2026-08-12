@@ -15,10 +15,12 @@ from ...integrations import PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ..deps import get_config, get_store
+from ..rate_limit import rate_limit
 from ..security import require_permission
 from ..serializers import deserialize_settings, serialize_settings
 
 router = APIRouter()
+_mutate_limit = Depends(rate_limit(10, 60))
 
 # PUT handlers run in FastAPI's threadpool; serialize the config
 # read-modify-write cycle so concurrent saves cannot drop each other's changes.
@@ -51,7 +53,7 @@ def get_settings() -> Any:
     return serialize_settings(config, store)
 
 
-@router.put("/settings", dependencies=[Depends(require_permission("manage_settings"))])
+@router.put("/settings", dependencies=[Depends(require_permission("manage_settings")), _mutate_limit])
 def put_settings(body: dict[str, Any]) -> Any:
     with _settings_write_lock:
         existing = load_config()
@@ -92,7 +94,7 @@ async def test_notification() -> Any:
     return {"ok": True, "message": "Test notification sent."}
 
 
-@router.post("/settings/test-portainer", dependencies=[Depends(require_permission("manage_settings"))])
+@router.post("/settings/test-portainer", dependencies=[Depends(require_permission("manage_settings")), _mutate_limit])
 def test_portainer(body: dict[str, str]) -> Any:
     url = body.get("url", "").strip()
     api_key = body.get("api_key", "").strip()

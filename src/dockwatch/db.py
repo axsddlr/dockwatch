@@ -90,6 +90,16 @@ class ManifestStore:
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
+    def backup_to(self, dest: Path) -> None:
+        """Copy the database to `dest` using SQLite's online backup API.
+
+        Safe to call while the DB is in use (WAL mode) — unlike a raw file
+        copy, this won't produce a torn/inconsistent snapshot.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as src, closing(sqlite3.connect(dest)) as dst:
+            src.backup(dst)
+
     def _fetch(self, connection: sqlite3.Connection, image_key: str) -> ManifestRecord | None:
         row = connection.execute(
             """

@@ -331,8 +331,14 @@ def serve(
     port: int = typer.Option(8080, "--port", help="Port to bind web dashboard."),
 ) -> None:
     """Launch web dashboard."""
+    import logging
     import uvicorn
     from .api.app import create_app
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
 
     config = bootstrap_auth_from_env(load_config(), CONFIG_PATH)
     store = ManifestStore()

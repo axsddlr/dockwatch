@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any
@@ -18,6 +19,7 @@ from ..security import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("dockwatch.auth")
 
 _failed_attempts: dict[str, list[float]] = {}
 _LOCKOUT_THRESHOLD = 5
@@ -52,11 +54,15 @@ def _is_locked_out(key: str, threshold: int = _LOCKOUT_THRESHOLD, window: int = 
     now = time.monotonic()
     attempts = [t for t in _failed_attempts.get(key, []) if now - t < window]
     _failed_attempts[key] = attempts
-    return len(attempts) >= threshold
+    locked = len(attempts) >= threshold
+    if locked:
+        logger.warning("lockout active for %s (%d attempts in window)", key, len(attempts))
+    return locked
 
 
 def _record_failure(key: str) -> None:
     _failed_attempts.setdefault(key, []).append(time.monotonic())
+    logger.warning("failed attempt from %s", key)
 
 
 @router.post("/auth/login")
@@ -77,6 +83,7 @@ def login(body: dict[str, str], request: Request, response: Response) -> Any:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     issue_session_cookie(response, user.username, user.id, config.auth.secret_key)
+    logger.info("login success for %r from %s", user.username, key)
     role = store.get_role(user.role_name)
     permissions = role.permissions if role else []
     return {"ok": True, "username": user.username, "role": user.role_name, "permissions": permissions}
@@ -141,6 +148,7 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     issue_session_cookie(response, username, user_id, config.auth.secret_key)
+    logger.info("new user registered: %r (role=%s) from %s", username, role_name, key)
     role = store.get_role(role_name)
     permissions = role.permissions if role else []
     return {"ok": True, "username": username, "role": role_name, "permissions": permissions}

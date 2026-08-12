@@ -635,6 +635,8 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
     """
     if not plan.allowed:
         return UpdateExecutionResult(False, plan.mode, plan.reason or "update is blocked")
+    if not config.portainer.enabled:
+        return UpdateExecutionResult(False, plan.mode, "Portainer integration is disabled")
     if not plan.compose_project or not plan.compose_service or not plan.environment_id:
         return UpdateExecutionResult(False, plan.mode, "Portainer stack metadata is incomplete")
 

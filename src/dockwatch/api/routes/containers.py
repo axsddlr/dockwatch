@@ -232,6 +232,8 @@ async def restart_container(
         raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
 
     config = get_config()
+    if not config.portainer.enabled:
+        raise HTTPException(status_code=422, detail="Portainer integration is disabled.")
     try:
         client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
         await client.restart_container(int(info.environment_id), info.container_id)
@@ -266,6 +268,8 @@ async def delete_container(
         if not info.environment_id:
             raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
         config = get_config()
+        if not config.portainer.enabled:
+            raise HTTPException(status_code=422, detail="Portainer integration is disabled.")
         try:
             client = PortainerClient(base_url=config.portainer.url, api_key=config.portainer.api_key)
             await client.delete_container(int(info.environment_id), info.container_id, force=force)

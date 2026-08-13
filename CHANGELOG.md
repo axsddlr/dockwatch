@@ -2,6 +2,13 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.7.3] - 2026-08-12
+
+### 2026-08-12
+
+#### Fixed
+- **Portainer stacks discovered via the local socket can now be updated** — a Portainer-managed container (compose labels under `/data/compose/`) is correctly tagged `source="portainer"`, but when discovered through the local Docker socket it carried no `environment_id`, so updates/restarts/deletes failed with "no associated Portainer environment". Updates now resolve the environment id authoritatively from the stack's `EndpointId`, and discovery/merge prefer the Portainer identity that carries an `environment_id`.
+
 ## [0.7.2] - 2026-08-12
 
 ### 2026-08-12

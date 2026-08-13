@@ -37,6 +37,8 @@ MANIFEST_ACCEPT_HEADERS = ", ".join([
 ])
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
 ARCH_TAG_RE = re.compile(r"(?i)[-_.](arm64|amd64|aarch64|armv?\d*|armhf|x86[-_]64|i386|s390x|ppc64le)$")
+DISTRO_TAG_RE = re.compile(r"^(?:v)?\d+(?:\.\d+)*(?:[-_.]([a-zA-Z].*))?$")
+DISTRO_FAMILY_LEAD_RE = re.compile(r"^[a-zA-Z]+")
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 _BEARER_KV_RE = re.compile(r'(\w+)="([^"]*)"')
 
@@ -85,6 +87,26 @@ def _filter_tags(
             tag for tag in filtered if not any(pattern.search(tag) for pattern in exclude_patterns)
         ]
     return filtered
+
+
+def _distro_family(tag: str) -> str | None:
+    """Classify a version tag by its distro variant family.
+
+    Docker images ship the same version under several OS bases, e.g.
+    ``postgres:16-alpine``, ``16-bookworm``, ``16-trixie``.  The trailing
+    suffix after the version core names that base, and a trailing numeric
+    sub-version (``alpine3.20``) is part of it.  Updates should stay within
+    one family: switching ``alpine`` -> ``trixie`` swaps the OS base and can
+    break a deployment.  A tag with no suffix is its own family (the image's
+    default base, usually Debian), so a bare ``16`` updates to ``16.x`` rather
+    than ``16-alpine``.
+    """
+    normalized = _normalize_tag(tag)
+    match = DISTRO_TAG_RE.match(normalized)
+    if not match or match.group(1) is None:
+        return None
+    lead = DISTRO_FAMILY_LEAD_RE.match(match.group(1))
+    return (lead.group(0) if lead else match.group(1)).lower()
 
 
 def _safe_version(tag: str) -> Version | None:
@@ -155,6 +177,15 @@ def _select_latest_from_tags(
             semver_candidates.append((parsed, tag))
 
     if semver_candidates:
+        if current_tag:
+            family = _distro_family(current_tag)
+            same_family = [
+                candidate
+                for candidate in semver_candidates
+                if _distro_family(candidate[1]) == family
+            ]
+            if same_family:
+                semver_candidates = same_family
         semver_candidates.sort(key=lambda item: item[0], reverse=True)
         return semver_candidates[0][1]
 

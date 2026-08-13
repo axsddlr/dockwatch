@@ -148,6 +148,41 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(latest, "abc123-amd64")
 
+    def test_select_latest_prefers_same_distro_variant(self) -> None:
+        latest = _select_latest_from_tags(
+            ["16-alpine", "16-bookworm", "18.4-alpine", "18.4-trixie"],
+            current_tag="16-alpine",
+        )
+        self.assertEqual(latest, "18.4-alpine")
+
+    def test_select_latest_prefers_trixie_variant(self) -> None:
+        latest = _select_latest_from_tags(
+            ["16-alpine", "18.4-alpine", "18.4-trixie"],
+            current_tag="18-trixie",
+        )
+        self.assertEqual(latest, "18.4-trixie")
+
+    def test_select_latest_falls_back_when_variant_absent(self) -> None:
+        latest = _select_latest_from_tags(
+            ["18.4-trixie", "18.4-bookworm"],
+            current_tag="16-alpine",
+        )
+        self.assertEqual(latest, "18.4-trixie")
+
+    def test_select_latest_treats_unsuffixed_as_own_family(self) -> None:
+        latest = _select_latest_from_tags(
+            ["16", "16-alpine", "17", "17-alpine"],
+            current_tag="16",
+        )
+        self.assertEqual(latest, "17")
+
+    def test_select_latest_matches_alpine_subversion_variant(self) -> None:
+        latest = _select_latest_from_tags(
+            ["16-alpine3.20", "18.4-alpine3.22", "18.4-trixie"],
+            current_tag="16-alpine3.20",
+        )
+        self.assertEqual(latest, "18.4-alpine3.22")
+
     async def test_check_dockerhub_returns_unknown_for_invalid_tag_regex(self) -> None:
         info = make_container(registry=RegistryType.DOCKERHUB, current_tag="1.0.0")
 

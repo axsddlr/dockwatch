@@ -306,14 +306,16 @@ def _create_networking_config(container: Container, client: docker.DockerClient)
     if not networks or network_mode in {"host", "none", "container"}:
         return None, extras
 
-    endpoint_configs: dict[str, docker.types.EndpointConfig] = {}
+    endpoint_configs: dict[str, dict] = {}
+    aliases_by_network: dict[str, list[str]] = {}
     for network_name, network_info in networks.items():
         aliases = [
             alias
             for alias in (network_info.get("Aliases") or [])
             if alias and alias != container.name
         ]
-        endpoint_configs[network_name] = docker.types.EndpointConfig(aliases=aliases or None)
+        endpoint_configs[network_name] = client.api.create_endpoint_config(aliases=aliases or None)
+        aliases_by_network[network_name] = aliases
 
     primary_name = network_mode if network_mode in endpoint_configs else next(iter(endpoint_configs))
     networking_config: dict | None = None
@@ -321,7 +323,7 @@ def _create_networking_config(container: Container, client: docker.DockerClient)
         if network_name == primary_name:
             networking_config = client.api.create_networking_config({network_name: endpoint})
             continue
-        extras.append((network_name, endpoint.aliases or []))
+        extras.append((network_name, aliases_by_network[network_name]))
     return networking_config, extras
 
 

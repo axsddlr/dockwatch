@@ -66,6 +66,7 @@ function SettingsPageInner() {
     portainer_url: '',
     portainer_api_key: '',
     portainer_environments: '',
+    portainer_deploy_timeout: 120,
     trivy_enabled: false,
     trivy_binary_path: 'trivy',
     trivy_severity: 'CRITICAL, HIGH',
@@ -101,6 +102,7 @@ function SettingsPageInner() {
         portainer_url: data.portainer?.url ?? '',
         portainer_api_key: data.portainer?.api_key ?? '',
         portainer_environments: formatCsv(data.portainer?.environments ?? []),
+        portainer_deploy_timeout: data.portainer?.deploy_timeout ?? 120,
         trivy_enabled: data.trivy?.enabled ?? false,
         trivy_binary_path: data.trivy?.binary_path ?? 'trivy',
         trivy_severity: formatCsv(data.trivy?.severity ?? ['CRITICAL', 'HIGH']),
@@ -121,6 +123,7 @@ function SettingsPageInner() {
     'max_concurrent_checks',
     'trivy_timeout_seconds',
     'trivy_cache_ttl_minutes',
+    'portainer_deploy_timeout',
   ])
 
   const handleChange = (field: string, value: string) => {
@@ -182,6 +185,7 @@ function SettingsPageInner() {
           url: form.portainer_url,
           api_key: form.portainer_api_key,
           environments: parseCsv(form.portainer_environments),
+          deploy_timeout: form.portainer_deploy_timeout,
         },
         trivy: {
           enabled: form.trivy_enabled,
@@ -269,6 +273,7 @@ function SettingsPageInner() {
                 url={form.portainer_url}
                 apiKey={form.portainer_api_key}
                 environments={form.portainer_environments}
+                deployTimeout={form.portainer_deploy_timeout}
                 onChange={handleChange}
                 onToggle={handleToggle}
               />

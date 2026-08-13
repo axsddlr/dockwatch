@@ -15,6 +15,7 @@ export function PortainerIntegration({
   url,
   apiKey,
   environments,
+  deployTimeout,
   onChange,
   onToggle,
 }: {
@@ -22,6 +23,7 @@ export function PortainerIntegration({
   url: string
   apiKey: string
   environments: string
+  deployTimeout: number
   onChange: (field: string, value: string) => void
   onToggle: (field: string) => void
 }) {
@@ -73,6 +75,15 @@ export function PortainerIntegration({
           onChange={(e) => onChange('portainer_environments', e.target.value)}
           placeholder="1, 2"
           className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder-[var(--color-text-dim)] focus:border-[var(--color-primary)] focus:outline-none"
+        />
+      </Field>
+      <Field label="Deploy timeout (seconds)">
+        <input
+          type="number"
+          value={deployTimeout}
+          onChange={(e) => onChange('portainer_deploy_timeout', e.target.value)}
+          min={15}
+          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-primary)] focus:outline-none"
         />
       </Field>
 

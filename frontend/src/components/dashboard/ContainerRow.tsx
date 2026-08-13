@@ -136,7 +136,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
         >
           {result.latest_version ?? result.remote_tag ?? '-'}
         </span>
-        {bump && BUMP_COLORS[bump] && (
+        {bump && bump !== 'UNKNOWN' && BUMP_COLORS[bump] && (
           <span className={`flex-shrink-0 inline-flex rounded border px-1.5 py-px text-[10px] font-semibold ${BUMP_COLORS[bump]}`}>
             {bump}
           </span>

@@ -47,6 +47,35 @@ class DisplayTests(unittest.TestCase):
         self.assertIn("v3.39.0 (sha256:remote-diges)", output)
         self.assertIn("OUTDATED", output)
 
+    def test_render_update_table_hides_unknown_bump_for_equal_versions(self) -> None:
+        result = UpdateResult(
+            container_info=ContainerInfo(
+                name="nginx",
+                container_id="1",
+                image_ref="nginx:1.31.3-trixie-perl",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.31.3-trixie-perl",
+            ),
+            latest_tag="1.31.3-trixie-perl",
+            latest_version="1.31.3-trixie-perl",
+            remote_tag="1.31.3-trixie-perl",
+            remote_digest="sha256:match",
+            is_outdated=False,
+            comparison_basis="digest",
+            comparison_reason="digest matches (1.31.3-trixie-perl)",
+            version_diff=compare_versions("1.31.3-trixie-perl", "1.31.3-trixie-perl"),
+        )
+        console = Console(record=True, width=300)
+
+        with patch("dockwatch.display.console", console):
+            render_update_table([result])
+
+        output = console.export_text()
+        self.assertIn("UP-TO-DATE", output)
+        self.assertNotIn("UNKNOWN", output)
+
 
 class DeployedDisplayResultTests(unittest.TestCase):
     @staticmethod

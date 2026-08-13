@@ -63,7 +63,10 @@ def _status_label(result: UpdateResult) -> tuple[str, str]:
 
 
 def _bump_label(result: UpdateResult) -> str:
-    if result.version_diff is None:
+    if result.version_diff is None or result.version_diff.bump_type == "UNKNOWN":
+        # "UNKNOWN" here means the deployed and latest versions are identical
+        # (or a formatting/build-metadata-only difference), i.e. no bump at
+        # all -- not that the comparison failed.
         return "[dim]-[/dim]"
     bump_type = result.version_diff.bump_type
     color = {
@@ -71,7 +74,6 @@ def _bump_label(result: UpdateResult) -> str:
         "MINOR": "yellow",
         "PATCH": "green",
         "PRE-RELEASE": "cyan",
-        "UNKNOWN": "dim",
     }.get(bump_type, "dim")
     return f"[{color}]{bump_type}[/{color}]"
 

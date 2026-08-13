@@ -92,6 +92,22 @@ class UpdatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.allowed)
         self.assertEqual(plan.mode, "compose")
 
+    def test_portainer_compose_container_without_environment_is_allowed(self) -> None:
+        plan = build_update_plan(
+            _result(
+                container_overrides={
+                    "source": "portainer",
+                    "compose_project": "stack",
+                    "compose_service": "svc",
+                }
+            ),
+            DockwatchConfig(),
+        )
+
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.mode, "portainer-compose")
+        self.assertIsNone(plan.environment_id)
+
 
 class RollbackPlannerTests(unittest.TestCase):
     def test_plain_container_rollback_is_blocked(self) -> None:

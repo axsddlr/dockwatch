@@ -86,8 +86,6 @@ def _build_portainer_update_plan(result: UpdateResult) -> UpdatePlan:
         return _blocked_plan(result, "container is not marked outdated")
     if not _is_compose_managed(result):
         return _blocked_plan(result, "only compose-managed Portainer stacks can be updated from dockwatch")
-    if not info.environment_id:
-        return _blocked_plan(result, f"'{info.name}' has no associated Portainer environment")
     if info.current_tag == DIGEST_PINNED_TAG or "@" in info.image_ref:
         return _blocked_plan(result, "digest-pinned images are blocked for safe updates")
     if info.current_tag.lower() in _FLOATING_TAGS and result.comparison_basis != "digest":
@@ -639,7 +637,7 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
         return UpdateExecutionResult(False, plan.mode, plan.reason or "update is blocked")
     if not config.portainer.enabled:
         return UpdateExecutionResult(False, plan.mode, "Portainer integration is disabled")
-    if not plan.compose_project or not plan.compose_service or not plan.environment_id:
+    if not plan.compose_project or not plan.compose_service:
         return UpdateExecutionResult(False, plan.mode, "Portainer stack metadata is incomplete")
 
     client = PortainerClient(
@@ -654,6 +652,19 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
                 False, plan.mode, f"no Portainer stack found named '{plan.compose_project}'",
             )
         stack_id = stack["Id"]
+        # The stack's EndpointId is the authoritative environment id.  A
+        # Portainer-managed container discovered through the local Docker
+        # socket carries source="portainer" (from its /data/compose/ labels)
+        # but no environment_id, so resolve it from the stack here.
+        environment_id = plan.environment_id
+        if not environment_id:
+            raw_endpoint = stack.get("EndpointId")
+            if raw_endpoint is None:
+                return UpdateExecutionResult(
+                    False, plan.mode,
+                    f"no Portainer environment found for stack '{plan.compose_project}'",
+                )
+            environment_id = str(raw_endpoint)
         text = await client.get_stack_file(stack_id)
 
         new_text = text
@@ -670,7 +681,7 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
             new_text = rewritten
 
         await client.update_stack(
-            stack_id, int(plan.environment_id), stack_file_content=new_text, env=stack.get("Env"),
+            stack_id, int(environment_id), stack_file_content=new_text, env=stack.get("Env"),
         )
     except PortainerError as exc:
         return UpdateExecutionResult(False, plan.mode, f"Portainer stack update failed: {exc}")

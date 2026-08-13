@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from dockwatch.config import DockwatchConfig, PortainerConfig
 from dockwatch.updater import UpdatePlan, execute_portainer_compose_update
@@ -38,6 +39,24 @@ class ExecutePortainerComposeUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.success)
         self.assertIn("disabled", result.message.lower())
+
+    async def test_resolves_environment_id_from_stack_endpoint(self) -> None:
+        config = DockwatchConfig()
+        config.portainer = PortainerConfig(url="http://portainer:9000", api_key="key", enabled=True)
+
+        client = MagicMock()
+        client.find_stack_by_name = AsyncMock(return_value={"Id": 3, "EndpointId": 7, "Env": []})
+        client.get_stack_file = AsyncMock(return_value="services:\n  svc:\n    image: repo/svc:1.0\n")
+        client.update_stack = AsyncMock(return_value=None)
+
+        with patch("dockwatch.updater.PortainerClient", return_value=client):
+            result = await execute_portainer_compose_update(_plan(environment_id=None), config)
+
+        self.assertTrue(result.success)
+        client.update_stack.assert_awaited_once()
+        args, kwargs = client.update_stack.await_args
+        self.assertEqual(args[0], 3)
+        self.assertEqual(args[1], 7)
 
 
 if __name__ == "__main__":

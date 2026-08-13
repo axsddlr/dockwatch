@@ -117,6 +117,27 @@ class DiscoverContainersTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.containers), 1)
         self.assertEqual(result.containers[0].source, "local")
 
+    async def test_source_all_prefers_portainer_entry_with_environment_id(self) -> None:
+        # A Portainer-managed container is tagged source="portainer" by the
+        # local Docker socket too (via /data/compose/ labels), but without an
+        # environment_id. The Portainer-discovered entry carries the id and
+        # must win.
+        local_portainer_tagged = _local_container("web")
+        local_portainer_tagged.source = "portainer"
+
+        with patch(
+            "dockwatch.sources.get_running_containers",
+            return_value=[local_portainer_tagged],
+        ), patch(
+            "dockwatch.sources.discover_portainer",
+            return_value=_mock_portainer_result([_portainer_container("web")]),
+        ):
+            result = await discover_containers(DockwatchConfig(), source="all")
+
+        self.assertEqual(len(result.containers), 1)
+        self.assertEqual(result.containers[0].source, "portainer")
+        self.assertEqual(result.containers[0].environment_id, "1")
+
 
 if __name__ == "__main__":
     unittest.main()

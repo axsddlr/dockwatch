@@ -51,7 +51,10 @@ def _merge_check_results(
         existing = deduped.get(name)
         if existing is None:
             deduped[name] = r
-        elif r.container_info.source == "portainer" and existing.container_info.source != "portainer":
+        elif r.container_info.source == "portainer" and (
+            existing.container_info.source != "portainer"
+            or (not existing.container_info.environment_id and r.container_info.environment_id)
+        ):
             deduped[name] = r
     deduped_list = list(deduped.values())
 
@@ -67,7 +70,10 @@ def _merge_check_results(
     if source != "portainer":
         for i, result in enumerate(deduped_list):
             prior = prior_portainer.get(result.container_info.name)
-            if prior is not None and result.container_info.source != "portainer":
+            if prior is not None and (
+                result.container_info.source != "portainer"
+                or not result.container_info.environment_id
+            ):
                 deduped_list[i] = replace(
                     result,
                     container_info=replace(

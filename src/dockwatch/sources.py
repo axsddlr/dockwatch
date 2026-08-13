@@ -138,7 +138,10 @@ async def discover_containers(
         existing = seen.get(c.name)
         if existing is None:
             seen[c.name] = c
-        elif c.source == "portainer" and existing.source != "portainer":
+        elif c.source == "portainer" and (
+            existing.source != "portainer"
+            or (not existing.environment_id and c.environment_id)
+        ):
             seen[c.name] = c
     result.containers = list(seen.values())
 

@@ -100,6 +100,28 @@ class MergeCheckResultsTests(unittest.TestCase):
         self.assertEqual(merged[1].container_info.source, "portainer")
         self.assertEqual(merged[1].container_info.name, "portainer-only")
 
+    def test_all_source_prefers_portainer_entry_with_environment_id(self) -> None:
+        cache: list[UpdateResult] = []
+        fresh_all = [
+            _result("web", source="portainer", environment_id=None),
+            _result("web", source="portainer", environment_id="1"),
+        ]
+
+        merged = _merge_check_results(cache, fresh_all, source="all")
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].container_info.environment_id, "1")
+
+    def test_local_check_restores_environment_id_for_portainer_tagged_container(self) -> None:
+        cache = [_result("web", source="portainer", environment_id="1")]
+        fresh_local = [_result("web", source="portainer", environment_id=None)]
+
+        merged = _merge_check_results(cache, fresh_local, source="local")
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].container_info.source, "portainer")
+        self.assertEqual(merged[0].container_info.environment_id, "1")
+
     def test_portainer_check_preserves_stale_local_entries(self) -> None:
         cache = [_result("local-only", source="local")]
         fresh_portainer = [_result("web", source="portainer", environment_id="1")]

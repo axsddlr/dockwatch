@@ -2,6 +2,14 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.7.2] - 2026-08-12
+
+### 2026-08-12
+
+#### Fixed
+- **Distro-variant-aware update selection** — latest-tag selection now respects the OS-base variant of the deployed image instead of picking the highest version across all bases. A container pinned to `postgres:16-alpine` was being offered `18.4-trixie` (a "major update" that would swap the musl base for Debian and break the deployment). Selection now prefers the highest tag sharing the same variant (`16-alpine` → latest `*-alpine`, `18-trixie` → latest `*-trixie`), treating an unsuffixed tag as its own family, and falls back to cross-variant selection only when no same-variant tag exists.
+- **No more misleading "UNKNOWN" bump on up-to-date containers** — the dashboard rendered a literal `UNKNOWN` bump badge for containers whose deployed and latest versions are identical (a digest match with the same tag, e.g. `1.31.3-trixie-perl`). That value comes from `compare_versions`, which uses `UNKNOWN` to mean "no version bump" (equal versions), not "comparison failed". The bump badge is now suppressed for `UNKNOWN`, and the CLI shows `-` instead.
+
 ## [0.7.0] - 2026-08-12
 
 ### 2026-08-12

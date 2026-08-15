@@ -37,7 +37,6 @@ export function HistoryPanel({ name, onClose }: { name: string; onClose: () => v
   })
 
   const lastSuccessfulUpdate = data?.find((e) => e.action === 'update' && e.status === 'success')
-  const canOfferRollback = canRollback && !!lastSuccessfulUpdate
 
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-panel-alt)]">
@@ -47,15 +46,15 @@ export function HistoryPanel({ name, onClose }: { name: string; onClose: () => v
           Update history: {name}
         </div>
         <div className="flex items-center gap-3">
-          {canOfferRollback && (
+          {canRollback && lastSuccessfulUpdate && (
             <button
               onClick={() => rollbackMutation.mutate()}
               disabled={rollbackMutation.isPending}
               className="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors disabled:opacity-50"
-              title={`Roll back to ${lastSuccessfulUpdate?.old_tag}`}
+              title={`Roll back to ${lastSuccessfulUpdate.old_tag}`}
             >
               <RotateCcw size={11} className={rollbackMutation.isPending ? 'animate-spin' : ''} />
-              Rollback to {lastSuccessfulUpdate?.old_tag}
+              Rollback to {lastSuccessfulUpdate.old_tag}
             </button>
           )}
           <button onClick={onClose} className="rounded p-0.5 text-[var(--color-text-dim)] hover:text-[var(--color-text-primary)]">
@@ -69,7 +68,7 @@ export function HistoryPanel({ name, onClose }: { name: string; onClose: () => v
       <div className="max-h-64 overflow-y-auto border-t border-[var(--color-border)]">
         {isLoading && <p className="px-4 py-4 text-xs text-[var(--color-text-dim)]">Loading history...</p>}
         {error && <p className="px-4 py-4 text-xs text-red-400">{(error as Error).message}</p>}
-        {data && data.length === 0 && (
+        {data?.length === 0 && (
           <p className="px-4 py-4 text-xs text-[var(--color-text-dim)]">No recorded update activity yet.</p>
         )}
         {data?.map((entry) => (

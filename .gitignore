@@ -40,3 +40,7 @@ Thumbs.db
 
 # Local design/planning scratch
 .claude/
+
+# Generated tool output
+graphify-out/
+.playwright-mcp/

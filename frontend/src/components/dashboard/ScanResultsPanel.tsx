@@ -87,6 +87,9 @@ export function ScanResultsPanel({
     { label: 'LOW', count: result.low_count, color: 'bg-blue-500' },
   ]
   const maxCount = Math.max(...bars.map((b) => b.count), 1)
+  const filtered = activeSeverity
+    ? result.findings.filter((f) => f.severity === activeSeverity)
+    : result.findings
 
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-panel-alt)]">
@@ -137,19 +140,12 @@ export function ScanResultsPanel({
             <ShieldCheck size={14} className="inline mr-1" />
             No vulnerabilities found.
           </p>
+        ) : filtered.length === 0 ? (
+          <p className="px-4 py-4 text-xs text-[var(--color-text-dim)]">
+            No {activeSeverity?.toLowerCase()} severity findings.
+          </p>
         ) : (
-          (() => {
-            const filtered = activeSeverity
-              ? result.findings.filter((f) => f.severity === activeSeverity)
-              : result.findings
-            return filtered.length === 0 ? (
-              <p className="px-4 py-4 text-xs text-[var(--color-text-dim)]">
-                No {activeSeverity?.toLowerCase()} severity findings.
-              </p>
-            ) : (
-              filtered.map((f, i) => <FindingRow key={`${f.vulnerability_id}-${i}`} f={f} />)
-            )
-          })()
+          filtered.map((f, i) => <FindingRow key={`${f.vulnerability_id}-${i}`} f={f} />)
         )}
       </div>
     </div>

@@ -11,6 +11,10 @@ interface ComposeProjectConfigDialogProps {
   onClose: () => void
 }
 
+function parseComposeFiles(filesText: string): string[] {
+  return filesText.split('\n').map((f) => f.trim()).filter(Boolean)
+}
+
 export function ComposeProjectConfigDialog({
   containerName,
   composeProject,
@@ -46,7 +50,7 @@ export function ComposeProjectConfigDialog({
     if (!open) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      const files = filesText.split('\n').map((f) => f.trim()).filter(Boolean)
+      const files = parseComposeFiles(filesText)
       validateMutation.mutate(
         { name: containerName, cfg: { workdir, files, project_name: projectName } },
         { onSuccess: (data) => setWarnings(data.warnings) },
@@ -61,7 +65,7 @@ export function ComposeProjectConfigDialog({
   if (!open) return null
 
   const handleSave = () => {
-    const files = filesText.split('\n').map((f) => f.trim()).filter(Boolean)
+    const files = parseComposeFiles(filesText)
     const composeProjects = { ...(settings?.compose_projects ?? {}) }
     composeProjects[composeProject] = { workdir, files, project_name: projectName }
     saveMutation.mutate(

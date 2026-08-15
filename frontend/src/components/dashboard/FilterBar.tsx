@@ -1,23 +1,29 @@
 import { useDashboardStore } from '../../store/dashboardStore'
 import { deriveStatus, STATUS_CONFIG, type ContainerStatus } from '../../types'
 
+const STATUSES: ContainerStatus[] = ['UP_TO_DATE', 'OUTDATED', 'PINNED', 'LOCAL', 'UNKNOWN', 'ERROR']
+
 export function FilterBar() {
   const results = useDashboardStore((s) => s.results)
   const selected = useDashboardStore((s) => s.selectedStatuses)
   const selectedSource = useDashboardStore((s) => s.selectedSource)
   const toggle = useDashboardStore((s) => s.toggleStatusFilter)
 
-  const statuses: ContainerStatus[] = ['UP_TO_DATE', 'OUTDATED', 'PINNED', 'LOCAL', 'UNKNOWN', 'ERROR']
-
   const sourceFiltered = selectedSource === 'all'
     ? results
     : results.filter((r) => r.container_info.source === selectedSource)
 
+  const counts = sourceFiltered.reduce((acc, r) => {
+    const status = deriveStatus(r)
+    acc[status] = (acc[status] ?? 0) + 1
+    return acc
+  }, {} as Record<ContainerStatus, number>)
+
   return (
     <div className="flex flex-wrap gap-2">
-      {statuses.map((status) => {
+      {STATUSES.map((status) => {
         const cfg = STATUS_CONFIG[status]
-        const count = sourceFiltered.filter((r) => deriveStatus(r) === status).length
+        const count = counts[status] ?? 0
         const isActive = selected.size === 0 || selected.has(status)
 
         return (

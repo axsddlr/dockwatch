@@ -8,13 +8,6 @@ export function ContainerTable() {
   const selected = useDashboardStore((s) => s.selectedStatuses)
   const selectedSource = useDashboardStore((s) => s.selectedSource)
 
-  // A malformed record (missing container_info) from a backend edge case
-  // shouldn't blank the whole table before rendering even starts.
-  const filtered = results
-    .filter((r) => r && r.container_info)
-    .filter((r) => selectedSource === 'all' || r.container_info.source === selectedSource)
-    .filter((r) => selected.size === 0 || selected.has(deriveStatus(r)))
-
   if (results.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-[var(--color-text-muted)]">
@@ -25,6 +18,13 @@ export function ContainerTable() {
       </div>
     )
   }
+
+  // A malformed record (missing container_info) from a backend edge case
+  // shouldn't blank the whole table before rendering even starts.
+  const filtered = results
+    .filter((r) => r && r.container_info)
+    .filter((r) => selectedSource === 'all' || r.container_info.source === selectedSource)
+    .filter((r) => selected.size === 0 || selected.has(deriveStatus(r)))
 
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-panel)]">

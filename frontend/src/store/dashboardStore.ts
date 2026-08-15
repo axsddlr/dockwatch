@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { UpdateResult, ContainerStatus, DockwatchSettings, TrivyScanResult } from '../types'
+import type { UpdateResult, ContainerStatus, TrivyScanResult } from '../types'
 
 interface DashboardState {
   results: UpdateResult[]
@@ -24,7 +24,7 @@ interface DashboardState {
   setLastChecked: (time: string) => void
   setAutoRefresh: (on: boolean) => void
   setAutoRefreshInterval: (interval: number) => void
-  setScanResult: (name: string, result: TrivyScanResult | null) => void
+  setScanResult: (name: string, result: TrivyScanResult) => void
   setScanning: (name: string, scanning: boolean) => void
   setExpandedScan: (name: string | null) => void
 }
@@ -62,12 +62,12 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     }),
   setSelectedSource: (source) => {
     localStorage.setItem('dockwatch-source', JSON.stringify(source))
-    return set({ selectedSource: source })
+    set({ selectedSource: source })
   },
   setSelectedEnvironment: (env) => {
     if (env === null) localStorage.removeItem('dockwatch-env')
     else localStorage.setItem('dockwatch-env', JSON.stringify(env))
-    return set({ selectedEnvironment: env })
+    set({ selectedEnvironment: env })
   },
   setWsConnected: (connected) => set({ wsConnected: connected }),
   setIsChecking: (checking) => set({ isChecking: checking }),
@@ -75,16 +75,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setAutoRefresh: (on) => set({ autoRefresh: on }),
   setAutoRefreshInterval: (interval) => set({ autoRefreshInterval: interval }),
   setScanResult: (name, result) =>
-    set((state) => ({
-      scannedContainers: result
-        ? { ...state.scannedContainers, [name]: result }
-        : { ...state.scannedContainers, [name]: undefined } as Record<string, TrivyScanResult>,
-    })),
+    set((state) => ({ scannedContainers: { ...state.scannedContainers, [name]: result } })),
   setScanning: (name, scanning) =>
     set((state) => ({
       scanningContainers: { ...state.scanningContainers, [name]: scanning },
     })),
   setExpandedScan: (name) => set({ expandedScan: name }),
 }))
-
-export type { UpdateResult, ContainerStatus, DockwatchSettings }

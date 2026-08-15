@@ -29,33 +29,24 @@ export function Toolbar() {
     }
   }, [portainerEnabled, source, setSource])
 
-  const pendingRef = useRef(false)
   const initialCheckRef = useRef(false)
 
   const checkMutation = useMutation({
     mutationFn: () => api.containers.check(source, environment ?? undefined),
-    onMutate: () => {
-      pendingRef.current = true
-      setIsChecking(true)
-    },
+    onMutate: () => setIsChecking(true),
     onSuccess: (data) => {
       setResults(data)
       queryClient.invalidateQueries({ queryKey: ['containers'] })
     },
-    onSettled: () => {
-      pendingRef.current = false
-      setIsChecking(false)
-    },
+    onSettled: () => setIsChecking(false),
   })
-
-  const { mutate: runCheck } = checkMutation
 
   // Initial check on mount only — switching between Local / Portainer / All
   // filters client-side without re-pulling from Docker Hub.
   useEffect(() => {
     if (initialCheckRef.current) return
     initialCheckRef.current = true
-    runCheck()
+    checkMutation.mutate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -106,13 +97,11 @@ export function Toolbar() {
       </div>
 
       <div className="flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)]">
-        {sources.map((s, i) => (
+        {sources.map((s) => (
           <button
             key={s}
             onClick={() => setSource(s)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-              i === 0 ? 'rounded-l-lg' : ''
-            } ${i === sources.length - 1 ? 'rounded-r-lg' : ''} ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg ${
               source === s
                 ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                 : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]'

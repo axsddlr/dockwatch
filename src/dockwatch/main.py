@@ -476,19 +476,37 @@ def list_config() -> None:
 def set_password(
     username: str = typer.Option(..., "--username", prompt=True),
     password: str = typer.Option(..., "--password", prompt=True, hide_input=True, confirmation_prompt=True),
+    create: bool = typer.Option(
+        False, "--create", help="Create the user as admin if they don't already exist."
+    ),
 ) -> None:
     """Set or reset a dashboard user's login password.
 
-    Creates the user (as admin) if they don't exist yet, otherwise resets
-    their existing password. Requires container/host exec access, so a
-    successful reset is logged as a security event for auditing.
+    Fails if the user doesn't exist, unless --create is passed, in which
+    case the user is created with the admin role. Requires container/host
+    exec access, so both branches are logged as security events for
+    auditing.
     """
     import logging
 
     store = ManifestStore()
     existing = store.get_user_by_username(username)
     if existing is None:
+        if not create:
+            typer.echo(
+                f"User '{username}' does not exist. Pass --create to create "
+                "them with the admin role.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
         store.create_user(username, hash_password(password), "admin")
+        logging.warning(
+            "[dockwatch] SECURITY: user '%s' was created with the admin role "
+            "via `dockwatch config set-password --create` (container/host "
+            "exec access). If this wasn't you, someone with access to this "
+            "host can take over the dashboard.",
+            username,
+        )
         typer.echo(f"User '{username}' created with admin role.")
     else:
         store.update_user_password(existing.id, hash_password(password))

@@ -383,3 +383,17 @@ def delete_image(image_id: str, *, force: bool = False) -> None:
         client.images.remove(image_id, force=force)
     finally:
         client.close()
+
+
+def get_logs(name: str, *, tail: int = 200) -> str:
+    """Return the last `tail` lines of a local container's logs.
+
+    Raises DockerException if the container is not found.
+    """
+    client = docker.from_env()
+    try:
+        container = client.containers.get(name)
+        raw = container.logs(tail=tail, timestamps=True)
+        return raw.decode("utf-8", errors="replace")
+    finally:
+        client.close()

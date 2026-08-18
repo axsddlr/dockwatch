@@ -383,6 +383,34 @@ def unpin_container(name: str) -> Any:
     return {"ok": True, "pinned": store.get_pinned()}
 
 
+@router.post("/containers/{name}/auto-update", dependencies=[Depends(require_permission("update_containers")), _mutate_limit])
+def enable_auto_update(name: str) -> Any:
+    store = get_store()
+    store.add_flag(name, "auto_update")
+    return {"ok": True, "auto_update": store.get_auto_update()}
+
+
+@router.delete("/containers/{name}/auto-update", dependencies=[Depends(require_permission("update_containers"))])
+def disable_auto_update(name: str) -> Any:
+    store = get_store()
+    removed = store.remove_flag(name, "auto_update")
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"'{name}' does not have auto-update enabled.")
+    return {"ok": True, "auto_update": store.get_auto_update()}
+
+
+@router.get("/containers/{name}/logs", dependencies=[Depends(require_permission("view_containers"))])
+async def get_container_logs(name: str, tail: int = Query(default=200, ge=1, le=2000)) -> Any:
+    match = _find_result(name)
+    if match.container_info.source != "local":
+        raise HTTPException(status_code=422, detail="Logs are only available for locally managed containers.")
+    try:
+        logs = await asyncio.to_thread(docker_client.get_logs, name, tail=tail)
+    except DockerException as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"logs": logs}
+
+
 @router.get("/containers/{name}/history", dependencies=[Depends(require_permission("manage_settings"))])
 def get_container_history(name: str) -> Any:
     store = get_store()

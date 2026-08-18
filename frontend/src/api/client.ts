@@ -42,6 +42,10 @@ export const api = {
       request<{ ok: boolean; pinned: string[] }>(`/api/containers/${encodeURIComponent(name)}/pin`, { method: 'POST' }),
     unpin: (name: string) =>
       request<{ ok: boolean; pinned: string[] }>(`/api/containers/${encodeURIComponent(name)}/pin`, { method: 'DELETE' }),
+    enableAutoUpdate: (name: string) =>
+      request<{ ok: boolean; auto_update: string[] }>(`/api/containers/${encodeURIComponent(name)}/auto-update`, { method: 'POST' }),
+    disableAutoUpdate: (name: string) =>
+      request<{ ok: boolean; auto_update: string[] }>(`/api/containers/${encodeURIComponent(name)}/auto-update`, { method: 'DELETE' }),
     scan: (name: string) =>
       request<{ ok: boolean; cached?: boolean; result: TrivyScanResult }>(`/api/containers/${encodeURIComponent(name)}/scan`, { method: 'POST' }),
     getScan: (name: string) =>
@@ -57,6 +61,8 @@ export const api = {
       }),
     getHistory: (name: string) =>
       request<UpdateHistoryEntry[]>(`/api/containers/${encodeURIComponent(name)}/history`),
+    getLogs: (name: string, tail = 200) =>
+      request<{ logs: string }>(`/api/containers/${encodeURIComponent(name)}/logs?tail=${tail}`),
     rollback: (name: string) =>
       request<{
         ok: boolean

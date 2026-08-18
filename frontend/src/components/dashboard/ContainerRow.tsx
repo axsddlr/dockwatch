@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { History, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, Trash2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { History, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, ScrollText, Trash2, Zap, ZapOff } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -9,6 +9,8 @@ import { UpdateDialog } from './UpdateDialog'
 import { ScanButton } from './ScanButton'
 import { ScanResultsPanel } from './ScanResultsPanel'
 import { HistoryPanel } from './HistoryPanel'
+import { LogsPanel } from './LogsPanel'
+import { ActionMenu, ActionMenuItem } from './ActionMenu'
 
 interface ContainerRowProps {
   result: UpdateResult
@@ -20,6 +22,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const cfg = STATUS_CONFIG[status]
   const [showUpdate, setShowUpdate] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showLogs, setShowLogs] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const scanResult = useDashboardStore((s) => s.scannedContainers[result.container_info.name])
   const expandedScan = useDashboardStore((s) => s.expandedScan)
@@ -33,6 +36,22 @@ export function ContainerRow({ result }: ContainerRowProps) {
         : api.containers.pin(result.container_info.name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['containers'] })
+    },
+  })
+
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.settings.get(),
+    staleTime: 30_000,
+  })
+  const isAutoUpdate = !!settingsQuery.data?.auto_update.includes(result.container_info.name)
+  const autoUpdateMutation = useMutation({
+    mutationFn: () =>
+      isAutoUpdate
+        ? api.containers.disableAutoUpdate(result.container_info.name)
+        : api.containers.enableAutoUpdate(result.container_info.name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
   })
 
@@ -72,6 +91,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const canScan = hasPermission('scan_containers')
   const canDelete = hasPermission('delete_containers')
   const canViewHistory = hasPermission('manage_settings')
+  const canViewLogs = hasPermission('view_containers') && result.container_info.source === 'local'
   const isComposeManaged = !!result.container_info.compose_project && !!result.container_info.compose_service
   const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
   const showDeleteImageBtn = canDelete && result.container_info.source === 'local'
@@ -129,7 +149,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
         {result.deployed_display ?? result.deployed_tag ?? result.deployed_version ?? '-'}
       </div>
 
-      <div className="col-span-3 flex items-center gap-1.5 min-w-0">
+      <div className="col-span-2 flex items-center gap-1.5 min-w-0">
         <span
           className="truncate font-mono text-xs text-[var(--color-text-primary)] min-w-0"
           title={result.latest_version ?? result.remote_tag ?? undefined}
@@ -143,7 +163,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
         )}
       </div>
 
-      <div className="col-span-2 flex items-center justify-end gap-1">
+      <div className="col-span-3 flex flex-wrap items-center justify-end gap-1">
         {message && <span className="text-xs text-green-400">{message}</span>}
         <button
           onClick={() => singleCheckMutation.mutate()}
@@ -167,6 +187,20 @@ export function ContainerRow({ result }: ContainerRowProps) {
             {status === 'PINNED' ? <PinOff size={14} /> : <Pin size={14} />}
           </button>
         )}
+        {canUpdate && (
+          <button
+            onClick={() => autoUpdateMutation.mutate()}
+            disabled={autoUpdateMutation.isPending}
+            className={`rounded-lg p-1.5 transition-colors ${
+              isAutoUpdate
+                ? 'text-[var(--color-success)] hover:bg-[var(--color-success)]/10'
+                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
+            }`}
+            title={isAutoUpdate ? 'Auto-update: on' : 'Auto-update: off'}
+          >
+            {isAutoUpdate ? <Zap size={14} /> : <ZapOff size={14} />}
+          </button>
+        )}
         {showUpdateBtn && (
           <button
             onClick={() => setShowUpdate(true)}
@@ -176,57 +210,56 @@ export function ContainerRow({ result }: ContainerRowProps) {
             <Rocket size={14} />
           </button>
         )}
-        {showRestartBtn && (
-          <button
-            onClick={() => restartMutation.mutate()}
-            disabled={restartMutation.isPending}
-            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors disabled:opacity-50"
-            title="Restart via Portainer"
-          >
-            <PowerCircle size={14} className={restartMutation.isPending ? 'animate-spin' : ''} />
-          </button>
-        )}
         {canScan && <ScanButton name={result.container_info.name} />}
-        {showDeleteImageBtn && (
-          <button
-            onClick={() => {
-              if (window.confirm(`Delete the image for '${result.container_info.name}'? This cannot be undone.`)) {
-                deleteImageMutation.mutate()
-              }
-            }}
-            disabled={deleteImageMutation.isPending}
-            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-orange-400 transition-colors disabled:opacity-50"
-            title="Delete image"
-          >
-            <ImageOff size={14} />
-          </button>
-        )}
-        {canDelete && (
-          <button
-            onClick={() => {
-              if (window.confirm(`Delete container '${result.container_info.name}'? This cannot be undone.`)) {
-                deleteContainerMutation.mutate()
-              }
-            }}
-            disabled={deleteContainerMutation.isPending}
-            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-red-400 transition-colors disabled:opacity-50"
-            title="Delete container"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
-        {canViewHistory && (
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            className={`rounded-lg p-1.5 transition-colors ${
-              showHistory
-                ? 'text-blue-400 bg-blue-400/10'
-                : 'text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
-            }`}
-            title="Update history"
-          >
-            <History size={14} />
-          </button>
+        {(showRestartBtn || showDeleteImageBtn || canDelete || canViewHistory || canViewLogs) && (
+          <ActionMenu>
+            {canViewLogs && (
+              <ActionMenuItem icon={<ScrollText size={14} />} onClick={() => setShowLogs((v) => !v)}>
+                {showLogs ? 'Hide logs' : 'Logs'}
+              </ActionMenuItem>
+            )}
+            {canViewHistory && (
+              <ActionMenuItem icon={<History size={14} />} onClick={() => setShowHistory((v) => !v)}>
+                {showHistory ? 'Hide history' : 'Update history'}
+              </ActionMenuItem>
+            )}
+            {showRestartBtn && (
+              <ActionMenuItem
+                icon={<PowerCircle size={14} className={restartMutation.isPending ? 'animate-spin' : ''} />}
+                onClick={() => restartMutation.mutate()}
+                disabled={restartMutation.isPending}
+              >
+                Restart via Portainer
+              </ActionMenuItem>
+            )}
+            {showDeleteImageBtn && (
+              <ActionMenuItem
+                icon={<ImageOff size={14} />}
+                disabled={deleteImageMutation.isPending}
+                onClick={() => {
+                  if (window.confirm(`Delete the image for '${result.container_info.name}'? This cannot be undone.`)) {
+                    deleteImageMutation.mutate()
+                  }
+                }}
+              >
+                Delete image
+              </ActionMenuItem>
+            )}
+            {canDelete && (
+              <ActionMenuItem
+                icon={<Trash2 size={14} />}
+                disabled={deleteContainerMutation.isPending}
+                danger
+                onClick={() => {
+                  if (window.confirm(`Delete container '${result.container_info.name}'? This cannot be undone.`)) {
+                    deleteContainerMutation.mutate()
+                  }
+                }}
+              >
+                Delete container
+              </ActionMenuItem>
+            )}
+          </ActionMenu>
         )}
       </div>
 
@@ -243,6 +276,11 @@ export function ContainerRow({ result }: ContainerRowProps) {
       {showHistory && (
         <div className="col-span-12">
           <HistoryPanel name={result.container_info.name} onClose={() => setShowHistory(false)} />
+        </div>
+      )}
+      {showLogs && (
+        <div className="col-span-12">
+          <LogsPanel name={result.container_info.name} onClose={() => setShowLogs(false)} />
         </div>
       )}
     </div>

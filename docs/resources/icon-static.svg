@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 48 48"
-     width="48"
-     height="48"
+     width="160"
+     height="160"
      fill="none">
 
   <!-- Shield -->
@@ -18,7 +18,7 @@
     stroke-linecap="round"
     stroke-linejoin="round"/>
 
-  <!-- Eye outer shape -->
+  <!-- Eye outline -->
   <path
     d="M12.5 22
        C15.7 17.2 19.5 14.8 24 14.8
@@ -30,25 +30,15 @@
     stroke-linecap="round"
     stroke-linejoin="round"/>
 
+  <!-- Static iris boundary for polish -->
+  <circle cx="24" cy="22" r="6" stroke="#d84d43" stroke-width="1.5" opacity="0.35"/>
+
   <!-- Iris -->
-  <circle
-    cx="24"
-    cy="22"
-    r="6"
-    stroke="#d84d43"
-    stroke-width="2"/>
+  <circle cx="24" cy="22" r="3.8" fill="#d84d43"/>
 
   <!-- Pupil -->
-  <circle
-    cx="24"
-    cy="22"
-    r="3.25"
-    fill="#d84d43"/>
+  <circle cx="24" cy="22" r="1.85" fill="#181818"/>
 
-  <!-- Small highlight -->
-  <circle
-    cx="25.2"
-    cy="20.8"
-    r="0.9"
-    fill="#ff7468"/>
+  <!-- Highlight -->
+  <circle cx="25.15" cy="20.85" r="0.68" fill="#ff8a80" opacity="0.95"/>
 </svg>

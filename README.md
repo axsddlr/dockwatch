@@ -1,118 +1,117 @@
-# dockwatch
+<p align="center"><img src="docs/resources/icon-static.svg" width="96" height="96" alt="dockwatch"></p>
 
-**A self-hosted Docker update watcher that tells you what's outdated and lets you decide what to do about it.**
+# dockwatch — a self-hosted Docker update watcher that keeps you in control
 
-Most auto-updaters (Watchtower and friends) pull new images the moment they appear — no review, no confirmation, no history of what changed. dockwatch flips that: it checks your running containers against their registries, tells you (via dashboard or notification) what's outdated, and only updates when you click the button or run the command. You stay in control; dockwatch does the watching.
+<img src="docs/resources/dashboard.png" width="100%">
 
-It ships as a CLI for scripts and cron jobs, and a web dashboard for day-to-day use — same discovery and comparison engine underneath both.
+Most auto-updaters (Watchtower and friends) pull new images the moment they appear — no review, no confirmation, no history of what changed. dockwatch flips that: it checks your running containers against their registries, tells you what's outdated, and only updates when you click the button or run the command.
 
-## Table of Contents
+Please be aware that the application is under active development — read [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) before relying on it for anything you can't afford to lose.
 
-- [Why dockwatch](#why-dockwatch)
-- [Quick Start](#quick-start)
-- [Dashboard Walkthrough](#dashboard-walkthrough)
-- [CLI Reference](#cli-reference)
-- [Configuration](#configuration)
-- [Features](#features)
-  - [Update Checking](#update-checking)
-  - [Updating Containers](#updating-containers)
-  - [Rollback](#rollback)
-  - [Deleting Containers & Images](#deleting-containers--images)
-  - [Update History / Audit Log](#update-history--audit-log)
-  - [Digest Drift Alerts](#digest-drift-alerts)
-  - [Multi-Arch Images](#multi-arch-images)
-  - [Vulnerability Scanning (Trivy)](#vulnerability-scanning-trivy)
-  - [Portainer Integration](#portainer-integration)
-  - [Authentication & RBAC](#authentication--rbac)
-  - [Notifications](#notifications)
-- [Docker / Compose Notes](#docker--compose-notes)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [License](#license)
+And don't forget about regular backups of important data — dockwatch backs up its own database automatically, but the containers it manages are on you.
 
-## Why dockwatch
+Automatic updates are opt-in per container. Nothing updates unless you tell it to.
 
-- **You approve every update.** No image is pulled or container recreated unless you click Update or run `dockwatch update`.
-- **Digest-aware, not just tag-aware.** A `latest` tag that silently starts pointing at a different image is treated differently than a real version bump — see [Digest Drift Alerts](#digest-drift-alerts).
-- **Multi-arch safe.** Outdated/drift detection compares the digest for *your* platform, not a multi-arch manifest list's own digest (which changes whenever any architecture is rebuilt).
-- **Auditable.** Every update, rollback, and restart is logged with who did it and when.
-- **Works with plain Docker or Portainer.** Local Docker socket, remote Portainer-managed hosts, or both at once.
-- **Multi-user from day one.** RBAC with custom roles, not just a single shared login.
+## Table of contents
 
-## Quick Start
+- [main features](#main-features)
+- [deploy](#deploy)
+- [cli reference](#cli-reference)
+- [configuration](#configuration)
+- [authentication & rbac](#authentication--rbac)
+- [notifications](#notifications)
+- [portainer integration](#portainer-integration)
+- [vulnerability scanning](#vulnerability-scanning-trivy)
+- [check and update](./docs/CHECK_AND_UPDATE.md)
+- [screenshots](./docs/SCREENSHOTS.md)
+- [production readiness](./docs/PRODUCTION_READINESS.md)
+- [troubleshooting](#troubleshooting)
+- [development](#development)
 
-Prerequisites: Docker and Docker Compose. That's it — Trivy (for vulnerability scanning) is bundled in the image.
+## Main features
 
-```bash
-git clone <this-repo>
-cd dockwatch
-cp .env.example .env
-```
+- Web dashboard with authentication and per-role permissions
+- Digest-aware comparison, not just tag-string matching — catches `latest` silently pointing at a new image
+- Multi-arch safe — compares your platform's digest, not the manifest list's
+- Works with plain Docker or Portainer, local or remote hosts
+- Approve-before-update by default; per-container auto-update is opt-in
+- One-click rollback to the last known-good tag (compose-managed containers)
+- Delete containers and images directly from the dashboard, with confirmation
+- Full audit log — who updated/rolled-back/deleted what, and when
+- Vulnerability scanning via bundled Trivy, cached by image ID
+- Webhook / Discord / ntfy notifications, opt-in per event type
+- CLI for scripts and cron jobs, same engine as the dashboard
 
-Edit `.env` — at minimum, set a real password:
+## Deploy
 
-```env
-DOCKWATCH_USERNAME=admin
-DOCKWATCH_PASSWORD=<pick something that isn't the placeholder>
-```
+- ### Quick start
 
-Then start it:
+  Prerequisites: Docker and Docker Compose. Trivy (vulnerability scanning) is bundled in the image.
 
-```bash
-docker compose up -d
-```
+  ```bash
+  git clone <this-repo>
+  cd dockwatch
+  cp .env.example .env
+  ```
 
-Dashboard is now at `http://localhost:10801` (or whatever `DOCKWATCH_PORT` you set). Log in with the credentials from `.env` — they're only consumed once, to bootstrap the first admin account.
+  Edit `.env` — at minimum, set a real password:
 
-<details>
-<summary>Linux: docker.sock permission (read this if the dashboard shows zero containers)</summary>
+  ```env
+  DOCKWATCH_USERNAME=admin
+  DOCKWATCH_PASSWORD=<pick something that isn't the placeholder>
+  ```
 
-The container runs as a non-root user and needs group membership matching whatever group owns `/var/run/docker.sock` on your host. Wrong value fails **silently** — no error, dashboard just looks empty.
+  Then start it:
 
-```bash
-# find your host's docker group GID
-getent group docker | cut -d: -f3
-```
+  ```bash
+  docker compose up -d
+  ```
 
-Put the result in `.env`:
+  Dashboard is now at `http://localhost:10801` (or whatever `DOCKWATCH_PORT` you set). Log in with the credentials from `.env` — they're only consumed once, to bootstrap the first admin account.
 
-```env
-DOCKER_GID=<the GID from above>
-```
+  > [!IMPORTANT]
+  > **Do not expose the dashboard to a network you don't control before an admin account exists.** Until the first account is created, `/register` is open to anyone who can reach it — the first visitor becomes admin. Setting `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` in `.env` closes this window entirely; if you skip it, register immediately after starting the container.
 
-Docker Desktop (Windows/macOS): the socket inside the VM is owned by root — use `DOCKER_GID=0`.
+- ### Linux: docker.sock permission
 
-Recreate the container after changing `.env` — editing the file alone doesn't affect an already-running container:
+  If the dashboard shows zero containers after startup, this is almost always why. The container runs as a non-root user and needs group membership matching whatever group owns `/var/run/docker.sock` on your host — a wrong value fails **silently**, no error, dashboard just looks empty.
 
-```bash
-docker compose up -d --force-recreate
-```
-</details>
+  ```bash
+  # find your host's docker group GID
+  getent group docker | cut -d: -f3
+  ```
 
-<details>
-<summary>Local Python install (no Docker) — for CLI-only use</summary>
+  Put the result in `.env`:
 
-```bash
-python -m pip install -e .
-dockwatch --help
-```
+  ```env
+  DOCKER_GID=<the GID from above>
+  ```
 
-Requires Python 3.11+. The web dashboard (`dockwatch serve`) still needs access to a Docker socket to discover containers.
-</details>
+  Docker Desktop (Windows/macOS): the socket inside the VM is owned by root — use `DOCKER_GID=0`.
 
-## Dashboard Walkthrough
+  Recreate the container after changing `.env` — editing the file alone doesn't affect an already-running container:
 
-1. **Log in.** First registrant (or the `.env` bootstrap credentials) becomes admin automatically.
-2. **Refresh.** Click the refresh button, or it happens automatically at your configured interval — dockwatch discovers running containers and checks each one's registry for a newer tag/digest.
-3. **Read the status column.** Each row is `OUTDATED`, `UP-TO-DATE`, `UNKNOWN` (can't determine — usually a floating tag with no digest to compare), or `PINNED`.
-4. **Act on a row:**
-   - **Update** — pulls the new image and recreates the container (or rewrites the compose file's tag and runs `docker compose up -d` for compose-managed services).
-   - **Pin** — exclude a container from being marked outdated, without hiding it.
-   - **Scan** — run a Trivy vulnerability scan against the running image.
-   - **Delete Container** / **Delete Image** (requires `delete_containers`) — remove a container outright, or its underlying image (local containers only); both ask for confirmation first.
-   - **History** (admin only) — see every update/rollback/restart/delete recorded for that container, with a one-click **Rollback** to the last known-good tag.
-5. **Settings page** (requires `manage_settings`) — notification URLs, Portainer connection, Trivy config, and the ignored-containers checklist.
-6. **Users page** (requires `manage_users`) — create custom roles, promote/demote users, reset passwords.
+  ```bash
+  docker compose up -d --force-recreate
+  ```
+
+- ### Local Python install (no Docker) — for CLI-only use
+
+  ```bash
+  python -m pip install -e .
+  dockwatch --help
+  ```
+
+  Requires Python 3.11+. The web dashboard (`dockwatch serve`) still needs access to a Docker socket to discover containers.
+
+- ### Compose-managed container updates
+
+  For dockwatch to update compose-managed containers (rewrite the tag in the compose file and re-deploy), it needs filesystem access to those compose files, and the project must be registered in Settings (workdir + file paths):
+
+  - **Docker Desktop (Windows/macOS)**: mount `- /:/hostroot` and set `HOST_MOUNT_PREFIX=/hostroot` — dockwatch auto-translates Windows host paths to the Desktop VM's mount convention.
+  - **Native Linux**: bind-mount only the specific directories containing your compose stacks (e.g. `/opt/stacks:/opt/stacks`); do **not** mount the whole host root. Leave `HOST_MOUNT_PREFIX` unset.
+
+  The bundled `docker-compose.yml` runs as non-root, includes a healthcheck (`GET /health`), log rotation, resource limits (1 CPU / 512 MB), and `tini` for signal handling.
 
 ## CLI Reference
 
@@ -227,169 +226,7 @@ Relevant `.env` variables (container deploy only):
 | `DOCKWATCH_SECURE_COOKIE` | Force the session cookie's `Secure` flag `true`/`false`. Unset by default: dockwatch auto-detects HTTPS (via request scheme or `X-Forwarded-Proto`) and marks the cookie `Secure` only when it sees it. Set explicitly to `true` if you're behind a reverse proxy that doesn't forward that header reliably; set to `false` to force plain HTTP even if HTTPS is detected |
 | `DOCKWATCH_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs (e.g. `172.18.0.0/16`) of reverse proxies trusted to set `X-Forwarded-For`. Unset = use the raw TCP peer IP for rate limiting/lockout (safe default) |
 
-## Features
-
-### Update Checking
-
-dockwatch discovers containers (local Docker, Portainer, or both), resolves each image's registry (Docker Hub, GHCR, Codeberg), and compares what's deployed against what's available:
-
-- **Digest comparison** when both local and remote digests are known — the most reliable signal, and the only one that works for floating tags like `latest`.
-- **Version comparison** (semver-aware, with linuxserver.io `-lsNN` and distro-suffix `-alpine`/`-slim` handling) when digests aren't available but both tags parse as versions.
-- **Tag comparison** as a last resort — if neither digest nor version comparison is possible, dockwatch reports `UNKNOWN` rather than guessing.
-
-### Updating Containers
-
-Clicking **Update** (or `dockwatch update <container>`) does a real update, not just a metadata change:
-
-- **Compose-managed containers** — rewrites the service's `image:` tag in the compose file (if pinned to an exact tag), then runs `docker compose pull <service>` and `docker compose up -d <service>`, scoped to that one service. Sibling services in the same file are untouched. The same applies to Portainer stacks — only the target service's image line is rewritten in the stack file; Portainer diffs the compose content and recreates only the changed service.
-- **Plain containers** — pulls the new image, then does a full recreate via the Docker SDK (stop → rename to backup → create replacement with the same host/network config → start → remove old). Automatically rolls back to the original container if the replacement fails to start.
-- **Floating tags** (`latest`, `edge`, `dev`, `nightly`) — skips tag rewriting, just pulls and recreates, and only proceeds if digest comparison confirmed something actually changed.
-
-### Rollback
-
-Every successful update is remembered. If it turns out to be a bad update, click **Rollback** in the container's history panel (or the dashboard's rollback button) to revert to the last known-good tag — dockwatch reruns the same compose pull/up flow in reverse.
-
-Current scope: **compose-managed containers only**. Plain (non-compose) containers don't have a rollback path yet, since there's no compose file to revert.
-
-### Deleting Containers & Images
-
-Requires the `delete_containers` permission. Delete a container directly from its row — works for both local Docker and Portainer-managed containers, with a confirmation prompt before anything happens. Delete the underlying image too (local containers only; Docker refuses removal if another container still depends on it). Both actions are logged to the update history like every other action.
-
-### Update History / Audit Log
-
-Every update, rollback, restart, delete, and digest-drift detection is recorded: who did it, when, old tag → new tag, and whether it succeeded. Visible per-container via the History panel (requires `manage_settings`), which also surfaces the Rollback action.
-
-### Digest Drift Alerts
-
-A floating tag like `latest` can silently start pointing at a different image without anyone touching the compose file — the tag string never changes, only the digest behind it. dockwatch treats this as a distinct, always-notified event (`digest_drift`) instead of folding it into an ordinary "update available" notification, so you don't miss a supply-chain-relevant change just because your `notify_on` filter is scoped to something else.
-
-### Multi-Arch Images
-
-Multi-arch images publish a manifest *list* — one entry per platform (amd64, arm64, ...). That list's own digest changes whenever **any** platform is rebuilt, even if the platform you're actually running is untouched. dockwatch resolves your Docker daemon's actual architecture and compares the digest of *that* platform's manifest entry, not the list's own digest — so an arm64 rebuild upstream doesn't falsely flag your amd64 deployment as outdated or drifted. Falls back to the previous list-digest behavior if the daemon is unreachable or your platform isn't present in the list.
-
-### Vulnerability Scanning (Trivy)
-
-Separate from update checks — this inspects the *content* of the image currently running for known CVEs, not whether a newer tag exists.
-
-- Bundled in the Docker image; native/pip installs need [Trivy](https://trivy.dev) installed separately (`brew install trivy` / `apt install trivy`).
-- Must be explicitly enabled: `trivy.enabled = true` in config.
-- Results are cached by Docker image ID — re-scanning only happens when the image actually changes or the cache TTL expires.
-- Dashboard shows clickable severity bars (Critical/High/Medium/Low) that filter the findings list.
-
-```bash
-dockwatch scan --container nginx
-dockwatch scan --json   # full CVE details: ID, package, installed/fixed version, severity
-```
-
-### Portainer Integration
-
-Use Portainer as an additional container source — inspect and check containers on remote Docker hosts without giving dockwatch direct socket access to them.
-
-- **Discovery & checking**: fully supported. Reads environments and containers via the Portainer API (`X-API-Key` header), then runs the normal comparison pipeline against them exactly as it would for local containers.
-- **Restart**: supported — proxied through Portainer's Docker API (`POST .../docker/containers/{id}/restart`).
-- **Delete**: supported — container deletion and (for local containers) image deletion, with confirmation and audit logging.
-- **Full update (pull + recreate)**: supported for Portainer-managed compose stacks. When you click Update on a Portainer-sourced container, here's what happens:
-
-  1. **Build update plan** — verifies the container is Portainer-managed, compose-backed, not pinned, and that the comparison result is valid (digest-backed for floating tags).
-  2. **Find the stack** — queries Portainer `GET /api/stacks` filtered by the stack name (the compose project name from container labels).
-  3. **Read the stack file** — fetches the current compose file via Portainer `GET /api/stacks/{id}/file`.
-  4. **Rewrite the image tag** — finds the service's `image:` line and replaces the old tag with the new one (e.g. `nginx:1.25` → `nginx:1.27`).
-  5. **Redeploy via Portainer** — `PUT /api/stacks/{id}` with the updated file, `pullImage: true`, and `prune: true`. Portainer pulls the new image and recreates only the changed service, leaving sibling services untouched.
-
-  Non-compose Portainer containers are restart-only — the full update path requires compose stack metadata.
-
-  **Timeout caveat**: step 5 (`create_stack`/`update_stack`) blocks on Portainer's synchronous pull-and-recreate, which can take well over a few seconds for a real image pull. These two calls use a dedicated `portainer.deploy_timeout` (default 120s, configurable in Settings or `config.toml`) separate from the short timeout used for restart/delete/list calls. If a redeploy still times out on very large images, Portainer generally finishes the deploy server-side anyway — check the container/stack state in Portainer before retrying, since a retry against an in-flight or already-completed deploy can produce duplicate or conflicting stack state.
-- **Source detection**: containers deployed via Portainer stacks get `/data/compose/{id}/` labels. Dockwatch detects these automatically and tags them as `source=portainer`, even when discovered via the local Docker socket. The dashboard's Local / Portainer / All filter groups containers by their actual deployment source, not just whichever API happened to query them.
-
-#### Programmatic Stack Deployment
-
-The `PortainerClient` class in `dockwatch.integrations.portainer` supports creating stacks from compose content:
-
-```python
-from dockwatch.integrations import PortainerClient
-
-client = PortainerClient(base_url="http://portainer:9000", api_key="ptr_...")
-stack = await client.create_stack(
-    name="my-stack",
-    stack_file_content="version: '3.8'\nservices:\n  web:\n    image: nginx:alpine\n",
-    env=[{"name": "TAG", "value": "alpine"}],
-    endpoint_id=1,
-)
-# stack["Id"] -> Portainer stack ID
-# stack["ProjectPath"] -> /data/compose/{id}
-```
-
-**Real-world example** — deploy a compose file from disk, reading env vars from an adjacent `.env`:
-
-```python
-# deploy_to_portainer.py
-import asyncio, json, os, sys
-from dockwatch.integrations import PortainerClient
-
-PORTAINER_URL = os.environ["PORTAINER_URL"]       # e.g. http://portainer:9000
-PORTAINER_KEY = os.environ["PORTAINER_API_KEY"]   # e.g. ptr_...
-ENDPOINT_ID   = int(os.environ.get("PORTAINER_ENDPOINT", "1"))
-STACK_NAME    = sys.argv[1]                       # project name
-COMPOSE_FILE  = sys.argv[2]                       # path to docker-compose.yml
-
-compose = open(COMPOSE_FILE).read()
-
-# Read .env from same directory, convert to Portainer's [{name, value}] format
-env_file = os.path.join(os.path.dirname(COMPOSE_FILE), ".env")
-env_vars = []
-if os.path.isfile(env_file):
-    for line in open(env_file):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            env_vars.append({"name": k, "value": v})
-
-async def main():
-    client = PortainerClient(base_url=PORTAINER_URL, api_key=PORTAINER_KEY)
-    stack = await client.create_stack(
-        name=STACK_NAME,
-        stack_file_content=compose,
-        env=env_vars,
-        endpoint_id=ENDPOINT_ID,
-    )
-    print(f"Stack created: ID={stack['Id']}, path={stack['ProjectPath']}")
-
-asyncio.run(main())
-```
-
-Usage:
-
-```bash
-export PORTAINER_URL=http://portainer:9000
-export PORTAINER_API_KEY=ptr_yourkeyhere
-python deploy_to_portainer.py plausible ./stacks/plausible/compose.yml
-# Stack created: ID=3, path=/data/compose/3
-```
-
-Other programmatic Portainer operations:
-
-| Method | Description |
-|--------|-------------|
-| `list_environments()` | List all Portainer environments |
-| `list_containers(endpoint_id)` | List containers on an endpoint |
-| `list_images(endpoint_id)` | List images on an endpoint |
-| `restart_container(endpoint_id, container_id)` | Restart a container via Docker API proxy |
-| `delete_container(endpoint_id, container_id, force)` | Delete a container |
-| `delete_image(endpoint_id, image_id, force)` | Delete an image |
-| `find_stack_by_name(name)` | Look up a stack by its compose project name |
-| `get_stack_file(stack_id)` | Read a stack's compose file content |
-| `create_stack(name, stack_file_content, env, endpoint_id)` | Create a new stack from compose content (uses `deploy_timeout`) |
-| `update_stack(stack_id, endpoint_id, stack_file_content, env)` | Redeploy a stack with updated compose content (uses `deploy_timeout`) |
-
-`PortainerClient(base_url, api_key, timeout=15.0, deploy_timeout=120.0)` — `timeout` covers restart/delete/list calls; `deploy_timeout` covers `create_stack`/`update_stack` only, since those block on Portainer's image pull.
-
-```bash
-dockwatch environments                              # list Portainer environments
-dockwatch check --source portainer --environment 2  # check one environment
-dockwatch check --source all                        # local + Portainer together
-```
-
-### Authentication & RBAC
+## Authentication & RBAC
 
 Multi-user with permission-based access control — six fixed permissions (`view_containers`, `update_containers`, `delete_containers`, `scan_containers`, `manage_settings`, `manage_users`), combinable into custom roles.
 
@@ -400,27 +237,15 @@ Multi-user with permission-based access control — six fixed permissions (`view
 
 Create additional roles with any subset of permissions from the Users page (requires `manage_users`).
 
-**First-run bootstrap** — two options, not mutually exclusive:
-1. Set `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` in `.env` to auto-create the first admin before the dashboard is ever reachable.
-2. Leave `.env` credentials unset and register via the web UI — the first registrant always becomes admin, regardless of `DOCKWATCH_ALLOW_REGISTRATION`.
+**Trust boundary**: `manage_settings`, `update_containers`, and `delete_containers` are effectively admin-equivalent, not safely delegable to a semi-trusted user — all three can reach the host's Docker daemon indirectly. Only grant these to people you'd trust with direct `docker.sock` access.
 
-**Do not expose the dashboard to a network you don't control before an admin account exists.** Until the first account is created, `/register` is open to anyone who can reach it — the first visitor becomes admin. Option 1 above closes this window entirely; if you go with option 2, register immediately after starting the container.
+Sessions are signed cookies, 14-day expiry, no server-side session store.
 
-After the first account exists, `DOCKWATCH_ALLOW_REGISTRATION=true` allows further self-service sign-ups (assigned `viewer` by default; an admin can reassign their role).
+## Notifications
 
-Sessions are signed cookies, 14-day expiry, no server-side session store. Set `DOCKWATCH_SECURE_COOKIE=true` if serving over HTTPS.
+Three notifier types, all opt-in: generic webhook (`POST` JSON), Discord webhook (embed payload), ntfy (`POST` plain text).
 
-**Trust boundary**: `manage_settings`, `update_containers`, and `delete_containers` are effectively admin-equivalent, not safely delegable to a semi-trusted user. All three can reach the host's Docker daemon indirectly — `manage_settings` can point a compose project at an arbitrary path, `update_containers` can trigger `docker compose up` against it, and `delete_containers` can remove any container or (locally) any image outright. Only grant these to people you'd trust with direct `docker.sock` access.
-
-### Notifications
-
-Three notifier types, all opt-in:
-
-- Generic webhook (`POST` JSON)
-- Discord webhook (embed payload)
-- ntfy (`POST` plain text)
-
-Trigger with `dockwatch check --notify`, `dockwatch daemon --notify`, or from the dashboard's "Send Test Notification" button. Digest-drift events always notify regardless of `notify_on` filtering — everything else respects `notify_on`/`notify_only`/`first_check_notify`.
+Trigger with `dockwatch check --notify`, `dockwatch daemon --notify`, or the dashboard's "Send Test Notification" button. Digest-drift events always notify regardless of `notify_on` filtering.
 
 Per-container Docker label overrides (no config file edit needed):
 
@@ -433,23 +258,38 @@ dockwatch.include_tags=^2\.
 dockwatch.exclude_tags=-rc$
 ```
 
-## Docker / Compose Notes
+## Portainer Integration
 
-- Needs Docker socket access: bind-mount `/var/run/docker.sock` (Linux) or ensure npipe access (Windows Docker Desktop).
-- For **compose-managed container updates** to work, the compose project must be registered in Settings (workdir + file paths), and dockwatch's container needs filesystem access to those compose files:
-  - **Docker Desktop (Windows/macOS)**: mount `- /:/hostroot` and set `HOST_MOUNT_PREFIX=/hostroot` — dockwatch auto-translates Windows host paths to the Desktop VM's mount convention.
-  - **Native Linux**: bind-mount only the specific directories containing your compose stacks (e.g. `/opt/stacks:/opt/stacks`); do **not** mount the whole host root. Leave `HOST_MOUNT_PREFIX` unset.
-- The bundled `docker-compose.yml` runs as non-root, includes a healthcheck (`GET /health`), log rotation, resource limits (1 CPU / 512 MB), and `tini` for signal handling.
+Use Portainer as an additional container source — inspect, check, restart, update, and delete containers on remote Docker hosts without giving dockwatch direct socket access to them.
+
+- **Setup walkthrough**: [PORTAINER_SETUP.md](docs/PORTAINER_SETUP.md)
+- **Feature scope & programmatic API**: [PORTAINER_API.md](docs/PORTAINER_API.md)
+
+## Vulnerability Scanning (Trivy)
+
+Separate from update checks — inspects the *content* of the image currently running for known CVEs, not whether a newer tag exists.
+
+- Bundled in the Docker image; native/pip installs need [Trivy](https://trivy.dev) installed separately (`brew install trivy` / `apt install trivy`).
+- Must be explicitly enabled: `trivy.enabled = true` in config.
+- Results are cached by Docker image ID — re-scanning only happens when the image actually changes or the cache TTL expires.
+- Dashboard shows clickable severity bars (Critical/High/Medium/Low) that filter the findings list.
+
+```bash
+dockwatch scan --container nginx
+dockwatch scan --json   # full CVE details: ID, package, installed/fixed version, severity
+```
 
 ## Troubleshooting
 
 **Update button missing for a `:latest` container** — floating tags can only be compared by digest. If the registry doesn't return a digest, or the digest matches what's deployed, there's genuinely nothing to update. Pin to a versioned tag (e.g. `image:2.20.0`) for reliable version-based comparison.
 
-**Dashboard shows zero containers** — almost always the `DOCKER_GID` mismatch described in [Quick Start](#quick-start). No error surfaces; discovery just silently returns nothing.
+**Dashboard shows zero containers** — almost always the `DOCKER_GID` mismatch described in [Deploy](#deploy). No error surfaces; discovery just silently returns nothing.
 
 **`Could not connect to Docker`** — confirm the daemon is running and the socket/pipe is reachable from inside the container; re-run the check after the daemon recovers.
 
 **Notifications not sending** — confirm the webhook URL is reachable, use the dashboard's "Send Test Notification," or run `dockwatch check --notify` directly and read the notifier error output.
+
+See also: [FAQ.md](docs/FAQ.md)
 
 ## Development
 

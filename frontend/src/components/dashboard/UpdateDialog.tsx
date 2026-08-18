@@ -50,7 +50,7 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <Rocket size={18} className="text-[var(--color-primary)]" />
@@ -121,7 +121,7 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
           <button
             onClick={() => updateMutation.mutate()}
             disabled={updateMutation.isPending}
-            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {updateMutation.isPending ? 'Updating...' : 'Update'}
           </button>

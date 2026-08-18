@@ -334,7 +334,7 @@ function CreateUserForm({ roles, onCreated, onClose }: {
             }
           }}
           disabled={!username || !password}
-          className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           Create
         </button>
@@ -407,7 +407,7 @@ function CreateRoleForm({ onCreated, onClose }: {
             }
           }}
           disabled={!name.trim() || perms.size === 0}
-          className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-black hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           Create Role
         </button>

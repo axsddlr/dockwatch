@@ -62,7 +62,7 @@ export function Toolbar() {
       <button
         onClick={() => checkMutation.mutate()}
         disabled={isChecking}
-        className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         <RefreshCw size={16} className={isChecking ? 'animate-spin' : ''} />
         {isChecking ? 'Checking...' : 'Refresh'}

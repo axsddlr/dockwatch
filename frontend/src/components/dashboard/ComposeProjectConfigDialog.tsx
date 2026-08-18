@@ -81,7 +81,7 @@ export function ComposeProjectConfigDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-xl">
+      <div className="w-full max-w-lg rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <Settings2 size={18} className="text-[var(--color-primary)]" />
@@ -163,7 +163,7 @@ export function ComposeProjectConfigDialog({
           <button
             onClick={handleSave}
             disabled={saveMutation.isPending || !workdir}
-            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {saveMutation.isPending ? 'Saving...' : warnings.length > 0 ? 'Save anyway' : 'Save'}
           </button>

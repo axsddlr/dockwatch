@@ -33,7 +33,7 @@ export function RegisterPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-page)] px-4">
-      <div className="w-full max-w-sm rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-xl">
+      <div className="w-full max-w-sm rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-bg-panel)] p-6 shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
         <div className="mb-6 flex items-center gap-2">
           <UserPlus size={20} className="text-[var(--color-primary)]" />
           <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">Create account</h1>
@@ -70,7 +70,7 @@ export function RegisterPage() {
           <button
             type="submit"
             disabled={submitting || !username || !password}
-            className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="w-full rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Creating account...' : 'Create account'}
           </button>

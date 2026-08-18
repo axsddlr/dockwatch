@@ -633,6 +633,15 @@ class ManifestStore:
             )
             return cursor.rowcount > 0
 
+    def update_user_password(self, user_id: int, password_hash: str) -> bool:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (password_hash, user_id),
+            )
+            return cursor.rowcount > 0
+
     def delete_user(self, user_id: int) -> bool:
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")

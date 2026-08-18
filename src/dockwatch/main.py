@@ -477,12 +477,29 @@ def set_password(
     username: str = typer.Option(..., "--username", prompt=True),
     password: str = typer.Option(..., "--password", prompt=True, hide_input=True, confirmation_prompt=True),
 ) -> None:
-    """Set or reset the dashboard login credentials."""
-    config = load_config()
-    config.auth.username = username
-    config.auth.password_hash = hash_password(password)
-    save_config(config)
-    typer.echo(f"Credentials updated for user '{username}'.")
+    """Set or reset a dashboard user's login password.
+
+    Creates the user (as admin) if they don't exist yet, otherwise resets
+    their existing password. Requires container/host exec access, so a
+    successful reset is logged as a security event for auditing.
+    """
+    import logging
+
+    store = ManifestStore()
+    existing = store.get_user_by_username(username)
+    if existing is None:
+        store.create_user(username, hash_password(password), "admin")
+        typer.echo(f"User '{username}' created with admin role.")
+    else:
+        store.update_user_password(existing.id, hash_password(password))
+        logging.warning(
+            "[dockwatch] SECURITY: password for user '%s' was reset via "
+            "`dockwatch config set-password` (container/host exec access). "
+            "If this wasn't you, someone with access to this host can take "
+            "over the dashboard.",
+            username,
+        )
+        typer.echo(f"Password updated for user '{username}'.")
 
 
 @notify_app.command("test")

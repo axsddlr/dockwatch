@@ -12,6 +12,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ..config import DockwatchConfig, load_config
 from ..db import ManifestStore
+from .client_ip import is_trusted_peer
 
 logger = logging.getLogger("dockwatch.auth")
 
@@ -35,9 +36,38 @@ class AuthenticatedUser:
     permissions: frozenset[str]
 
 
-def issue_session_cookie(response: Response, username: str, user_id: int, secret_key: str) -> None:
+def _request_is_https(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    # X-Forwarded-Proto is only trustworthy if DOCKWATCH_TRUSTED_PROXIES is
+    # configured and the immediate peer is in it — otherwise any client can
+    # set this header themselves. If no trusted-proxy list is configured we
+    # fall back to trusting it unconditionally (same as before), since that's
+    # the common single-hop/no-proxy deployment and we have no better signal.
+    if os.environ.get("DOCKWATCH_TRUSTED_PROXIES", "").strip() and not is_trusted_peer(request):
+        return False
+    return request.headers.get("x-forwarded-proto", "").strip().lower() == "https"
+
+
+def issue_session_cookie(
+    response: Response, username: str, user_id: int, secret_key: str, request: Request
+) -> None:
     token = _serializer(secret_key).dumps({"u": username, "uid": user_id})
-    secure = os.environ.get("DOCKWATCH_SECURE_COOKIE", "").strip().lower() == "true"
+    override = os.environ.get("DOCKWATCH_SECURE_COOKIE", "").strip().lower()
+    if override == "true":
+        secure = True
+    elif override == "false":
+        secure = False
+    else:
+        secure = _request_is_https(request)
+        if not secure:
+            logger.warning(
+                "session cookie issued without Secure flag: no HTTPS detected "
+                "(request scheme=%s, X-Forwarded-Proto=%r). If this instance sits "
+                "behind a TLS-terminating reverse proxy, set "
+                "DOCKWATCH_SECURE_COOKIE=true in .env.",
+                request.url.scheme, request.headers.get("x-forwarded-proto"),
+            )
     response.set_cookie(
         _COOKIE_NAME, token, httponly=True, secure=secure, samesite="lax", max_age=_MAX_AGE,
     )

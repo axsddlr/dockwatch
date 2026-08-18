@@ -224,7 +224,8 @@ Relevant `.env` variables (container deploy only):
 | `DOCKWATCH_PORT` | Host port to publish the dashboard on |
 | `DOCKWATCH_USERNAME` / `DOCKWATCH_PASSWORD` | Bootstrap credentials for the first admin account (consumed once) |
 | `DOCKWATCH_ALLOW_REGISTRATION` | Allow self-service `/register` after the first account exists |
-| `DOCKWATCH_SECURE_COOKIE` | Mark the session cookie `Secure` — only enable behind HTTPS |
+| `DOCKWATCH_SECURE_COOKIE` | Force the session cookie's `Secure` flag `true`/`false`. Unset by default: dockwatch auto-detects HTTPS (via request scheme or `X-Forwarded-Proto`) and marks the cookie `Secure` only when it sees it. Set explicitly to `true` if you're behind a reverse proxy that doesn't forward that header reliably; set to `false` to force plain HTTP even if HTTPS is detected |
+| `DOCKWATCH_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs (e.g. `172.18.0.0/16`) of reverse proxies trusted to set `X-Forwarded-For`. Unset = use the raw TCP peer IP for rate limiting/lockout (safe default) |
 
 ## Features
 

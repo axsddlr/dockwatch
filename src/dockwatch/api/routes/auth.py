@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ...config import hash_password, load_config, verify_password
 from ...db import ManifestStore
+from ..client_ip import resolve_client_ip
 from ..security import (
     AuthenticatedUser,
     clear_session_cookie,
@@ -32,7 +33,7 @@ _CLEANUP_EVERY_N = 100
 
 
 def _client_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    return resolve_client_ip(request)
 
 
 def _sweep_stale() -> None:
@@ -82,7 +83,7 @@ def login(body: dict[str, str], request: Request, response: Response) -> Any:
         _record_failure(key)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
-    issue_session_cookie(response, user.username, user.id, config.auth.secret_key)
+    issue_session_cookie(response, user.username, user.id, config.auth.secret_key, request)
     logger.info("login success for %r from %s", user.username, key)
     role = store.get_role(user.role_name)
     permissions = role.permissions if role else []
@@ -147,7 +148,7 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
         _record_failure(key)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    issue_session_cookie(response, username, user_id, config.auth.secret_key)
+    issue_session_cookie(response, username, user_id, config.auth.secret_key, request)
     logger.info("new user registered: %r (role=%s) from %s", username, role_name, key)
     role = store.get_role(role_name)
     permissions = role.permissions if role else []

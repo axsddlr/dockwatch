@@ -2,6 +2,24 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [Unreleased]
+
+### 2026-08-18
+
+#### Added
+- **Per-container auto-update toggle** — enabling auto-update for a single container previously required going to Settings and editing a comma-separated container list. New `POST`/`DELETE /containers/{name}/auto-update` endpoints (mirroring the existing pin/unpin routes) flip the `auto_update` flag directly, surfaced as a Zap/ZapOff toggle button on each dashboard row.
+- **Container logs viewer** — a new `GET /containers/{name}/logs` endpoint (tail, default 200 lines, backed by `docker_client.get_logs`) powers a per-row LogsPanel (poll + manual refresh) alongside the existing HistoryPanel. Local containers only; Portainer-managed containers return 422, since log retrieval isn't proxied through Portainer's API yet.
+
+#### Fixed
+- **Action-bar overflow on dashboard rows** — adding the auto-update toggle and logs button to the existing Check/Pin/Update/Scan/History/Restart/Delete row actions overflowed and overlapped the action bar. Low-frequency actions (logs, history, restart, delete image/container) are now grouped into a new ActionMenu kebab dropdown; Check, Pin, Auto-update, Update, and Scan remain as top-level icons.
+- **Crimson accent + button contrast fix (WCAG AA)** — the amber accent (`#dfab5c`) read closer to gold than intended, and its text-black CTA buttons failed WCAG AA contrast (~3.5:1) once the palette shifted. Replaced amber tokens with crimson (`#c4453c`) across CSS custom properties, and swapped text-black to text-white on all crimson-background CTA buttons (Toolbar, SettingsActions, dialogs, auth pages) for ~5.9:1 contrast. Dark theme also got editorial-style token refinement (softer rgba borders, warmer off-black backgrounds, tighter line-height) to match the minimalist-ui design pass.
+- **`config set-password` silently reset the wrong credentials on migrated instances** — the command wrote to `config.toml`'s legacy auth section, but login checks the SQLite users table once a site has migrated via `migrate_auth_config_to_users`. Running it against a migrated instance updated dead config and left the real password unchanged, with no error indicating the mismatch. It's now routed through `ManifestStore`, updating the user's `password_hash` in the actual users table via a new `update_user_password()`. Resetting an existing user's password logs a SECURITY warning naming the affected user, since a successful reset only requires container/host exec access and no prior credential.
+- **Session cookies now default to `Secure` when HTTPS is detected** — previously the `Secure` flag on the session cookie was a manual opt-in (`DOCKWATCH_SECURE_COOKIE=true`), so a forgotten setting behind a TLS-terminating reverse proxy left the cookie sendable over plain HTTP. Login and registration now auto-detect HTTPS from the request scheme or `X-Forwarded-Proto` (trusted unconditionally unless `DOCKWATCH_TRUSTED_PROXIES` is set, in which case it's only trusted from a listed proxy) and set `Secure` accordingly, logging a warning when a cookie is issued without it. `DOCKWATCH_SECURE_COOKIE=true`/`false` still overrides the auto-detection explicitly.
+- **Rate limiting and lockout are no longer blind behind a reverse proxy** — login lockout and route rate limiting keyed on the raw TCP peer IP, so every request behind a shared proxy/load balancer collapsed onto one IP (one bad actor could lock out everyone) or, if `X-Forwarded-For` was trusted blindly, let a client spoof it to evade limits entirely. New `DOCKWATCH_TRUSTED_PROXIES` (comma-separated CIDRs/IPs) lets `X-Forwarded-For` be trusted only when it arrives via a listed proxy; unset, the raw peer IP is used as before.
+
+#### Changed
+- **`dockwatch config set-password` now requires `--create` to mint a new user — breaking change for scripted/automated use.** Previously, if `--username` didn't match an existing account, the command silently created a brand-new admin user with no confirmation and no security log — unlike the password-reset branch, which did log a SECURITY warning. A typo'd or stale `--username` (e.g. from templated automation) could mint an unintended standing admin account with no audit trail. The command now **fails closed by default**: it errors with exit 1 when the named user doesn't exist. Pass the new `--create` flag to explicitly opt into creating them as admin; that branch is now logged as a SECURITY event matching the existing reset-branch logging. **Scripts or automation that relied on the old implicit-create behavior will need `--create` added, or they will start failing.**
+
 ## [0.7.3] - 2026-08-12
 
 ### 2026-08-12

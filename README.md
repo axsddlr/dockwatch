@@ -38,9 +38,11 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - One-click rollback to the last known-good tag (compose-managed containers)
 - Delete containers and images directly from the dashboard, with confirmation
 - Full audit log — who updated/rolled-back/deleted what, and when
+- Per-container log viewer, right from the dashboard row (local containers)
 - Vulnerability scanning via bundled Trivy, cached by image ID
 - Webhook / Discord / ntfy notifications, opt-in per event type
 - CLI for scripts and cron jobs, same engine as the dashboard
+- Two admin password-recovery paths if you're locked out — `dockwatch config set-password` or the CLI-issued-token `/recover` web flow
 
 ## Deploy
 
@@ -130,7 +132,8 @@ dockwatch serve      [--host 0.0.0.0] [--port 8080]
 dockwatch daemon     [--notify/--no-notify]
 dockwatch version
 dockwatch config list
-dockwatch config set-password
+dockwatch config set-password   [--username NAME] [--password PASS] [--create]
+dockwatch config recover-admin
 dockwatch notify test
 ```
 
@@ -288,6 +291,11 @@ dockwatch scan --json   # full CVE details: ID, package, installed/fixed version
 **`Could not connect to Docker`** — confirm the daemon is running and the socket/pipe is reachable from inside the container; re-run the check after the daemon recovers.
 
 **Notifications not sending** — confirm the webhook URL is reachable, use the dashboard's "Send Test Notification," or run `dockwatch check --notify` directly and read the notifier error output.
+
+**Locked out of the admin account** — two recovery paths, depending on what access you have:
+
+- **Shell/exec access to the host or container**: `dockwatch config set-password` prompts for a username and new password and resets it directly. If the username doesn't exist yet, pass `--create` to mint it as a new admin account (this is a breaking-change requirement as of the Unreleased changes below — omitting `--create` for a nonexistent user now fails instead of silently creating one). Both branches log a SECURITY warning.
+- **Web UI + log access only** (no shell exec into a running process needed beyond `docker exec`/`docker logs`): run `dockwatch config recover-admin` via `docker exec` — it finds the earliest-created admin user, prints a one-time recovery token to stdout (also visible via `docker logs`), and stores only a hash of it server-side with a 15-minute expiry. Browse to `/recover` (not linked from the login page — it's not advertised, to avoid a lockout-oracle UI element for anyone probing the login screen), enter the token and a new password, and submit. On success you're redirected to `/login`, and any existing session cookie for that user is invalidated.
 
 See also: [FAQ.md](docs/FAQ.md)
 

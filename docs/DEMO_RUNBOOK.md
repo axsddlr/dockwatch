@@ -21,7 +21,7 @@ Expect to see (adjust names to your actual demo host):
 | `dwtest-stack-web` | Portainer-managed compose stack — update/restart/delete via Portainer |
 | `plausible`, `plausible-db`, `plausible-events-db` | multi-service local compose stack — realistic "customer's actual app" |
 | `jackett` | local container, real outdated version available — guaranteed "OUTDATED" row |
-| `uptime-kuma` | (if crash-looping) — real example of dockwatch surfacing a broken container's state honestly |
+| `uptime-kuma` | local container, second up-to-date/outdated example — good disposable target for the delete demo in section 5 |
 
 Log into dockwatch at `http://<host>:10801` before the call starts. Have
 Portainer open in a second tab (`http://<host>:9000` or `:9443`) to jump

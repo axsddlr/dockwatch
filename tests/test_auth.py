@@ -651,6 +651,174 @@ def test_auth_migration_creates_user_from_config(monkeypatch, tmp_path) -> None:
     assert user.role_name == "admin"
 
 
+# --- Recovery tests ---
+
+def test_recover_admin_cli_targets_earliest_admin(monkeypatch, tmp_path) -> None:
+    _patch_config_path(monkeypatch, tmp_path)
+    _patch_db_path(monkeypatch, tmp_path)
+
+    import hashlib
+    from dockwatch.config import hash_password
+    from dockwatch.db import ManifestStore
+    from typer.testing import CliRunner
+    from dockwatch.main import app
+
+    store = ManifestStore()
+    first_admin_id = store.create_user("first-admin", hash_password("pw1"), "admin")
+    store.create_user("second-admin", hash_password("pw2"), "admin")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "recover-admin"])
+
+    assert result.exit_code == 0
+    token = result.stdout.strip()
+    assert token
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    record = store.get_recovery_token(token_hash)
+    assert record is not None
+    assert record.user_id == first_admin_id
+    assert record.used_at is None
+
+
+def test_recover_admin_cli_fails_without_admin(monkeypatch, tmp_path) -> None:
+    _patch_config_path(monkeypatch, tmp_path)
+    _patch_db_path(monkeypatch, tmp_path)
+
+    from dockwatch.db import ManifestStore
+    from typer.testing import CliRunner
+    from dockwatch.main import app
+
+    ManifestStore()  # ensure db initialized, no users
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "recover-admin"])
+
+    assert result.exit_code == 1
+
+
+def _issue_recovery_token(store, user_id, *, expired=False, used=False):
+    import hashlib
+    import secrets
+    from datetime import datetime, timedelta, timezone
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    delta = timedelta(minutes=-1) if expired else timedelta(minutes=15)
+    expires_at = (datetime.now(timezone.utc) + delta).isoformat()
+    token_id = store.create_recovery_token(user_id, token_hash, expires_at)
+    if used:
+        store.mark_recovery_token_used(token_id)
+    return token
+
+
+def test_recover_accepts_valid_unexpired_unused_token(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    from dockwatch.db import ManifestStore
+    store = ManifestStore()
+    user = store.get_user_by_username("admin")
+    token = _issue_recovery_token(store, user.id)
+
+    response = client.post("/api/auth/recover", json={"token": token, "new_password": "new-password-1"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+
+def test_recover_rejects_expired_token(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    from dockwatch.db import ManifestStore
+    store = ManifestStore()
+    user = store.get_user_by_username("admin")
+    token = _issue_recovery_token(store, user.id, expired=True)
+
+    response = client.post("/api/auth/recover", json={"token": token, "new_password": "new-password-1"})
+
+    assert response.status_code == 400
+
+
+def test_recover_rejects_used_token(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    from dockwatch.db import ManifestStore
+    store = ManifestStore()
+    user = store.get_user_by_username("admin")
+    token = _issue_recovery_token(store, user.id, used=True)
+
+    response = client.post("/api/auth/recover", json={"token": token, "new_password": "new-password-1"})
+
+    assert response.status_code == 400
+
+
+def test_recover_rejects_invalid_token(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    response = client.post("/api/auth/recover", json={"token": "not-a-real-token", "new_password": "new-password-1"})
+
+    assert response.status_code == 400
+
+
+def test_recover_resets_password_actually_changes_login(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    from dockwatch.db import ManifestStore
+    store = ManifestStore()
+    user = store.get_user_by_username("admin")
+    token = _issue_recovery_token(store, user.id)
+
+    response = client.post("/api/auth/recover", json={"token": token, "new_password": "brand-new-password"})
+    assert response.status_code == 200
+
+    old_login = _login(client)
+    assert old_login.status_code == 401
+
+    new_login = _login(client, password="brand-new-password")
+    assert new_login.status_code == 200
+
+
+def test_old_session_cookie_rejected_after_recovery(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    login = _login(client)
+    assert login.status_code == 200
+    assert client.get("/api/containers").status_code == 200
+
+    from dockwatch.db import ManifestStore
+    store = ManifestStore()
+    user = store.get_user_by_username("admin")
+    token = _issue_recovery_token(store, user.id)
+
+    recover_response = client.post("/api/auth/recover", json={"token": token, "new_password": "post-recovery-pw"})
+    assert recover_response.status_code == 200
+
+    response = client.get("/api/containers")
+    assert response.status_code == 401
+
+
+def test_recover_lockout_after_repeated_failures_separate_from_login(monkeypatch, tmp_path) -> None:
+    _seed_user(monkeypatch, tmp_path)
+    client = _make_client(monkeypatch, tmp_path)
+
+    for _ in range(5):
+        response = client.post("/api/auth/recover", json={"token": "bad-token", "new_password": "whatever123"})
+        assert response.status_code == 400
+
+    locked_response = client.post("/api/auth/recover", json={"token": "bad-token", "new_password": "whatever123"})
+    assert locked_response.status_code == 429
+
+    # Login lockout bucket is unaffected by recover failures (separate key).
+    login_response = _login(client)
+    assert login_response.status_code == 200
+
+
 def test_auth_migration_is_idempotent(monkeypatch, tmp_path) -> None:
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)

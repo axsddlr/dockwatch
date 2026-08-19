@@ -114,6 +114,11 @@ export const api = {
         body: JSON.stringify({ username, password }),
       }),
     registrationEnabled: () => request<{ enabled: boolean }>('/api/auth/registration-enabled'),
+    recover: (token: string, new_password: string) =>
+      request<{ ok: boolean }>('/api/auth/recover', {
+        method: 'POST',
+        body: JSON.stringify({ token, new_password }),
+      }),
   },
   users: {
     list: () => request<UserRecord[]>('/api/users'),

@@ -510,6 +510,7 @@ def set_password(
         typer.echo(f"User '{username}' created with admin role.")
     else:
         store.update_user_password(existing.id, hash_password(password))
+        store.bump_session_version(existing.id)
         logging.warning(
             "[dockwatch] SECURITY: password for user '%s' was reset via "
             "`dockwatch config set-password` (container/host exec access). "
@@ -518,6 +519,43 @@ def set_password(
             username,
         )
         typer.echo(f"Password updated for user '{username}'.")
+
+
+@config_app.command("recover-admin")
+def recover_admin() -> None:
+    """Issue a one-time password-recovery token for the earliest-created
+    admin user.
+
+    Prints the raw token to stdout — it is never persisted, only its SHA-256
+    hash is stored in the recovery_tokens table. The token expires in 15
+    minutes and can be redeemed exactly once via POST /auth/recover.
+    Requires container/host exec access, so this is logged as a security
+    event for auditing.
+    """
+    import hashlib
+    import logging
+    import secrets
+    from datetime import datetime, timedelta, timezone
+
+    store = ManifestStore()
+    admin = store.get_earliest_user_by_role("admin")
+    if admin is None:
+        typer.echo("No admin user exists.", err=True)
+        raise typer.Exit(code=1)
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    store.create_recovery_token(admin.id, token_hash, expires_at)
+
+    logging.warning(
+        "[dockwatch] SECURITY: password recovery token issued for admin user "
+        "'%s' via `dockwatch config recover-admin` (container/host exec "
+        "access). If this wasn't you, someone with access to this host can "
+        "take over the dashboard.",
+        admin.username,
+    )
+    typer.echo(token)
 
 
 @notify_app.command("test")

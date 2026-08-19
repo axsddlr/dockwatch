@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -27,6 +29,7 @@ _LOCKOUT_THRESHOLD = 5
 _LOCKOUT_WINDOW_SECONDS = 300
 _REGISTRATION_RATE_LIMIT = 3
 _REGISTRATION_RATE_WINDOW = 60
+_RECOVERY_TOKEN_TTL_MINUTES = 15
 
 _cleanup_counter = 0
 _CLEANUP_EVERY_N = 100
@@ -83,7 +86,10 @@ def login(body: dict[str, str], request: Request, response: Response) -> Any:
         _record_failure(key)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
-    issue_session_cookie(response, user.username, user.id, config.auth.secret_key, request)
+    issue_session_cookie(
+        response, user.username, user.id, config.auth.secret_key, request,
+        session_version=user.session_version,
+    )
     logger.info("login success for %r from %s", user.username, key)
     role = store.get_role(user.role_name)
     permissions = role.permissions if role else []
@@ -153,3 +159,51 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
     role = store.get_role(role_name)
     permissions = role.permissions if role else []
     return {"ok": True, "username": username, "role": role_name, "permissions": permissions}
+
+
+@router.post("/auth/recover")
+def recover(body: dict[str, str], request: Request) -> Any:
+    """Complete an admin password recovery using a token issued by
+    `dockwatch config recover-admin` (container/host exec access).
+
+    Uses a lockout bucket separate from /auth/login and /auth/register so
+    brute-forcing a recovery token can't be hidden inside normal login
+    failure counts, and vice versa.
+    """
+    store = ManifestStore()
+
+    key = "recover:" + _client_key(request)
+    if _is_locked_out(key):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+
+    token = body.get("token", "")
+    new_password = body.get("new_password", "")
+
+    if len(new_password) < 4:
+        raise HTTPException(status_code=422, detail="Password must be at least 4 characters.")
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    record = store.get_recovery_token(token_hash) if token else None
+
+    valid = record is not None and record.used_at is None
+    if valid:
+        try:
+            expires_at = datetime.fromisoformat(record.expires_at)
+        except ValueError:
+            valid = False
+        else:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            valid = datetime.now(timezone.utc) < expires_at
+
+    if not valid:
+        _record_failure(key)
+        # Generic message: don't leak whether the token was invalid, used, or expired.
+        raise HTTPException(status_code=400, detail="Invalid or expired recovery token.")
+
+    store.update_user_password(record.user_id, hash_password(new_password))
+    store.bump_session_version(record.user_id)
+    store.mark_recovery_token_used(record.id)
+
+    logger.warning("password recovery completed for user_id=%s from %s", record.user_id, key)
+    return {"ok": True}

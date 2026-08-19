@@ -40,6 +40,17 @@ class UserRecord:
     password_hash: str
     role_name: str
     created_at: str
+    session_version: int = 0
+
+
+@dataclass(slots=True)
+class RecoveryTokenRecord:
+    id: int
+    user_id: int
+    token_hash: str
+    created_at: str
+    expires_at: str
+    used_at: str | None
 
 
 @dataclass(slots=True)
@@ -151,6 +162,18 @@ class ManifestStore:
         )
         connection.execute("DROP TABLE container_flags_old")
 
+    def _migrate_users_session_version(self, connection: sqlite3.Connection) -> None:
+        """Add users.session_version for databases created before session
+        invalidation existed. SQLite supports ALTER TABLE ADD COLUMN
+        directly, so no table rebuild is needed here.
+        """
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+        if "session_version" in columns:
+            return
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+        )
+
     def _initialize(self) -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
@@ -206,7 +229,21 @@ class ManifestStore:
                     username TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
                     role_name TEXT NOT NULL REFERENCES roles(name),
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    session_version INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            self._migrate_users_session_version(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS recovery_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    used_at TEXT
                 )
                 """
             )
@@ -594,7 +631,8 @@ class ManifestStore:
         username = username.strip()
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at FROM users WHERE username = ?",
+                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
         if row is None:
@@ -604,8 +642,20 @@ class ManifestStore:
     def get_user_by_id(self, user_id: int) -> UserRecord | None:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at FROM users WHERE id = ?",
+                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "FROM users WHERE id = ?",
                 (user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return UserRecord(*row)
+
+    def get_earliest_user_by_role(self, role_name: str) -> UserRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "FROM users WHERE role_name = ? ORDER BY created_at ASC, id ASC LIMIT 1",
+                (role_name,),
             ).fetchone()
         if row is None:
             return None
@@ -614,7 +664,8 @@ class ManifestStore:
     def list_users(self) -> list[UserRecord]:
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at FROM users ORDER BY id"
+                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "FROM users ORDER BY id"
             ).fetchall()
         return [UserRecord(*row) for row in rows]
 
@@ -639,6 +690,53 @@ class ManifestStore:
             cursor = connection.execute(
                 "UPDATE users SET password_hash = ? WHERE id = ?",
                 (password_hash, user_id),
+            )
+            return cursor.rowcount > 0
+
+    def bump_session_version(self, user_id: int) -> bool:
+        """Invalidate all previously-issued session cookies for a user by
+        incrementing session_version (embedded in the cookie payload and
+        checked on every request).
+        """
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+                (user_id,),
+            )
+            return cursor.rowcount > 0
+
+    # --- Recovery token methods ---
+
+    def create_recovery_token(self, user_id: int, token_hash: str, expires_at: str) -> int:
+        created_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "INSERT INTO recovery_tokens (user_id, token_hash, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id, token_hash, created_at, expires_at),
+            )
+            return cursor.lastrowid
+
+    def get_recovery_token(self, token_hash: str) -> RecoveryTokenRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT id, user_id, token_hash, created_at, expires_at, used_at "
+                "FROM recovery_tokens WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RecoveryTokenRecord(*row)
+
+    def mark_recovery_token_used(self, token_id: int) -> bool:
+        used_at = datetime.now(timezone.utc).isoformat()
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE recovery_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL",
+                (used_at, token_id),
             )
             return cursor.rowcount > 0
 

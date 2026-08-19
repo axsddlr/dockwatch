@@ -63,6 +63,9 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     if user is None:
         await websocket.close(code=1008)
         return
+    if data.get("sv") != user.session_version:
+        await websocket.close(code=1008)
+        return
     role = store.get_role(user.role_name)
     if role is None:
         await websocket.close(code=1008)

@@ -50,9 +50,14 @@ def _request_is_https(request: Request) -> bool:
 
 
 def issue_session_cookie(
-    response: Response, username: str, user_id: int, secret_key: str, request: Request
+    response: Response,
+    username: str,
+    user_id: int,
+    secret_key: str,
+    request: Request,
+    session_version: int = 0,
 ) -> None:
-    token = _serializer(secret_key).dumps({"u": username, "uid": user_id})
+    token = _serializer(secret_key).dumps({"u": username, "uid": user_id, "sv": session_version})
     override = os.environ.get("DOCKWATCH_SECURE_COOKIE", "").strip().lower()
     if override == "true":
         secure = True
@@ -102,6 +107,8 @@ def require_auth(request: Request) -> AuthenticatedUser:
     user = store.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="User account no longer exists.")
+    if data.get("sv") != user.session_version:
+        raise HTTPException(status_code=401, detail="Session expired or invalid.")
     role = store.get_role(user.role_name)
     if role is None:
         raise HTTPException(status_code=401, detail="Role no longer exists.")

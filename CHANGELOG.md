@@ -2,7 +2,16 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
-## [Unreleased]
+## [0.8.0] - 2026-08-19
+
+### 2026-08-19
+
+#### Added
+- **Portainer + non-compose container rollback (design)** — audited the existing rollback path (`build_rollback_plan`) and found it silently blocked Portainer-managed stacks and plain non-compose containers, even though the update path already supports both. Design spec written (`docs/superpowers/specs/2026-08-19-portainer-rollback-design.md`) for extending rollback to reuse the existing Portainer stack-update and plain-recreate machinery; implementation tracked separately.
+
+#### Fixed
+- **Trivy scan races, misclassification, and unbounded output** — concurrent scan requests for the same image both missed cache and both spawned a `trivy` process (now deduplicated via an in-flight scan map keyed by image ID); a failed container-discovery lookup silently fell back to scanning the container's *name* as if it were an image reference instead of erroring; UNKNOWN-severity findings were being counted as LOW (now a proper `unknown_count` bucket, threaded through the API and dashboard severity bars); `trivy` could fall back to pulling a remote image when no local image matched (`--image-src docker` now pins it to the local daemon only); and captured scan output had no size cap, so a malformed or runaway scan could balloon memory (now capped at 64MB with the process killed on overflow). Scan failures (timeouts, non-zero exits, unparseable output) are now logged server-side.
+- **App header showed a generic placeholder icon instead of the dockwatch logo** — the header referenced a stock lucide `Hexagon` icon rather than the shield-eye brand SVG, so the logo never appeared next to "dockwatch" in the top bar even though `favicon.svg` existed and was linked correctly. The header now renders `/favicon.svg` directly; the icon itself was also simplified back to a clean shield outline with a solid pupil (dropped the iris ring and highlight dot, which read poorly at 16px favicon size).
 
 ### 2026-08-18
 

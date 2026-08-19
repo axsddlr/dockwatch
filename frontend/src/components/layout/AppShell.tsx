@@ -6,7 +6,6 @@ import {
   Users,
   Menu,
   X,
-  Hexagon,
   LogOut,
 } from 'lucide-react'
 import { api } from '../../api/client'
@@ -56,7 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               onClick={() => navigate('/')}
               className="flex items-center gap-2 text-lg font-semibold tracking-tight text-[var(--color-primary)]"
             >
-              <Hexagon size={20} className="text-[var(--color-primary)]" />
+              <img src="/favicon.svg" alt="" width={20} height={20} />
               dockwatch
             </button>
           </div>

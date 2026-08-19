@@ -189,10 +189,17 @@ class TrivyScanResult:
     high_count: int = 0
     medium_count: int = 0
     low_count: int = 0
+    unknown_count: int = 0
     error: str | None = None
     scanned_at: str | None = None
     image_id: str | None = None
 
     @property
     def total_count(self) -> int:
-        return self.critical_count + self.high_count + self.medium_count + self.low_count
+        return (
+            self.critical_count
+            + self.high_count
+            + self.medium_count
+            + self.low_count
+            + self.unknown_count
+        )

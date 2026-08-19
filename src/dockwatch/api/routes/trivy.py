@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,9 @@ from ..security import require_permission
 from ..ws import manager
 
 router = APIRouter()
+
+# Dedup concurrent scans of the same image: image_id -> in-flight scan task.
+_inflight_scans: dict[str, asyncio.Task] = {}
 
 
 def _serialize_finding(finding) -> dict[str, Any]:
@@ -38,6 +42,7 @@ def _serialize_scan_result(result: TrivyScanResult) -> dict[str, Any]:
         "high_count": result.high_count,
         "medium_count": result.medium_count,
         "low_count": result.low_count,
+        "unknown_count": result.unknown_count,
         "total_count": result.total_count,
         "error": result.error,
         "scanned_at": result.scanned_at,
@@ -77,18 +82,28 @@ async def run_scan(name: str) -> Any:
         await manager.broadcast("scan_complete", {"name": name, "result": _serialize_scan_result(cached)})
         return {"ok": True, "cached": True, "result": _serialize_scan_result(cached)}
 
-    container = None
-    discovery = await _discover_container(name, load_config())
-    if discovery:
-        container = discovery
-    image_ref = container.image_ref if container else name
+    container = await _discover_container(name, config)
+    if container is None:
+        raise HTTPException(status_code=404, detail="Container not found or not running.")
+    image_ref = container.image_ref
 
     await manager.broadcast("scan_started", {"name": name})
 
-    try:
-        result = await scan_image(image_ref, config.trivy)
-    except TrivyNotFoundError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    task = _inflight_scans.get(image_id)
+    if task is None:
+        task = asyncio.ensure_future(scan_image(image_ref, config.trivy))
+        _inflight_scans[image_id] = task
+        try:
+            result = await task
+        except TrivyNotFoundError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        finally:
+            _inflight_scans.pop(image_id, None)
+    else:
+        try:
+            result = await task
+        except TrivyNotFoundError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if image_id and not result.error:
         store.trivy_cache_put(image_id, result)

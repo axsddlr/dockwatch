@@ -70,6 +70,7 @@ export interface TrivyScanResult {
   high_count: number
   medium_count: number
   low_count: number
+  unknown_count: number
   total_count: number
   error: string | null
   scanned_at: string | null

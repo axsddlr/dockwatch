@@ -85,6 +85,7 @@ export function ScanResultsPanel({
     { label: 'HIGH', count: result.high_count, color: 'bg-orange-500' },
     { label: 'MEDIUM', count: result.medium_count, color: 'bg-yellow-500' },
     { label: 'LOW', count: result.low_count, color: 'bg-blue-500' },
+    { label: 'UNKNOWN', count: result.unknown_count, color: 'bg-gray-500' },
   ]
   const maxCount = Math.max(...bars.map((b) => b.count), 1)
   const filtered = activeSeverity

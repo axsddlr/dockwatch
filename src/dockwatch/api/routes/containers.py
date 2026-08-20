@@ -154,6 +154,12 @@ async def check_containers(
         return serialized
 
 
+async def _execute_plan(plan, config) -> Any:
+    if plan.mode == "portainer-compose":
+        return await execute_portainer_compose_update(plan, config)
+    return await asyncio.to_thread(execute_update, plan, config)
+
+
 @router.post("/containers/{name}/update", dependencies=[_mutate_limit])
 async def update_container(
     name: str,
@@ -165,10 +171,7 @@ async def update_container(
     if not plan.allowed:
         raise HTTPException(status_code=422, detail=plan.reason or "Update is blocked.")
 
-    if plan.mode == "portainer-compose":
-        execution = await execute_portainer_compose_update(plan, config)
-    else:
-        execution = await asyncio.to_thread(execute_update, plan, config)
+    execution = await _execute_plan(plan, config)
     payload = {
         "name": name,
         "success": execution.success,
@@ -205,7 +208,7 @@ async def rollback_container(
     if not plan.allowed:
         raise HTTPException(status_code=422, detail=plan.reason or "Rollback is blocked.")
 
-    execution = await asyncio.to_thread(execute_update, plan, config)
+    execution = await _execute_plan(plan, config)
     payload = {
         "name": name,
         "success": execution.success,
@@ -220,6 +223,7 @@ async def rollback_container(
         current_user=current_user,
         old_tag=plan.current_tag,
         new_tag=plan.remote_tag,
+        environment_id=plan.environment_id,
     )
     await manager.broadcast("container_updated", payload)
     return {"ok": execution.success, "plan": payload}

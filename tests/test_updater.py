@@ -110,9 +110,46 @@ class UpdatePlannerTests(unittest.TestCase):
 
 
 class RollbackPlannerTests(unittest.TestCase):
-    def test_plain_container_rollback_is_blocked(self) -> None:
+    def test_plain_container_rollback_is_allowed(self) -> None:
+        plan = build_rollback_plan(
+            _result(), DockwatchConfig(), old_tag="0.9.0", new_tag="1.0.0",
+        )
+
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.mode, "plain")
+        self.assertEqual(plan.image_ref, "nginx:0.9.0")
+
+    def test_plain_container_rollback_blocks_stale_deployed_tag(self) -> None:
         plan = build_rollback_plan(
             _result(), DockwatchConfig(), old_tag="1.0.0", new_tag="1.1.0",
+        )
+
+        self.assertFalse(plan.allowed)
+        self.assertIn("expected '1.1.0'", plan.reason or "")
+
+    def test_portainer_compose_container_rollback_is_allowed(self) -> None:
+        plan = build_rollback_plan(
+            _result(
+                container_overrides={
+                    "source": "portainer",
+                    "compose_project": "stack",
+                    "compose_service": "svc",
+                }
+            ),
+            DockwatchConfig(),
+            old_tag="0.9.0",
+            new_tag="1.0.0",
+        )
+
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.mode, "portainer-compose")
+
+    def test_portainer_non_compose_container_rollback_is_blocked(self) -> None:
+        plan = build_rollback_plan(
+            _result(container_overrides={"source": "portainer"}),
+            DockwatchConfig(),
+            old_tag="0.9.0",
+            new_tag="1.0.0",
         )
 
         self.assertFalse(plan.allowed)

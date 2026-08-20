@@ -109,30 +109,5 @@
       <!-- Highlight -->
       <circle cx="25.15" cy="20.85" r="0.68" fill="#ff8a80" opacity="0.95"/>
     </g>
-
-    <!-- Eyelids: filled shapes that grow from the top/bottom edges of the
-         eye and meet at the vertical center (y=22) to sell a real blink,
-         instead of a clip-rect slicing the outline stroke. Shield/eye
-         background is white, so lids are drawn in the page background
-         color to read as "closing over" the eyeball. -->
-    <rect x="10" y="10.8" width="30" height="0" fill="#ffffff">
-      <animate attributeName="height"
-               dur="6.4s"
-               repeatCount="indefinite"
-               values="0;0;0;7.2;0;0;0;0;0;7.2;0;0"
-               keyTimes="0;0.12;0.2;0.23;0.26;0.55;0.7;0.78;0.86;0.89;0.92;1"/>
-    </rect>
-    <rect x="10" y="22" width="30" height="0" fill="#ffffff">
-      <animate attributeName="y"
-               dur="6.4s"
-               repeatCount="indefinite"
-               values="22;22;22;14.8;22;22;22;22;22;14.8;22;22"
-               keyTimes="0;0.12;0.2;0.23;0.26;0.55;0.7;0.78;0.86;0.89;0.92;1"/>
-      <animate attributeName="height"
-               dur="6.4s"
-               repeatCount="indefinite"
-               values="0;0;0;7.2;0;0;0;0;0;7.2;0;0"
-               keyTimes="0;0.12;0.2;0.23;0.26;0.55;0.7;0.78;0.86;0.89;0.92;1"/>
-    </rect>
   </g>
 </svg>

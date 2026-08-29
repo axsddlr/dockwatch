@@ -51,7 +51,7 @@ jobs:
       - name: Extract changelog section
         id: changelog
         run: |
-          body="$(.github/scripts/extract-changelog.sh "${{ steps.version.outputs.version }}")"
+          body="$(bash .github/scripts/extract-changelog.sh "${{ steps.version.outputs.version }}")"
           if [ -z "$body" ]; then
             echo "::warning::No CHANGELOG.md section found for ${{ steps.version.outputs.version }}; release body will be empty."
           fi

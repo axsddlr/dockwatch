@@ -1,10 +1,6 @@
 services:
   dockwatch:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: dockwatch-local:dev
-    pull_policy: never
+    image: ghcr.io/axsddlr/dockwatch:latest
     container_name: dockwatch
     restart: unless-stopped
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]

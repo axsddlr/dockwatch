@@ -13,7 +13,7 @@ from docker.errors import DockerException
 from ... import docker_client
 from ...config import validate_compose_project_config, ComposeProjectConfig
 from ...integrations import PortainerClient, PortainerError
-from ...models import UpdateResult
+from ...models import ContainerInfo, UpdateResult
 from ...registry import check_all, record_digest_drift_events
 from ...sources import discover_containers
 from ...updater import build_rollback_plan, build_update_plan, execute_portainer_compose_update, execute_update

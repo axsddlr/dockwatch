@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from docker.errors import DockerException
 from typer.testing import CliRunner
 

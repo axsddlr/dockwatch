@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from dockwatch.config import DockwatchConfig
 from dockwatch.docker_client import DockerConnectionError
-from dockwatch.integrations import PortainerClient, PortainerEnvironment
+from dockwatch.integrations import PortainerEnvironment
 from dockwatch.models import ContainerInfo, RegistryType
 from dockwatch.sources import discover_containers
 

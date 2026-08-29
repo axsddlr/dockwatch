@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dockwatch — Changelog</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  :root {
+    --crimson: #c4453c;
+    --crimson-dark: #9c352e;
+    --ink: #1c1c1f;
+    --muted: #5b5b63;
+    --border: #e4e4e7;
+    --bg-soft: #faf9f8;
+    --added: #1f7a4d;
+    --fixed: #c4453c;
+    --changed: #b8860b;
+    --docs: #4a5568;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    max-width: 780px;
+    padding: 0 28px;
+    font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: #fff;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .cover {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 90vh;
+    text-align: center;
+    page-break-after: always;
+  }
+  .cover svg { width: 88px; height: 88px; margin-bottom: 20px; }
+  .cover h1 {
+    font-size: 40px;
+    margin: 0;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  .cover .sub {
+    color: var(--muted);
+    font-size: 15px;
+    margin-top: 10px;
+  }
+  .cover .version-badge {
+    margin-top: 28px;
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: 999px;
+    background: var(--crimson);
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+  }
+  .cover .date {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  header.doc-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 2px solid var(--crimson);
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+  header.doc-header svg { width: 22px; height: 22px; flex-shrink: 0; }
+  header.doc-header .title { font-weight: 700; font-size: 16px; }
+  header.doc-header .subtitle { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+
+  h2.release {
+    font-size: 19px;
+    margin: 30px 0 4px;
+    padding-top: 6px;
+    color: var(--ink);
+    page-break-after: avoid;
+  }
+  h2.release .tag {
+    color: var(--crimson);
+    font-weight: 700;
+  }
+  h2.release .relday { color: var(--muted); font-weight: 400; font-size: 13px; }
+  h3.day {
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 14px 0 6px;
+    page-break-after: avoid;
+  }
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 10px 0 6px;
+    page-break-after: avoid;
+  }
+  .section-label.added { color: var(--added); }
+  .section-label.fixed { color: var(--fixed); }
+  .section-label.changed { color: var(--changed); }
+  .section-label.docs { color: var(--docs); }
+  .section-label .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor;
+    display: inline-block;
+  }
+  ul.entries {
+    margin: 0 0 10px;
+    padding-left: 18px;
+  }
+  ul.entries li {
+    margin-bottom: 9px;
+    page-break-inside: avoid;
+  }
+  ul.entries li strong { color: var(--ink); }
+  code {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.5px 4px;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+  }
+  hr.release-rule {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0 0;
+  }
+  footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 10.5px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <svg viewBox="0 0 48 48" fill="none">
+    <defs>
+      <clipPath id="eyeClip">
+        <path d="M12.5 22
+                 C15.7 17.2 19.5 14.8 24 14.8
+                 C28.5 14.8 32.3 17.2 35.5 22
+                 C32.3 26.8 28.5 29.2 24 29.2
+                 C19.5 29.2 15.7 26.8 12.5 22Z"/>
+      </clipPath>
+    </defs>
+    <path d="M24 3 41 10.5 V21 C41 32.4 34.2 41.6 24 44.5 C13.8 41.6 7 32.4 7 21 V10.5 Z"
+      stroke="#c4453c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12.5 22
+             C15.7 17.2 19.5 14.8 24 14.8
+             C28.5 14.8 32.3 17.2 35.5 22
+             C32.3 26.8 28.5 29.2 24 29.2
+             C19.5 29.2 15.7 26.8 12.5 22Z"
+      stroke="#c4453c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <g clip-path="url(#eyeClip)">
+      <circle cx="24" cy="22" r="6" stroke="#c4453c" stroke-width="1.5" opacity="0.35"/>
+      <g>
+        <animateTransform attributeName="transform" type="translate" dur="6.4s"
+          repeatCount="indefinite" calcMode="linear"
+          values="0 0;0 0;-1.2 -0.45;-1.05 -0.35;-1.05 -0.35;0.85 -0.15;1.15 -0.10;1.15 -0.10;0.35 0.70;0.18 0.58;0.18 0.58;-0.42 0.22;-0.42 0.22;0 0;0 0;0.55 -0.25;0.55 -0.25;0 0"
+          keyTimes="0;0.10;0.16;0.20;0.32;0.40;0.44;0.56;0.64;0.68;0.78;0.84;0.89;0.94;0.97;0.99;0.995;1"/>
+        <circle cx="24" cy="22" r="3.8" fill="#c4453c"/>
+        <circle cx="24" cy="22" r="1.85" fill="#181818"/>
+        <circle cx="25.15" cy="20.85" r="0.68" fill="#ff8a80" opacity="0.95"/>
+      </g>
+    </g>
+  </svg>
+  <h1>dockwatch</h1>
+  <div class="sub">Changelog</div>
+  <div class="version-badge">v0.8.0</div>
+  <div class="date">Generated 2026-08-19</div>
+</div>
+
+<header class="doc-header">
+  <svg viewBox="0 0 48 48" fill="none">
+    <path d="M24 3 41 10.5 V21 C41 32.4 34.2 41.6 24 44.5 C13.8 41.6 7 32.4 7 21 V10.5 Z" stroke="#c4453c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M13 22 C16.4 17.5 20 15.3 24 15.3 C28 15.3 31.6 17.5 35 22 C31.6 26.5 28 28.7 24 28.7 C20 28.7 16.4 26.5 13 22Z" stroke="#c4453c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="24" cy="22" r="3.4" fill="#c4453c"/>
+  </svg>
+  <span class="title">dockwatch changelog</span>
+  <span class="subtitle">Docker container update watcher — CLI + web dashboard</span>
+</header>
+
+<h2 class="release"><span class="tag">v0.8.0</span> <span class="relday">— 2026-08-19</span></h2>
+
+<h3 class="day">2026-08-19</h3>
+
+<div class="section-label added"><span class="dot"></span>Added</div>
+<ul class="entries">
+<li><strong>Portainer + non-compose container rollback (design)</strong> — audited the existing rollback path (<code>build_rollback_plan</code>) and found it silently blocked Portainer-managed stacks and plain non-compose containers, even though the update path already supports both. Design spec written for extending rollback to reuse the existing Portainer stack-update and plain-recreate machinery; implementation tracked separately.</li>
+</ul>
+
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li><strong>Trivy scan races, misclassification, and unbounded output</strong> — concurrent scan requests for the same image both missed cache and both spawned a <code>trivy</code> process (now deduplicated via an in-flight scan map keyed by image ID); a failed container-discovery lookup silently fell back to scanning the container's <em>name</em> as if it were an image reference instead of erroring; UNKNOWN-severity findings were being counted as LOW (now a proper <code>unknown_count</code> bucket, threaded through the API and dashboard severity bars); trivy could fall back to pulling a remote image when no local image matched (<code>--image-src docker</code> now pins it to the local daemon only); captured scan output had no size cap, so a malformed or runaway scan could balloon memory (now capped at 64MB with the process killed on overflow). Scan failures are now logged server-side.</li>
+<li><strong>App header showed a generic placeholder icon instead of the dockwatch logo</strong> — the header referenced a stock lucide <code>Hexagon</code> icon rather than the shield-eye brand SVG, so the logo never appeared next to "dockwatch" in the top bar even though <code>favicon.svg</code> existed and was linked correctly. The header now renders <code>/favicon.svg</code> directly; the icon itself was also simplified back to a clean shield outline with a solid pupil.</li>
+</ul>
+
+<h3 class="day">2026-08-18</h3>
+
+<div class="section-label added"><span class="dot"></span>Added</div>
+<ul class="entries">
+<li><strong>Admin password recovery without shell exec into a running session</strong> — a new <code>dockwatch config recover-admin</code> CLI command finds the earliest-created admin user, generates a one-time recovery token, and prints it to stdout; only a hash of the token plus a 15-minute expiry are stored server-side. A new <code>POST /auth/recover</code> route redeems it — single-use, rate-limited via its own lockout bucket separate from <code>/auth/login</code>. On success the user's session_version is bumped, invalidating any existing login cookie. A new <code>/recover</code> page exposes this in the dashboard; deliberately not linked from <code>/login</code> to avoid a lockout-oracle UI element.</li>
+<li><strong>Per-container auto-update toggle</strong> — new <code>POST</code>/<code>DELETE /containers/{name}/auto-update</code> endpoints flip the <code>auto_update</code> flag directly, surfaced as a Zap/ZapOff toggle button on each dashboard row.</li>
+<li><strong>Container logs viewer</strong> — a new <code>GET /containers/{name}/logs</code> endpoint powers a per-row LogsPanel alongside the existing HistoryPanel. Local containers only.</li>
+</ul>
+
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li><strong>Action-bar overflow on dashboard rows</strong> — low-frequency actions (logs, history, restart, delete) are now grouped into a new ActionMenu kebab dropdown; Check, Pin, Auto-update, Update, and Scan remain top-level icons.</li>
+<li><strong>Crimson accent + button contrast fix (WCAG AA)</strong> — replaced amber tokens (#dfab5c, ~3.5:1 contrast) with crimson (#c4453c) across CSS custom properties, and swapped text-black to text-white on CTA buttons for ~5.9:1 contrast.</li>
+<li><strong><code>config set-password</code> silently reset the wrong credentials on migrated instances</strong> — now routed through <code>ManifestStore</code>, updating the actual users table via <code>update_user_password()</code>, with a SECURITY warning logged on reset.</li>
+<li><strong>Session cookies now default to <code>Secure</code> when HTTPS is detected</strong> — auto-detects HTTPS from the request scheme or <code>X-Forwarded-Proto</code> (trusted unconditionally unless <code>DOCKWATCH_TRUSTED_PROXIES</code> is set).</li>
+<li><strong>Rate limiting and lockout are no longer blind behind a reverse proxy</strong> — new <code>DOCKWATCH_TRUSTED_PROXIES</code> config lets <code>X-Forwarded-For</code> be trusted only when it arrives via a listed proxy.</li>
+</ul>
+
+<div class="section-label changed"><span class="dot"></span>Changed</div>
+<ul class="entries">
+<li><strong><code>dockwatch config set-password</code> now requires <code>--create</code> to mint a new user</strong> — breaking change for scripted/automated use. The command now fails closed by default when the named user doesn't exist; pass <code>--create</code> to explicitly opt into creating them as admin.</li>
+</ul>
+
+<hr class="release-rule">
+<h2 class="release"><span class="tag">v0.7.3</span> <span class="relday">— 2026-08-12</span></h2>
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li><strong>Portainer stacks discovered via the local socket can now be updated</strong> — updates now resolve the environment id authoritatively from the stack's EndpointId.</li>
+</ul>
+
+<hr class="release-rule">
+<h2 class="release"><span class="tag">v0.7.2</span> <span class="relday">— 2026-08-12</span></h2>
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li><strong>Distro-variant-aware update selection</strong> — latest-tag selection now respects the OS-base variant of the deployed image instead of picking the highest version across all bases.</li>
+<li><strong>No more misleading "UNKNOWN" bump on up-to-date containers</strong> — the bump badge is now suppressed for UNKNOWN (equal versions).</li>
+</ul>
+
+<hr class="release-rule">
+<h2 class="release"><span class="tag">v0.7.0</span> <span class="relday">— 2026-08-05 &ndash; 2026-08-12</span></h2>
+
+<h3 class="day">2026-08-12</h3>
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li><strong>Portainer mutation routes now respect <code>portainer.enabled</code></strong>.</li>
+<li><strong>Stack deploy calls now use a dedicated, longer timeout</strong> — new <code>portainer.deploy_timeout</code> (default 120s).</li>
+<li><strong>Security hardening</strong> — rate-limiting on mutating routes, structured auth event logging, daily SQLite backups (last 7 retained).</li>
+</ul>
+
+<h3 class="day">2026-08-08</h3>
+<div class="section-label added"><span class="dot"></span>Added</div>
+<ul class="entries">
+<li><strong>Opt-in per-container auto-update</strong> — flagged containers auto-update on scheduled check through the same plan/execute path as a manual click.</li>
+</ul>
+
+<h3 class="day">2026-08-05</h3>
+<div class="section-label added"><span class="dot"></span>Added</div>
+<ul class="entries">
+<li><strong>Portainer stack creation API</strong> — <code>PortainerClient.create_stack()</code> deploys compose stacks programmatically.</li>
+<li><strong>Background scheduled check in web server</strong> — periodic checks broadcast fresh data via WebSocket without manual refresh.</li>
+</ul>
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li>Multi-arch digest comparison, compose workdir double-prefixing, dashboard stat cards ignoring "All" filter, manifest/token caching, 409 race on refresh, Portainer identity tracking.</li>
+</ul>
+
+<hr class="release-rule">
+<h2 class="release"><span class="tag">v0.6.0</span> <span class="relday">— 2026-08-05</span></h2>
+<div class="section-label added"><span class="dot"></span>Added</div>
+<ul class="entries">
+<li><strong>Delete container &amp; image</strong>, <strong>update history &amp; rollback</strong>, <strong>digest drift alerts</strong>, <strong>Portainer container restart</strong>, <strong>multi-arch-aware digest comparison</strong>, <strong>multi-user RBAC</strong>, <strong>authentication</strong>, <strong>SQLite-backed pinned/ignored</strong>, <strong>Portainer compose stack updates</strong>.</li>
+</ul>
+<div class="section-label fixed"><span class="dot"></span>Fixed</div>
+<ul class="entries">
+<li>Bootstrap credentials reaching the container, startup warning logic, dependency security upgrades (react-router-dom, postcss), pinned Dockerfile base images, permission sync on startup, auth hardening.</li>
+</ul>
+
+<footer>dockwatch — MIT licensed — generated from CHANGELOG.md</footer>
+
+</body>
+</html>

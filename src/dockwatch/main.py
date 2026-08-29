@@ -19,7 +19,6 @@ from .config import (
     load_config,
     migrate_auth_config_to_users,
     migrate_pinned_ignored_to_db,
-    save_config,
 )
 from .db import ManifestStore
 from .display import render_containers_table, render_scan_results, render_summary, render_update_table

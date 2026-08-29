@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
-from .deps import get_config, get_results_cache, get_results_lock, get_store
+from .deps import get_results_cache, get_results_lock, get_store
 from .routes import auth, containers, environments, settings, trivy, users
 from .security import require_auth, require_permission
 from .ws import router as ws_router
@@ -64,7 +64,9 @@ def _prune_old_backups(logger) -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
-    import asyncio, logging, random
+    import asyncio
+    import logging
+    import random
     from datetime import datetime, timezone
     from ..registry import check_all, record_digest_drift_events
     from ..sources import discover_containers

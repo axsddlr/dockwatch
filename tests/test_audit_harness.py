@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from dockwatch.api.serializers import deserialize_settings, serialize_settings
 from dockwatch.db import ManifestStore
@@ -17,13 +13,11 @@ from dockwatch.config import (
     PortainerConfig,
     save_config,
     load_config,
-    _to_toml,
     _toml_string,
     _unique_ordered,
 )
-from dockwatch.db import ManifestStore, STATE_DB_PATH
 from dockwatch.docker_client import get_image_id, parse_image_ref
-from dockwatch.semver import compare_versions, VersionDiff
+from dockwatch.semver import compare_versions
 
 
 class TestConfigAtomicity:
@@ -94,7 +88,7 @@ class TestDatabaseWAL:
         conn.close()
 
     def test_trivy_cache_uses_transaction(self, tmp_path: Path):
-        from dockwatch.models import TrivyScanResult, TrivyFinding
+        from dockwatch.models import TrivyScanResult
         db = ManifestStore(path=tmp_path / "test.db")
         result = TrivyScanResult(
             image_ref="test:1.0",
@@ -164,11 +158,6 @@ class TestPortainerFixes:
     def test_list_environments_handles_missing_id(self):
         from dockwatch.integrations.portainer import PortainerClient
         client = PortainerClient(base_url="http://localhost", api_key="test")
-        entries = [
-            {"Id": 1, "Name": "env1"},
-            {"Name": "env2"},
-            {"Id": "3", "Name": "env3"},
-        ]
         with patch.object(client, "list_environments", return_value=[
             type("Env", (), {"id": 1, "name": "env1"}),
             type("Env", (), {"id": 0, "name": "env2"}),

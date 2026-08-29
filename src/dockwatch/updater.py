@@ -196,18 +196,37 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
     )
 
 
-def build_rollback_plan(
+def _build_portainer_rollback_plan(
+    result: UpdateResult, *, old_tag: str, new_tag: str,
+) -> UpdatePlan:
+    info = result.container_info
+    if info.current_tag != new_tag:
+        return _blocked_plan(
+            result,
+            f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
+            mode="portainer-compose",
+        )
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="portainer-compose",
+        allowed=True,
+        image_ref=info.image_ref,
+        deployed_display=deployed_display_result(result),
+        remote_display=old_tag,
+        compose_project=info.compose_project,
+        compose_service=info.compose_service,
+        current_tag=new_tag,
+        remote_tag=old_tag,
+        environment_id=info.environment_id,
+    )
+
+
+def _build_local_compose_rollback_plan(
     result: UpdateResult, config: DockwatchConfig, *, old_tag: str, new_tag: str,
 ) -> UpdatePlan:
-    """Build a plan that reverts a compose-managed container's image tag
-    back to `old_tag`, reusing the same compose rewrite/pull/up machinery
-    as a forward update, just with current/remote tags swapped."""
     info = result.container_info
-    if not _is_compose_managed(result):
-        return _blocked_plan(result, "rollback is only supported for compose-managed containers")
-    if info.source != "local":
-        return _blocked_plan(result, "read-only source; only local Docker rollbacks are supported")
-
     project = info.compose_project or ""
     compose_cfg = config.compose_projects.get(project)
     if compose_cfg is None:
@@ -237,6 +256,51 @@ def build_rollback_plan(
         current_tag=new_tag,
         remote_tag=old_tag,
     )
+
+
+def _build_plain_rollback_plan(
+    result: UpdateResult, *, old_tag: str, new_tag: str,
+) -> UpdatePlan:
+    info = result.container_info
+    if info.current_tag != new_tag:
+        return _blocked_plan(
+            result,
+            f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
+        )
+    repo = info.image_ref.rsplit(":", 1)[0]
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="plain",
+        allowed=True,
+        image_ref=f"{repo}:{old_tag}",
+        deployed_display=deployed_display_result(result),
+        remote_display=old_tag,
+        current_tag=new_tag,
+        remote_tag=old_tag,
+    )
+
+
+def build_rollback_plan(
+    result: UpdateResult, config: DockwatchConfig, *, old_tag: str, new_tag: str,
+) -> UpdatePlan:
+    """Build a plan that reverts a container's image tag back to `old_tag`,
+    reusing the same update machinery as a forward update (compose rewrite,
+    Portainer stack redeploy, or plain recreate) just with current/remote
+    tags swapped."""
+    info = result.container_info
+    if info.source == "portainer":
+        if not _is_compose_managed(result):
+            return _blocked_plan(result, "rollback is only supported for compose-managed containers")
+        return _build_portainer_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
+    if info.source != "local":
+        return _blocked_plan(result, "read-only source; only local Docker and Portainer stack rollbacks are supported")
+    if _is_compose_managed(result):
+        return _build_local_compose_rollback_plan(result, config, old_tag=old_tag, new_tag=new_tag)
+    if not info.image_ref:
+        return _blocked_plan(result, "container image reference is missing")
+    return _build_plain_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
 
 
 def describe_update_plan(plan: UpdatePlan) -> list[str]:

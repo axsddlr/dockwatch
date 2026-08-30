@@ -11,21 +11,25 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS deps
+COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
+WORKDIR /app
+COPY pyproject.toml ./
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --reinstall-package dockwatch .
+
 FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS runtime
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
+# uv is a build-time tool only — copy the installed packages, not uv itself.
+COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=deps /usr/local/bin/dockwatch /usr/local/bin/dockwatch
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=frontend-builder /app/dist /app/frontend/dist
 
 WORKDIR /app
-
-COPY pyproject.toml ./
-COPY src ./src
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system --reinstall-package dockwatch .
 
 RUN useradd -m -s /bin/bash appuser && \
     mkdir -p /home/appuser/.config/dockwatch && \

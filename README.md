@@ -29,6 +29,7 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - [notifications](#notifications)
 - [portainer integration](#portainer-integration)
 - [vulnerability scanning](#vulnerability-scanning-trivy)
+- [check and update](./docs/CHECK_AND_UPDATE.md)
 - [screenshots](./docs/SCREENSHOTS.md)
 - [troubleshooting](#troubleshooting)
 - [development](#development)

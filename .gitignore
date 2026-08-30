@@ -53,6 +53,7 @@ tour-step1.png
 docs/*
 !docs/resources/
 !docs/FAQ.md
+!docs/CHECK_AND_UPDATE.md
 !docs/SCREENSHOTS.md
 !docs/logo-animated.svg
 !docs/PORTAINER_SETUP.md

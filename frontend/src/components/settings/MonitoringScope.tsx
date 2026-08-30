@@ -1,3 +1,5 @@
+import { Check } from 'lucide-react'
+
 interface FieldProps {
   label: string
   children: React.ReactNode
@@ -27,41 +29,75 @@ function ContainerChecklist({
   // containers are excluded from check results) — union them so it can
   // always be unchecked again.
   const allNames = [...new Set([...containerNames, ...checked])].sort()
+  const allChecked = allNames.length > 0 && allNames.every((n) => checked.includes(n))
+
+  const toggleAll = () => {
+    if (allChecked) {
+      checked.forEach((n) => onToggle(n))
+    } else {
+      allNames.filter((n) => !checked.includes(n)).forEach((n) => onToggle(n))
+    }
+  }
 
   return (
-    <>
+    <div>
       {allNames.length === 0 ? (
         <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-xs text-[var(--color-text-dim)]">
           No containers discovered yet — run a check from the dashboard first.
         </p>
       ) : (
-        <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-2">
-          {allNames.map((name) => {
-            const discovered = containerNames.includes(name)
-            return (
-              <label
-                key={name}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-panel)]"
-              >
-                <input
-                  type="checkbox"
-                  checked={checked.includes(name)}
-                  onChange={() => onToggle(name)}
-                  className="accent-[var(--color-primary)]"
-                />
-                <span className="truncate">{name}</span>
-                {!discovered && (
-                  <span className="ml-auto shrink-0 text-[10px] text-[var(--color-text-dim)]">
-                    not in last check
+        <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)]">
+          <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-panel)]/60 px-3 py-2">
+            <span className="text-xs font-medium text-[var(--color-text-muted)]">
+              {checked.length} of {allNames.length} selected
+            </span>
+            <button
+              type="button"
+              onClick={toggleAll}
+              className="text-xs font-medium text-[var(--color-primary)] transition-opacity hover:opacity-80"
+            >
+              {allChecked ? 'Clear all' : 'Select all'}
+            </button>
+          </div>
+          <div className="max-h-48 space-y-0.5 overflow-y-auto p-1.5">
+            {allNames.map((name) => {
+              const isChecked = checked.includes(name)
+              const discovered = containerNames.includes(name)
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onToggle(name)}
+                  aria-pressed={isChecked}
+                  className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-sm transition-colors ${
+                    isChecked
+                      ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 text-[var(--color-text-primary)]'
+                      : 'border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-bg-panel)] hover:text-[var(--color-text-primary)]'
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
+                      isChecked
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
+                        : 'border-[var(--color-border)] bg-[var(--color-bg-panel)]'
+                    }`}
+                  >
+                    {isChecked && <Check size={12} strokeWidth={3} />}
                   </span>
-                )}
-              </label>
-            )
-          })}
+                  <span className="truncate">{name}</span>
+                  {!discovered && (
+                    <span className="ml-auto shrink-0 text-[10px] text-[var(--color-text-dim)]">
+                      not in last check
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
-      <p className="text-[10px] text-[var(--color-text-dim)]">{helpText}</p>
-    </>
+      <p className="mt-1.5 text-[10px] text-[var(--color-text-dim)]">{helpText}</p>
+    </div>
   )
 }
 

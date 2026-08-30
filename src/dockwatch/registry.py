@@ -285,6 +285,13 @@ def _build_comparison_result(
                         f"candidate {effective_remote_tag}; no digest or version information"
                     )
 
+    # A bump label is only meaningful when an upgrade is actually available.
+    # Digest-matched / version-equal containers can carry a stale or mismatched
+    # deployed version label (common with linuxserver.io images) that would
+    # otherwise render a phantom MAJOR bump on an up-to-date row.
+    if is_outdated is not True:
+        version_diff = None
+
     return UpdateResult(
         container_info=info,
         latest_tag=latest_tag,

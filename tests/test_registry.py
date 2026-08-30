@@ -547,7 +547,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.comparison_reason, "digest matches (v1.5.4-ls334)")
         self.assertEqual(result.latest_version, "v1.5.4-ls334")
         self.assertEqual(result.version_status, "equal")
-        self.assertIsNotNone(result.version_diff)
+        # digest match → no bump label, even if a stale label disagrees
+        self.assertIsNone(result.version_diff)
 
     async def test_check_lscr_follows_bearer_challenge(self) -> None:
         info = make_container(registry=RegistryType.LSCR, current_tag="1.0.0")

@@ -1,0 +1,51 @@
+services:
+  dockwatch:
+    image: ghcr.io/axsddlr/dockwatch:latest
+    container_name: dockwatch
+    restart: unless-stopped
+    command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    group_add:
+      - "${DOCKER_GID:-105}"
+    environment:
+      - HOST_MOUNT_PREFIX=/hostroot
+      - DOCKWATCH_USERNAME=${DOCKWATCH_USERNAME:-}
+      - DOCKWATCH_PASSWORD=${DOCKWATCH_PASSWORD:-}
+      - DOCKWATCH_ALLOW_REGISTRATION=${DOCKWATCH_ALLOW_REGISTRATION:-false}
+      - DOCKWATCH_SECURE_COOKIE=${DOCKWATCH_SECURE_COOKIE:-}
+      - DOCKWATCH_TRUSTED_PROXIES=${DOCKWATCH_TRUSTED_PROXIES:-}
+    ports:
+      - "${DOCKWATCH_PORT:-10801}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockwatch_config:/home/appuser/.config/dockwatch
+      # Trivy's vulnerability DB + parsed-layer cache. Without this, every
+      # container recreate wipes it, forcing a full DB re-download (the
+      # dominant cost of a scan) on the very next Trivy run.
+      - dockwatch_trivy_cache:/home/appuser/.cache/trivy
+      # Compose-managed containers' workdirs can live anywhere on the host
+      # (e.g. /root/jackett, /app/data/stacks/...) — mirror the whole host
+      # filesystem so `docker compose` can always resolve whatever workdir a
+      # container's labels report. NOTE: read-write (not :ro) — compose
+      # updates rewrite tags in these files. Scope it on native Linux.
+      - /:/hostroot
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "512M"
+    init: true
+
+volumes:
+  dockwatch_config:
+  dockwatch_trivy_cache:

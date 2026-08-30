@@ -1,0 +1,46 @@
+# VCS and local metadata
+.git
+.gitignore
+.claude
+.tmp_home
+
+# Dev/docs not needed in image build context
+design
+tasks
+tests
+idea.txt
+README.md
+AGENTS.md
+CLAUDE.md
+RTK.md
+.github
+
+# Screenshots
+*.png
+*.avif
+
+# Frontend dev — only source needed for builder stage, dist is pre-built in image
+frontend/node_modules
+
+# Python caches and artifacts
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Virtualenv / local env files
+venv
+.venv
+.env
+.env.*
+
+# Local OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode
+.idea

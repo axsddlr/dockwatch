@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 48 48"
+     width="160"
+     height="160"
+     fill="none">
+
+  <defs>
+    <!-- Clip the iris/pupil so they stay inside the eye -->
+    <clipPath id="eyeClip">
+      <path d="M12.5 22
+               C15.7 17.2 19.5 14.8 24 14.8
+               C28.5 14.8 32.3 17.2 35.5 22
+               C32.3 26.8 28.5 29.2 24 29.2
+               C19.5 29.2 15.7 26.8 12.5 22Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shield -->
+  <path
+    d="M24 3
+       41 10.5
+       V21
+       C41 32.4 34.2 41.6 24 44.5
+       C13.8 41.6 7 32.4 7 21
+       V10.5
+       Z"
+    stroke="#d84d43"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Eye outline stays fixed: never clipped, so the blink never slices the stroke -->
+  <path
+    d="M12.5 22
+       C15.7 17.2 19.5 14.8 24 14.8
+       C28.5 14.8 32.3 17.2 35.5 22
+       C32.3 26.8 28.5 29.2 24 29.2
+       C19.5 29.2 15.7 26.8 12.5 22Z"
+    stroke="#d84d43"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Everything that must stay inside the eye's almond shape -->
+  <g clip-path="url(#eyeClip)">
+
+    <!-- Static iris boundary for polish -->
+    <circle
+      cx="24"
+      cy="22"
+      r="6"
+      stroke="#d84d43"
+      stroke-width="1.5"
+      opacity="0.35"/>
+
+    <!-- Moving eyeball content -->
+    <g>
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        dur="6.4s"
+        repeatCount="indefinite"
+        calcMode="linear"
+        values="
+          0 0;
+          0 0;
+          -1.2 -0.45;
+          -1.05 -0.35;
+          -1.05 -0.35;
+          0.85 -0.15;
+          1.15 -0.10;
+          1.15 -0.10;
+          0.35 0.70;
+          0.18 0.58;
+          0.18 0.58;
+          -0.42 0.22;
+          -0.42 0.22;
+          0 0;
+          0 0;
+          0.55 -0.25;
+          0.55 -0.25;
+          0 0"
+        keyTimes="
+          0;
+          0.10;
+          0.16;
+          0.20;
+          0.32;
+          0.40;
+          0.44;
+          0.56;
+          0.64;
+          0.68;
+          0.78;
+          0.84;
+          0.89;
+          0.94;
+          0.97;
+          0.99;
+          0.995;
+          1"/>
+
+      <!-- Iris -->
+      <circle cx="24" cy="22" r="3.8" fill="#d84d43"/>
+
+      <!-- Pupil -->
+      <circle cx="24" cy="22" r="1.85" fill="#181818"/>
+
+      <!-- Highlight -->
+      <circle cx="25.15" cy="20.85" r="0.68" fill="#ff8a80" opacity="0.95"/>
+    </g>
+  </g>
+</svg>

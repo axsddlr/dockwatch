@@ -34,8 +34,23 @@ export function ContainerRow({ result }: ContainerRowProps) {
       status === 'PINNED'
         ? api.containers.unpin(result.container_info.name)
         : api.containers.pin(result.container_info.name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['containers'] })
+    onSuccess: (data) => {
+      // The dashboard renders from the zustand store, not a ['containers']
+      // react-query fetch — invalidating that key does nothing. Reflect the
+      // authoritative pinned list from the API response immediately instead.
+      const name = result.container_info.name
+      const pinned = data.pinned.includes(name)
+      useDashboardStore.getState().setResults(
+        useDashboardStore.getState().results.map((r) =>
+          r.container_info.name === name
+            ? {
+                ...r,
+                status: pinned ? 'PINNED' : null,
+                container_info: { ...r.container_info, pinned_override: pinned },
+              }
+            : r,
+        ),
+      )
     },
   })
 

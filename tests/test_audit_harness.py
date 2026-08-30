@@ -14,8 +14,8 @@ from dockwatch.config import (
     save_config,
     load_config,
     _toml_string,
-    _unique_ordered,
 )
+from dockwatch.utils import unique_ordered
 from dockwatch.docker_client import get_image_id, parse_image_ref
 from dockwatch.semver import compare_versions
 
@@ -245,7 +245,7 @@ class TestMainCLI:
     """FIX: main.py:163-166 — dead semaphore code removed; empty names rejected."""
 
     def test_empty_name_filtered_by_unique_ordered(self):
-        result = _unique_ordered(["nginx", "", "redis", ""])
+        result = unique_ordered(["nginx", "", "redis", ""])
         assert result == ["nginx", "redis"]
 
     def test_parse_image_ref_handles_whitespace_only(self):

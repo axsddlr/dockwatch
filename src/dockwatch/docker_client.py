@@ -9,26 +9,22 @@ from docker.errors import DockerException
 
 from .config import ComposeProjectConfig
 from .models import ContainerInfo, RegistryType
+from .utils import parse_bool, unique_ordered
 
 DIGEST_PINNED_TAG = "DIGEST_PINNED"
-TRUE_LABEL_VALUES = {"1", "true", "yes", "on"}
-FALSE_LABEL_VALUES = {"0", "false", "no", "off"}
 
 
 class DockerConnectionError(RuntimeError):
     """Raised when the Docker daemon cannot be reached."""
 
 
+def get_docker_client() -> docker.DockerClient:
+    """Create a Docker client from the environment (socket or context)."""
+    return docker.from_env()
+
+
 def _parse_label_flag(labels: dict[str, str], key: str) -> bool | None:
-    raw_value = labels.get(key)
-    if raw_value is None:
-        return None
-    normalized = str(raw_value).strip().lower()
-    if normalized in TRUE_LABEL_VALUES:
-        return True
-    if normalized in FALSE_LABEL_VALUES:
-        return False
-    return None
+    return parse_bool(labels.get(key), None)
 
 
 def _parse_label_list(labels: dict[str, str], key: str) -> list[str] | None:
@@ -42,14 +38,7 @@ def _parse_label_list(labels: dict[str, str], key: str) -> list[str] | None:
         for chunk in line.split(";"):
             for item in chunk.split(","):
                 items.append(item.strip())
-    unique: list[str] = []
-    seen: set[str] = set()
-    for item in items:
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        unique.append(item)
-    return unique
+    return unique_ordered(items)
 
 
 _PORTAINER_COMPOSE_CONFIG_PREFIX = "/data/compose/"
@@ -284,7 +273,7 @@ def get_local_platform() -> tuple[str, str] | None:
     trip on every registry check.
     """
     try:
-        client = docker.from_env()
+        client = get_docker_client()
     except DockerException:
         return None
     try:
@@ -299,7 +288,7 @@ def get_local_platform() -> tuple[str, str] | None:
 def get_running_containers() -> list[ContainerInfo]:
     """Return Docker containers, including non-running ones, with normalized image metadata."""
     try:
-        client = docker.from_env()
+        client = get_docker_client()
     except DockerException as exc:
         raise DockerConnectionError(
             "Could not connect to Docker. Ensure the Docker daemon is running "
@@ -348,7 +337,7 @@ def get_running_containers() -> list[ContainerInfo]:
 def get_image_id(container_name: str) -> str | None:
     """Return the Docker image ID for a running container by name."""
     try:
-        client = docker.from_env()
+        client = get_docker_client()
     except Exception:  # noqa: BLE001
         return None
     try:
@@ -367,7 +356,7 @@ def delete_container(name: str, *, force: bool = False) -> None:
     Raises DockerException on failure (not found, still running without
     force, etc.) so the caller can surface a specific error message.
     """
-    client = docker.from_env()
+    client = get_docker_client()
     try:
         container = client.containers.get(name)
         container.remove(force=force)
@@ -378,7 +367,7 @@ def delete_container(name: str, *, force: bool = False) -> None:
 def delete_image(image_id: str, *, force: bool = False) -> None:
     """Remove a local image by ID. Raises DockerException if the image is
     still in use by another container and `force` is not set."""
-    client = docker.from_env()
+    client = get_docker_client()
     try:
         client.images.remove(image_id, force=force)
     finally:
@@ -390,7 +379,7 @@ def get_logs(name: str, *, tail: int = 200) -> str:
 
     Raises DockerException if the container is not found.
     """
-    client = docker.from_env()
+    client = get_docker_client()
     try:
         container = client.containers.get(name)
         raw = container.logs(tail=tail, timestamps=True)

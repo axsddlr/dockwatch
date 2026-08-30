@@ -7,6 +7,7 @@ from dataclasses import field
 from enum import Enum
 
 from .semver import VersionDiff
+from .utils import digest_of, short_digest
 
 
 class RegistryType(str, Enum):
@@ -49,18 +50,7 @@ def deployed_version_hint(info: ContainerInfo) -> str | None:
 
 def deployed_digest(info: ContainerInfo) -> str | None:
     candidate = info.repo_digest or info.compose_image_digest
-    if not candidate:
-        return None
-    return candidate.split("@", 1)[1] if "@" in candidate else candidate
-
-
-def _short_digest(digest: str | None) -> str | None:
-    if not digest:
-        return None
-    normalized = digest.split("@", 1)[1] if "@" in digest else digest
-    if normalized.startswith("sha256:"):
-        return f"sha256:{normalized.removeprefix('sha256:')[:12]}"
-    return normalized[:19]
+    return digest_of(candidate)
 
 
 _FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
@@ -73,9 +63,9 @@ def deployed_display(info: ContainerInfo) -> str:
     hint = deployed_version_hint(info)
     if hint:
         return f"latest ({hint})"
-    short_digest = _short_digest(deployed_digest(info))
-    if short_digest:
-        return f"latest ({short_digest})"
+    short = short_digest(deployed_digest(info))
+    if short:
+        return f"latest ({short})"
     return "latest"
 
 
@@ -148,9 +138,9 @@ def remote_display(result: UpdateResult) -> str:
         return result.check_error
     remote_version = resolved_remote_version(result)
     remote_label = remote_version or result.remote_tag or result.latest_tag or "-"
-    short_digest = _short_digest(result.remote_digest)
-    if short_digest:
-        return f"{remote_label} ({short_digest})"
+    short = short_digest(result.remote_digest)
+    if short:
+        return f"{remote_label} ({short})"
     return remote_label
 
 

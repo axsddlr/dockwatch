@@ -2,6 +2,13 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.9.2] - 2026-08-29
+
+### 2026-08-29
+
+#### Changed
+- **Internal refactor — no user-visible changes** — extracted shared utilities (list/boolean/number coercion, digest helpers, secret masking) into a new `src/dockwatch/utils.py`, consolidated the duplicated Docker client factory, and updated `config`, `models`, `docker_client`, `updater`, and the API serializers to import from it. Behavior is unchanged and covered by the existing test suite.
+
 ## [0.9.1] - 2026-08-29
 
 ### 2026-08-29

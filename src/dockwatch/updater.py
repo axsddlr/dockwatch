@@ -12,7 +12,7 @@ from docker.errors import DockerException
 from docker.models.containers import Container
 
 from .config import ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
-from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError
+from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError, get_docker_client
 from .integrations import PortainerClient, PortainerError
 from .models import UpdateResult, deployed_display_result, remote_display
 
@@ -319,7 +319,7 @@ def describe_update_plan(plan: UpdatePlan) -> list[str]:
 
 def _docker_client() -> docker.DockerClient:
     try:
-        return docker.from_env()
+        return get_docker_client()
     except DockerException as exc:
         raise DockerConnectionError(
             "Could not connect to Docker. Ensure the Docker daemon is running "

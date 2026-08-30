@@ -12,6 +12,7 @@ import secrets
 import tomllib
 
 from .db import ManifestStore
+from .utils import parse_bool, parse_float, parse_int, parse_list, unique_ordered
 
 _WINDOWS_DRIVE_PATH = re.compile(r"^([A-Za-z]):\\(.*)$")
 
@@ -74,24 +75,6 @@ class DockwatchConfig:
     auth: AuthConfig = field(default_factory=AuthConfig)
 
 
-def _unique_ordered(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        item = value.strip()
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        ordered.append(item)
-    return ordered
-
-
-def _parse_list(data: object) -> list[str]:
-    if not isinstance(data, list):
-        return []
-    return _unique_ordered([str(item) for item in data])
-
-
 def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
     """One-time import of pinned/ignored from config.toml into SQLite.
 
@@ -108,8 +91,8 @@ def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
             data = tomllib.load(f)
     except (tomllib.TOMLDecodeError, OSError):
         return
-    pinned = _parse_list(data.get("pinned"))
-    ignored = _parse_list(data.get("ignored"))
+    pinned = parse_list(data.get("pinned"))
+    ignored = parse_list(data.get("ignored"))
     if pinned:
         store.set_pinned(pinned)
     if ignored:
@@ -146,37 +129,9 @@ def bootstrap_auth_from_env(config: DockwatchConfig, path: Path) -> DockwatchCon
 
 
 def _parse_notify_events(data: object) -> list[str]:
-    values = [item.lower() for item in _parse_list(data)]
+    values = [item.lower() for item in parse_list(data)]
     filtered = [item for item in values if item in VALID_NOTIFY_EVENTS]
     return filtered or DEFAULT_NOTIFY_ON.copy()
-
-
-def _parse_bool(data: object, default: bool) -> bool:
-    if isinstance(data, bool):
-        return data
-    if isinstance(data, str):
-        normalized = data.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-    return default
-
-
-def _parse_int(data: object, default: int, *, minimum: int) -> int:
-    try:
-        value = int(data)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, value)
-
-
-def _parse_float(data: object, default: float, *, minimum: float) -> float:
-    try:
-        value = float(data)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, value)
 
 
 def _bool_toml(value: bool) -> str:
@@ -293,7 +248,7 @@ def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
             continue
         projects[key] = ComposeProjectConfig(
             workdir=str(raw_cfg.get("workdir", "")).strip(),
-            files=_parse_list(raw_cfg.get("files")),
+            files=parse_list(raw_cfg.get("files")),
             project_name=str(raw_cfg.get("project_name", "")).strip(),
         )
     return projects
@@ -391,24 +346,24 @@ def validate_compose_project_config(cfg: ComposeProjectConfig) -> list[str]:
 def _parse_trivy_config(data: object) -> TrivyConfig:
     if not isinstance(data, dict):
         return TrivyConfig()
-    severity = _parse_list(data.get("severity"))
+    severity = parse_list(data.get("severity"))
     return TrivyConfig(
-        enabled=_parse_bool(data.get("enabled"), False),
+        enabled=parse_bool(data.get("enabled"), False),
         binary_path=str(data.get("binary_path", "trivy")).strip() or "trivy",
-        severity=_unique_ordered(severity) if severity else ["CRITICAL", "HIGH"],
-        scanners=_parse_list(data.get("scanners")) or ["vuln"],
-        timeout_seconds=_parse_int(data.get("timeout_seconds"), 300, minimum=10),
-        skip_db_update=_parse_bool(data.get("skip_db_update"), False),
-        cache_ttl_minutes=_parse_int(data.get("cache_ttl_minutes"), 60, minimum=1),
+        severity=unique_ordered(severity) if severity else ["CRITICAL", "HIGH"],
+        scanners=parse_list(data.get("scanners")) or ["vuln"],
+        timeout_seconds=parse_int(data.get("timeout_seconds"), 300, minimum=10),
+        skip_db_update=parse_bool(data.get("skip_db_update"), False),
+        cache_ttl_minutes=parse_int(data.get("cache_ttl_minutes"), 60, minimum=1),
     )
 
 
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized = DockwatchConfig(
-        notify_only=_unique_ordered(config.notify_only),
-        include_tags=_unique_ordered(config.include_tags),
-        exclude_tags=_unique_ordered(config.exclude_tags),
+        notify_only=unique_ordered(config.notify_only),
+        include_tags=unique_ordered(config.include_tags),
+        exclude_tags=unique_ordered(config.exclude_tags),
         notify_on=_parse_notify_events(config.notify_on),
         first_check_notify=bool(config.first_check_notify),
         webhook_url=config.webhook_url.strip(),
@@ -422,13 +377,13 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             enabled=bool(config.portainer.enabled),
             url=config.portainer.url.strip(),
             api_key=config.portainer.api_key.strip(),
-            environments=_unique_ordered(config.portainer.environments),
+            environments=unique_ordered(config.portainer.environments),
             deploy_timeout=max(15.0, float(config.portainer.deploy_timeout)),
         ),
         compose_projects={
             key: ComposeProjectConfig(
                 workdir=value.workdir.strip(),
-                files=_unique_ordered(value.files),
+                files=unique_ordered(value.files),
                 project_name=value.project_name.strip(),
             )
             for key, value in config.compose_projects.items()
@@ -437,8 +392,8 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
         trivy=TrivyConfig(
             enabled=bool(config.trivy.enabled),
             binary_path=config.trivy.binary_path.strip() or "trivy",
-            severity=_unique_ordered(config.trivy.severity) or ["CRITICAL", "HIGH"],
-            scanners=_unique_ordered(config.trivy.scanners) or ["vuln"],
+            severity=unique_ordered(config.trivy.severity) or ["CRITICAL", "HIGH"],
+            scanners=unique_ordered(config.trivy.scanners) or ["vuln"],
             timeout_seconds=max(10, int(config.trivy.timeout_seconds)),
             skip_db_update=bool(config.trivy.skip_db_update),
             cache_ttl_minutes=max(1, int(config.trivy.cache_ttl_minutes)),
@@ -508,24 +463,24 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
     auth_raw = data.get("auth", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
-        notify_only=_parse_list(data.get("notify_only")),
-        include_tags=_parse_list(data.get("include_tags")),
-        exclude_tags=_parse_list(data.get("exclude_tags")),
+        notify_only=parse_list(data.get("notify_only")),
+        include_tags=parse_list(data.get("include_tags")),
+        exclude_tags=parse_list(data.get("exclude_tags")),
         notify_on=_parse_notify_events(data.get("notify_on")),
-        first_check_notify=_parse_bool(data.get("first_check_notify"), False),
+        first_check_notify=parse_bool(data.get("first_check_notify"), False),
         webhook_url=str(notifications.get("webhook_url", "")) if isinstance(notifications, dict) else "",
         discord_webhook=str(notifications.get("discord_webhook", "")) if isinstance(notifications, dict) else "",
         ntfy_url=str(notifications.get("ntfy_url", "")) if isinstance(notifications, dict) else "",
-        schedule_interval_seconds=_parse_int(data.get("schedule_interval_seconds"), 300, minimum=10),
-        schedule_jitter_seconds=_parse_int(data.get("schedule_jitter_seconds"), 30, minimum=0),
-        run_on_startup=_parse_bool(data.get("run_on_startup"), True),
-        max_concurrent_checks=_parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
+        schedule_interval_seconds=parse_int(data.get("schedule_interval_seconds"), 300, minimum=10),
+        schedule_jitter_seconds=parse_int(data.get("schedule_jitter_seconds"), 30, minimum=0),
+        run_on_startup=parse_bool(data.get("run_on_startup"), True),
+        max_concurrent_checks=parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
         portainer=PortainerConfig(
-            enabled=_parse_bool(portainer.get("enabled"), False) if isinstance(portainer, dict) else False,
+            enabled=parse_bool(portainer.get("enabled"), False) if isinstance(portainer, dict) else False,
             url=str(portainer.get("url", "")) if isinstance(portainer, dict) else "",
             api_key=str(portainer.get("api_key", "")) if isinstance(portainer, dict) else "",
-            environments=_parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
-            deploy_timeout=_parse_float(portainer.get("deploy_timeout") if isinstance(portainer, dict) else None, 120.0, minimum=15.0),
+            environments=parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
+            deploy_timeout=parse_float(portainer.get("deploy_timeout") if isinstance(portainer, dict) else None, 120.0, minimum=15.0),
         ),
         compose_projects=_parse_compose_projects(compose_projects),
         trivy=_parse_trivy_config(trivy_raw),

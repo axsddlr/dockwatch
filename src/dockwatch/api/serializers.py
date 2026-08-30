@@ -17,6 +17,7 @@ from ..models import (
     deployed_display_result,
     remote_display,
 )
+from ..utils import ensure_list, is_masked, mask_secret
 
 
 def _serialize_enum(value: Any) -> Any:
@@ -45,7 +46,7 @@ def serialize_container_info(info: ContainerInfo) -> dict[str, Any]:
     ])
 
 
-def serialize_version_diff(diff: VersionDiff) -> dict[str, Any] | None:
+def serialize_version_diff(diff: VersionDiff | None) -> dict[str, Any] | None:
     if diff is None:
         return None
     return {
@@ -84,24 +85,6 @@ def serialize_update_results(results: list[UpdateResult]) -> list[dict[str, Any]
     return [serialize_update_result(r) for r in results]
 
 
-def _mask_api_key(key: str) -> str:
-    if not key:
-        return ""
-    return "****" + key[-4:] if len(key) > 4 else "****"
-
-
-def _is_masked_key(key: str) -> bool:
-    return bool(key) and key.startswith("****")
-
-
-def _ensure_list(value: Any, fallback: list[Any]) -> list[Any]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    return list(fallback)
-
-
 def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[str, Any]:
     return {
         "pinned": store.get_pinned(),
@@ -122,7 +105,7 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
         "portainer": {
             "enabled": config.portainer.enabled,
             "url": config.portainer.url,
-            "api_key": _mask_api_key(config.portainer.api_key),
+            "api_key": mask_secret(config.portainer.api_key),
             "environments": config.portainer.environments,
             "deploy_timeout": config.portainer.deploy_timeout,
         },
@@ -148,15 +131,15 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
 
 def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store: ManifestStore) -> DockwatchConfig:
     if "pinned" in data:
-        store.set_pinned(_ensure_list(data.get("pinned"), store.get_pinned()))
+        store.set_pinned(ensure_list(data.get("pinned"), store.get_pinned()))
     if "ignored" in data:
-        store.set_ignored(_ensure_list(data.get("ignored"), store.get_ignored()))
+        store.set_ignored(ensure_list(data.get("ignored"), store.get_ignored()))
     if "auto_update" in data:
-        store.set_auto_update(_ensure_list(data.get("auto_update"), store.get_auto_update()))
-    existing.notify_only = _ensure_list(data.get("notify_only", existing.notify_only), existing.notify_only)
-    existing.include_tags = _ensure_list(data.get("include_tags", existing.include_tags), existing.include_tags)
-    existing.exclude_tags = _ensure_list(data.get("exclude_tags", existing.exclude_tags), existing.exclude_tags)
-    existing.notify_on = _ensure_list(data.get("notify_on", existing.notify_on), existing.notify_on)
+        store.set_auto_update(ensure_list(data.get("auto_update"), store.get_auto_update()))
+    existing.notify_only = ensure_list(data.get("notify_only", existing.notify_only), existing.notify_only)
+    existing.include_tags = ensure_list(data.get("include_tags", existing.include_tags), existing.include_tags)
+    existing.exclude_tags = ensure_list(data.get("exclude_tags", existing.exclude_tags), existing.exclude_tags)
+    existing.notify_on = ensure_list(data.get("notify_on", existing.notify_on), existing.notify_on)
     existing.first_check_notify = data.get("first_check_notify", existing.first_check_notify)
     existing.webhook_url = str(data.get("webhook_url", existing.webhook_url))
     existing.discord_webhook = str(data.get("discord_webhook", existing.discord_webhook))
@@ -171,8 +154,8 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         existing.portainer.enabled = bool(portainer_data.get("enabled", existing.portainer.enabled))
         existing.portainer.url = str(portainer_data.get("url", existing.portainer.url))
         new_key = str(portainer_data.get("api_key", existing.portainer.api_key))
-        existing.portainer.api_key = existing.portainer.api_key if _is_masked_key(new_key) else new_key
-        existing.portainer.environments = _ensure_list(
+        existing.portainer.api_key = existing.portainer.api_key if is_masked(new_key) else new_key
+        existing.portainer.environments = ensure_list(
             portainer_data.get("environments", existing.portainer.environments),
             existing.portainer.environments,
         )
@@ -184,8 +167,8 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
     if isinstance(trivy_data, dict):
         existing.trivy.enabled = bool(trivy_data.get("enabled", existing.trivy.enabled))
         existing.trivy.binary_path = str(trivy_data.get("binary_path", existing.trivy.binary_path))
-        existing.trivy.severity = _ensure_list(trivy_data.get("severity", existing.trivy.severity), existing.trivy.severity)
-        existing.trivy.scanners = _ensure_list(trivy_data.get("scanners", existing.trivy.scanners), existing.trivy.scanners)
+        existing.trivy.severity = ensure_list(trivy_data.get("severity", existing.trivy.severity), existing.trivy.severity)
+        existing.trivy.scanners = ensure_list(trivy_data.get("scanners", existing.trivy.scanners), existing.trivy.scanners)
         existing.trivy.timeout_seconds = int(trivy_data.get("timeout_seconds", existing.trivy.timeout_seconds))
         existing.trivy.skip_db_update = bool(trivy_data.get("skip_db_update", existing.trivy.skip_db_update))
         existing.trivy.cache_ttl_minutes = int(trivy_data.get("cache_ttl_minutes", existing.trivy.cache_ttl_minutes))
@@ -201,7 +184,7 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
                 continue
             projects[project_key] = ComposeProjectConfig(
                 workdir=strip_host_mount_prefix(str(raw_cfg.get("workdir", ""))),
-                files=_ensure_list(raw_cfg.get("files", []), []),
+                files=ensure_list(raw_cfg.get("files", []), []),
                 project_name=str(raw_cfg.get("project_name", "")),
             )
         existing.compose_projects = projects

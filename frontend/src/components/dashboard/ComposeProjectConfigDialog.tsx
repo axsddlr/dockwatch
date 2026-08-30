@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { X, AlertTriangle, Settings2 } from 'lucide-react'
+import { refreshDashboardResults } from '../../store/dashboardStore'
 import { useDetectCompose, useValidateComposeConfig } from '../../hooks/useComposeDetect'
 import { useSettings, useSaveSettings } from '../../hooks/useSettings'
 
@@ -21,7 +21,6 @@ export function ComposeProjectConfigDialog({
   open,
   onClose,
 }: ComposeProjectConfigDialogProps) {
-  const queryClient = useQueryClient()
   const { data: settings } = useSettings()
   const detectMutation = useDetectCompose()
   const validateMutation = useValidateComposeConfig()
@@ -72,7 +71,7 @@ export function ComposeProjectConfigDialog({
       { compose_projects: composeProjects },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['containers'] })
+          void refreshDashboardResults()
           onClose()
         },
       },

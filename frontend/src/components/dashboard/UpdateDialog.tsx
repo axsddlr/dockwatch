@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { X, AlertTriangle, Rocket, Settings2 } from 'lucide-react'
 import { api } from '../../api/client'
+import { refreshDashboardResults } from '../../store/dashboardStore'
 import type { UpdateResult } from '../../types'
 import { ComposeProjectConfigDialog } from './ComposeProjectConfigDialog'
 
@@ -14,7 +15,6 @@ interface UpdateDialogProps {
 }
 
 export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
-  const queryClient = useQueryClient()
   const [showComposeConfig, setShowComposeConfig] = useState(false)
 
   const updateMutation = useMutation({
@@ -29,8 +29,7 @@ export function UpdateDialog({ result, open, onClose }: UpdateDialogProps) {
       return data
     },
     onSuccess: async () => {
-      await api.containers.check('local')
-      queryClient.invalidateQueries({ queryKey: ['containers'] })
+      await refreshDashboardResults()
       onClose()
     },
   })

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { History, RotateCcw, X } from 'lucide-react'
 import { api } from '../../api/client'
+import { refreshDashboardResults } from '../../store/dashboardStore'
 import { hasPermission } from '../RequireAuth'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -31,7 +32,7 @@ export function HistoryPanel({ name, onClose }: { name: string; onClose: () => v
     onSuccess: (data) => {
       setMessage(data.plan.message)
       queryClient.invalidateQueries({ queryKey: ['containerHistory', name] })
-      queryClient.invalidateQueries({ queryKey: ['containers'] })
+      void refreshDashboardResults()
     },
     onError: (e: Error) => setMessage(e.message),
   })

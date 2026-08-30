@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { RefreshCw, Monitor, Server, Layers } from 'lucide-react'
 import { api } from '../../api/client'
@@ -7,7 +7,6 @@ import { useEnvironments } from '../../hooks/useEnvironments'
 import { useSettings } from '../../hooks/useSettings'
 
 export function Toolbar() {
-  const queryClient = useQueryClient()
   const source = useDashboardStore((s) => s.selectedSource)
   const environment = useDashboardStore((s) => s.selectedEnvironment)
   const isChecking = useDashboardStore((s) => s.isChecking)
@@ -36,7 +35,6 @@ export function Toolbar() {
     onMutate: () => setIsChecking(true),
     onSuccess: (data) => {
       setResults(data)
-      queryClient.invalidateQueries({ queryKey: ['containers'] })
     },
     onSettled: () => setIsChecking(false),
   })

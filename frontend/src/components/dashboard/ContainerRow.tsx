@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { History, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, ScrollText, Trash2, Zap, ZapOff } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
-import { useDashboardStore } from '../../store/dashboardStore'
+import { refreshDashboardResults, useDashboardStore } from '../../store/dashboardStore'
 import { deriveStatus, STATUS_CONFIG, BUMP_COLORS, type UpdateResult } from '../../types'
 import { UpdateDialog } from './UpdateDialog'
 import { ScanButton } from './ScanButton'
@@ -82,7 +82,10 @@ export function ContainerRow({ result }: ContainerRowProps) {
 
   const restartMutation = useMutation({
     mutationFn: () => api.containers.restart(result.container_info.name),
-    onSuccess: (data) => setMessage(data.plan.message),
+    onSuccess: (data) => {
+      setMessage(data.plan.message)
+      void refreshDashboardResults()
+    },
     onError: (e: Error) => setMessage(e.message),
   })
 
@@ -90,7 +93,7 @@ export function ContainerRow({ result }: ContainerRowProps) {
     mutationFn: () => api.containers.deleteContainer(result.container_info.name),
     onSuccess: () => {
       setMessage('Container deleted.')
-      queryClient.invalidateQueries({ queryKey: ['containers'] })
+      void refreshDashboardResults()
     },
     onError: (e: Error) => setMessage(e.message),
   })

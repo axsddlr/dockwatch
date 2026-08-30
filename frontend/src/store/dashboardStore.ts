@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { api } from '../api/client'
 import type { UpdateResult, ContainerStatus, TrivyScanResult } from '../types'
 
 interface DashboardState {
@@ -82,3 +83,13 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     })),
   setExpandedScan: (name) => set({ expandedScan: name }),
 }))
+
+/** Re-run a check for the current source and push fresh results into the store.
+ * The dashboard renders from this store, so mutating actions (update, rollback,
+ * delete, restart) call this instead of invalidating a non-existent
+ * ['containers'] react-query key. */
+export async function refreshDashboardResults(): Promise<void> {
+  const { selectedSource, selectedEnvironment, setResults } = useDashboardStore.getState()
+  const data = await api.containers.check(selectedSource, selectedEnvironment ?? undefined)
+  setResults(data)
+}

@@ -31,11 +31,17 @@ RUN useradd -m -s /bin/bash appuser && \
     mkdir -p /home/appuser/.config/dockwatch && \
     mkdir -p /home/appuser/.cache/trivy && \
     chown -R appuser:appuser /app /home/appuser/.config/dockwatch /home/appuser/.cache/trivy
-USER appuser
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "from urllib.request import urlopen; urlopen('http://localhost:8080/health')" || exit 1
 
+# The entrypoint runs as root so it can auto-detect the Docker socket's group
+# (no DOCKER_GID needed in .env), then drops to the unprivileged appuser via
+# setpriv before running the command.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]

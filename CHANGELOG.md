@@ -2,6 +2,13 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.9.1] - 2026-08-29
+
+### 2026-08-29
+
+#### Fixed
+- **`DOCKER_GID` is no longer required — the Docker socket's group is auto-detected at startup** — the container previously needed the host's Docker group GID in `.env` (a wrong value failed silently, leaving the dashboard with zero containers). A new container entrypoint reads the mounted socket's group, grants the unprivileged `appuser` access to it, then drops privileges — so deployments work out of the box on native Linux, Docker Desktop, and hosts where only Portainer is reachable and the GID is unknown. `group_add` was removed from `docker-compose.yml`.
+
 ## [0.9.0] - 2026-08-29
 
 ### 2026-08-29

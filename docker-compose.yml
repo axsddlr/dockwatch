@@ -4,8 +4,6 @@ services:
     container_name: dockwatch
     restart: unless-stopped
     command: ["dockwatch", "serve", "--host", "0.0.0.0", "--port", "8080"]
-    group_add:
-      - "${DOCKER_GID:-105}"
     environment:
       - HOST_MOUNT_PREFIX=/hostroot
       - DOCKWATCH_USERNAME=${DOCKWATCH_USERNAME:-}
@@ -16,6 +14,8 @@ services:
     ports:
       - "${DOCKWATCH_PORT:-10801}:8080"
     volumes:
+      # The image's entrypoint auto-detects the socket's group and grants the
+      # non-root appuser access, so DOCKER_GID in .env is no longer required.
       - /var/run/docker.sock:/var/run/docker.sock
       - dockwatch_config:/home/appuser/.config/dockwatch
       # Trivy's vulnerability DB + parsed-layer cache. Without this, every

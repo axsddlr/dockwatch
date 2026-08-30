@@ -8,6 +8,9 @@ Yes, via Portainer environments — one dockwatch instance can monitor container
 ### Is this agent-based?
 No. Local mode uses the Docker socket directly. Remote hosts go through Portainer's existing API. Nothing to install on target hosts.
 
+### Do I need to configure `DOCKER_GID` for the container?
+No (v0.9.1+). The container's entrypoint detects the group that owns `/var/run/docker.sock` and grants the non-root `appuser` access automatically — on native Linux, Docker Desktop, and hosts where the GID is unknown (e.g. Portainer-only access).
+
 ### What registries are supported?
 Docker Hub, GitHub Container Registry (ghcr.io), LinuxServer.io (lscr.io), and Codeberg. Floating tags (`latest`, `edge`, `dev`, `nightly`) are handled via digest comparison, not just tag string matching.
 
@@ -23,6 +26,9 @@ Containers deployed via Portainer stacks have compose labels pointing to `/data/
 
 ### Why do I see the same containers under both Local and Portainer?
 If your Portainer instance connects to the same Docker daemon as your local socket, all containers are visible to both. Dockwatch uses label-based detection to assign each container to the correct source — the dashboard filter groups them accordingly.
+
+### What's the guided onboarding tour?
+On first login, a guided tour walks you through the dashboard, Settings, and Users pages, highlighting key controls. You can replay it anytime from the help icon in the header — the replay button stays available even after the tour has been completed.
 
 ---
 
@@ -50,7 +56,7 @@ No. Only the target service is affected:
 Yes. Delete requires the `delete_containers` permission (separate from `update_containers`). Works for both local Docker and Portainer-managed containers with a confirmation prompt. Image deletion is supported for local containers only (Portainer-sourced image deletion requires direct Docker socket access). All deletions are logged to the audit trail.
 
 ### What if an update breaks something?
-Rollback button reverts to the last known-good tag for compose-managed containers (one click from the History panel). Plain-mode local updates auto-rollback on failure during the update itself — if the replacement container fails to start, the original is restored.
+The **Rollback** button (one click from the History panel) reverts to the last known-good tag. It works for compose-managed local containers, plain `docker run` containers, and Portainer-managed stacks. Plain-mode local updates also auto-rollback during the update itself — if the replacement container fails to start, the original is restored.
 
 ---
 
@@ -89,7 +95,6 @@ Six fixed permissions: `view_containers`, `update_containers`, `delete_container
 ### What's NOT supported yet?
 - Full stack recreate with network/volume changes via Portainer (only image tag updates are supported)
 - Kubernetes environments
-- Rollback for Portainer-managed containers (local compose only)
 - Image deletion for Portainer-sourced containers
 
 ### Does it work with Docker Swarm?

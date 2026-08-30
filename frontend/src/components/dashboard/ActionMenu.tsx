@@ -17,6 +17,7 @@ export function ActionMenu({ children }: { children: ReactNode }) {
   return (
     <div ref={ref} className="relative">
       <button
+        data-tour="action-menu"
         onClick={() => setOpen((v) => !v)}
         className={`rounded-lg p-1.5 transition-colors ${
           open

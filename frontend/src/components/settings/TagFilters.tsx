@@ -17,7 +17,7 @@ export function TagFilters({
   onChange: (field: string, value: string) => void
 }) {
   return (
-    <section className="space-y-4">
+    <section data-tour="settings-tags" className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Tag Filters</h3>
       <Field label="Include tags (comma-separated globs)">
         <input

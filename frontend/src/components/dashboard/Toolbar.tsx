@@ -60,6 +60,7 @@ export function Toolbar() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <button
+        data-tour="scan-button"
         onClick={() => checkMutation.mutate()}
         disabled={isChecking}
         className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
@@ -68,7 +69,7 @@ export function Toolbar() {
         {isChecking ? 'Checking...' : 'Refresh'}
       </button>
 
-      <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+      <div data-tour="auto-refresh" className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
         <span>Auto:</span>
         <button
           onClick={() => setAutoRefresh(!autoRefresh)}
@@ -96,7 +97,7 @@ export function Toolbar() {
         )}
       </div>
 
-      <div className="flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)]">
+      <div data-tour="source-selector" className="flex items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)]">
         {sources.map((s) => (
           <button
             key={s}

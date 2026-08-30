@@ -10,7 +10,7 @@ from ...config import hash_password
 from ...db import ManifestStore, UserRecord, VALID_PERMISSIONS
 from ..deps import get_store
 from ..rate_limit import rate_limit
-from ..security import AuthenticatedUser, require_permission
+from ..security import AuthenticatedUser, require_auth, require_permission
 
 router = APIRouter()
 
@@ -67,6 +67,13 @@ def create_user(body: dict[str, str]) -> Any:
         "username": username,
         "role_name": role_name,
     }
+
+
+@router.post("/users/me/onboarding-complete")
+def complete_onboarding(current_user: AuthenticatedUser = Depends(require_auth)) -> Any:
+    store = get_store()
+    store.mark_onboarding_seen(current_user.user_id)
+    return {"ok": True}
 
 
 @router.patch("/users/{user_id}")

@@ -20,7 +20,7 @@ export function FilterBar() {
   }, {} as Record<ContainerStatus, number>)
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div data-tour="filter-bar" className="flex flex-wrap gap-2">
       {STATUSES.map((status) => {
         const cfg = STATUS_CONFIG[status]
         const count = counts[status] ?? 0

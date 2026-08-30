@@ -7,9 +7,11 @@ import {
   Menu,
   X,
   LogOut,
+  HelpCircle,
 } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
+import { OnboardingTour } from '../onboarding/OnboardingTour'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -31,17 +33,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }
 
-  const navItems = [{ label: 'Dashboard', path: '/', icon: LayoutGrid }]
+  const navItems: { label: string; path: string; icon: typeof LayoutGrid; tour?: string }[] = [
+    { label: 'Dashboard', path: '/', icon: LayoutGrid },
+  ]
 
   if (hasPermission('manage_settings')) {
-    navItems.push({ label: 'Settings', path: '/settings', icon: Settings })
+    navItems.push({ label: 'Settings', path: '/settings', icon: Settings, tour: 'nav-settings' })
   }
   if (hasPermission('manage_users')) {
-    navItems.push({ label: 'Users', path: '/users', icon: Users })
+    navItems.push({ label: 'Users', path: '/users', icon: Users, tour: 'nav-users' })
   }
 
   return (
     <div className="min-h-screen flex flex-col">
+      <OnboardingTour />
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-bg-panel)]/95 backdrop-blur supports-[backdrop-filter]:bg-[var(--color-bg-panel)]/80">
         <div className="mx-auto flex h-12 max-w-[1260px] items-center justify-between px-4">
           <div className="flex items-center gap-3">
@@ -61,6 +66,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             {version && <span className="text-xs text-[var(--color-text-muted)]">v{version}</span>}
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('dockwatch:restart-tour'))}
+              title="Replay guided tour"
+              className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              <HelpCircle size={16} />
+            </button>
             <button
               onClick={handleLogout}
               title="Log out"
@@ -84,6 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={item.path}
                 to={item.path}
                 end={item.path === '/'}
+                data-tour={item.tour}
                 onClick={() => setDrawerOpen(false)}
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${

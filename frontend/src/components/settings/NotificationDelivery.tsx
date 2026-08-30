@@ -19,7 +19,7 @@ export function NotificationDelivery({
   onChange: (field: string, value: string) => void
 }) {
   return (
-    <section className="space-y-4">
+    <section data-tour="settings-notify-delivery" className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Notification Delivery</h3>
       <Field label="Webhook URL">
         <input

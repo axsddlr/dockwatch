@@ -34,6 +34,7 @@ class AuthenticatedUser:
     username: str
     role_name: str
     permissions: frozenset[str]
+    onboarding_seen: bool = False
 
 
 def _request_is_https(request: Request) -> bool:
@@ -117,6 +118,7 @@ def require_auth(request: Request) -> AuthenticatedUser:
         username=user.username,
         role_name=user.role_name,
         permissions=frozenset(role.permissions),
+        onboarding_seen=bool(user.onboarding_seen),
     )
 
 

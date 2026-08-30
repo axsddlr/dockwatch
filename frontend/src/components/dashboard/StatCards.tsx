@@ -24,7 +24,7 @@ export function StatCards() {
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div data-tour="stat-cards" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {cards.map((c) => (
         <div
           key={c.label}

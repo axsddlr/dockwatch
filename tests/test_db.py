@@ -277,5 +277,61 @@ class TestDigestDriftRecording:
         record_digest_drift_events([result], None)
 
 
+class TestOnboardingSeen:
+    def test_new_user_starts_unseen(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        user_id = store.create_user("alice", "hash", "admin")
+        assert store.get_user_by_id(user_id).onboarding_seen == 0
+
+    def test_mark_onboarding_seen_flips_flag(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        user_id = store.create_user("alice", "hash", "admin")
+
+        marked = store.mark_onboarding_seen(user_id)
+
+        assert marked is True
+        assert store.get_user_by_id(user_id).onboarding_seen == 1
+
+    def test_mark_onboarding_seen_is_idempotent(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        user_id = store.create_user("alice", "hash", "admin")
+
+        store.mark_onboarding_seen(user_id)
+        marked_again = store.mark_onboarding_seen(user_id)
+
+        assert marked_again is True
+        assert store.get_user_by_id(user_id).onboarding_seen == 1
+
+    def test_onboarding_seen_migrates_from_pre_tour_schema(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "test.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            """
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                session_version INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role_name, created_at) "
+            "VALUES ('alice', 'hash', 'admin', '2026-01-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        store = ManifestStore(path=path)
+
+        columns = {row[1] for row in sqlite3.connect(path).execute("PRAGMA table_info(users)").fetchall()}
+        assert "onboarding_seen" in columns
+        assert store.get_user_by_username("alice").onboarding_seen == 0
+
+
 if __name__ == "__main__":
     unittest.main()

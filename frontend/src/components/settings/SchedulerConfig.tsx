@@ -23,7 +23,7 @@ export function SchedulerConfig({
   onToggle: (field: string) => void
 }) {
   return (
-    <section className="space-y-4">
+    <section data-tour="settings-scheduler" className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Scheduler</h3>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Interval (seconds)">

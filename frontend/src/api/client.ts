@@ -102,14 +102,14 @@ export const api = {
   },
   auth: {
     login: (username: string, password: string) =>
-      request<{ ok: boolean; username: string; role: string; permissions: string[] }>('/api/auth/login', {
+      request<{ ok: boolean; username: string; role: string; permissions: string[]; onboarding_seen: boolean }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
     logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
     session: () => request<SessionUser>('/api/auth/session'),
     register: (username: string, password: string) =>
-      request<{ ok: boolean; username: string; role: string; permissions: string[] }>('/api/auth/register', {
+      request<{ ok: boolean; username: string; role: string; permissions: string[]; onboarding_seen: boolean }>('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
@@ -134,6 +134,8 @@ export const api = {
       }),
     delete: (id: number) =>
       request<{ ok: boolean; id: number }>(`/api/users/${id}`, { method: 'DELETE' }),
+    completeOnboarding: () =>
+      request<{ ok: boolean }>('/api/users/me/onboarding-complete', { method: 'POST' }),
   },
   roles: {
     list: () => request<RoleRecord[]>('/api/roles'),

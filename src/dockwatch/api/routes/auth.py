@@ -93,7 +93,13 @@ def login(body: dict[str, str], request: Request, response: Response) -> Any:
     logger.info("login success for %r from %s", user.username, key)
     role = store.get_role(user.role_name)
     permissions = role.permissions if role else []
-    return {"ok": True, "username": user.username, "role": user.role_name, "permissions": permissions}
+    return {
+        "ok": True,
+        "username": user.username,
+        "role": user.role_name,
+        "permissions": permissions,
+        "onboarding_seen": bool(user.onboarding_seen),
+    }
 
 
 @router.post("/auth/logout")
@@ -109,6 +115,7 @@ def session_status(user: AuthenticatedUser = Depends(require_auth)) -> Any:
         "username": user.username,
         "role": user.role_name,
         "permissions": list(user.permissions),
+        "onboarding_seen": user.onboarding_seen,
     }
 
 
@@ -158,7 +165,13 @@ def register(body: dict[str, str], request: Request, response: Response) -> Any:
     logger.info("new user registered: %r (role=%s) from %s", username, role_name, key)
     role = store.get_role(role_name)
     permissions = role.permissions if role else []
-    return {"ok": True, "username": username, "role": role_name, "permissions": permissions}
+    return {
+        "ok": True,
+        "username": username,
+        "role": role_name,
+        "permissions": permissions,
+        "onboarding_seen": False,
+    }
 
 
 @router.post("/auth/recover")

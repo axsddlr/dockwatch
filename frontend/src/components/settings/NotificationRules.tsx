@@ -10,7 +10,7 @@ export function NotificationRules({
   onToggle: (field: string) => void
 }) {
   return (
-    <section className="space-y-4">
+    <section data-tour="settings-notify-rules" className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Notification Rules</h3>
 
       <div className="space-y-1.5">

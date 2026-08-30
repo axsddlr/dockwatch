@@ -47,6 +47,7 @@ function UsersPageInner() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Users</h2>
             <button
+              data-tour="users-create"
               onClick={() => setShowCreateUser(!showCreateUser)}
               className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors"
             >
@@ -59,7 +60,7 @@ function UsersPageInner() {
             <CreateUserForm roles={roles} onCreated={loadData} onClose={() => setShowCreateUser(false)} />
           )}
 
-          <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
+          <div data-tour="users-table" className="rounded-lg border border-[var(--color-border)] overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-[var(--color-border)]/50">
                 <tr>

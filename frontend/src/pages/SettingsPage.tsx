@@ -259,6 +259,7 @@ function SettingsPageInner() {
 
         <div className="space-y-4">
           <button
+            data-tour="settings-advanced-toggle"
             onClick={() => setAdvancedOpen((prev) => !prev)}
             className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-primary)]"
           >

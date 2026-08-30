@@ -83,7 +83,7 @@ export function MonitoringScope({
   onChange: (field: string, value: string) => void
 }) {
   return (
-    <section className="space-y-4">
+    <section data-tour="settings-monitoring" className="space-y-4">
       <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Monitoring Scope</h3>
       <p className="text-xs text-[var(--color-text-dim)]">
         Pin or unpin containers directly from the dashboard row actions.

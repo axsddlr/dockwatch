@@ -41,6 +41,7 @@ class UserRecord:
     role_name: str
     created_at: str
     session_version: int = 0
+    onboarding_seen: bool = False
 
 
 @dataclass(slots=True)
@@ -174,6 +175,18 @@ class ManifestStore:
             "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
         )
 
+    def _migrate_users_onboarding_seen(self, connection: sqlite3.Connection) -> None:
+        """Add users.onboarding_seen for databases created before the guided
+        tour existed. New rows default to 0 (unseen); existing rows also get
+        0 so upgrading users see the tour once too.
+        """
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+        if "onboarding_seen" in columns:
+            return
+        connection.execute(
+            "ALTER TABLE users ADD COLUMN onboarding_seen INTEGER NOT NULL DEFAULT 0"
+        )
+
     def _initialize(self) -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
@@ -230,11 +243,13 @@ class ManifestStore:
                     password_hash TEXT NOT NULL,
                     role_name TEXT NOT NULL REFERENCES roles(name),
                     created_at TEXT NOT NULL,
-                    session_version INTEGER NOT NULL DEFAULT 0
+                    session_version INTEGER NOT NULL DEFAULT 0,
+                    onboarding_seen INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
             self._migrate_users_session_version(connection)
+            self._migrate_users_onboarding_seen(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS recovery_tokens (
@@ -631,7 +646,7 @@ class ManifestStore:
         username = username.strip()
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "SELECT id, username, password_hash, role_name, created_at, session_version, onboarding_seen "
                 "FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
@@ -642,7 +657,7 @@ class ManifestStore:
     def get_user_by_id(self, user_id: int) -> UserRecord | None:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "SELECT id, username, password_hash, role_name, created_at, session_version, onboarding_seen "
                 "FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
@@ -653,7 +668,7 @@ class ManifestStore:
     def get_earliest_user_by_role(self, role_name: str) -> UserRecord | None:
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "SELECT id, username, password_hash, role_name, created_at, session_version, onboarding_seen "
                 "FROM users WHERE role_name = ? ORDER BY created_at ASC, id ASC LIMIT 1",
                 (role_name,),
             ).fetchone()
@@ -664,7 +679,7 @@ class ManifestStore:
     def list_users(self) -> list[UserRecord]:
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
-                "SELECT id, username, password_hash, role_name, created_at, session_version "
+                "SELECT id, username, password_hash, role_name, created_at, session_version, onboarding_seen "
                 "FROM users ORDER BY id"
             ).fetchall()
         return [UserRecord(*row) for row in rows]
@@ -702,6 +717,19 @@ class ManifestStore:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 "UPDATE users SET session_version = session_version + 1 WHERE id = ?",
+                (user_id,),
+            )
+            return cursor.rowcount > 0
+
+    def mark_onboarding_seen(self, user_id: int) -> bool:
+        """Idempotent: marking an already-seen user again is a harmless
+        no-op, since the "replay tour" path calls this same completion
+        flow without re-checking whether it already ran.
+        """
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE users SET onboarding_seen = 1 WHERE id = ?",
                 (user_id,),
             )
             return cursor.rowcount > 0

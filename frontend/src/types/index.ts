@@ -124,6 +124,7 @@ export interface SessionUser {
   username?: string
   role?: string
   permissions?: string[]
+  onboarding_seen?: boolean
 }
 
 export interface UserRecord {

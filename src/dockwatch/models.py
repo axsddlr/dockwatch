@@ -90,15 +90,6 @@ class UpdateResult:
     digest_drift: bool = False
 
 
-def resolved_deployed_version(result: UpdateResult) -> str | None:
-    if result.deployed_version:
-        return result.deployed_version
-    deployed_tag = result.deployed_tag or result.container_info.current_tag
-    if deployed_tag and deployed_tag.lower() not in _FLOATING_TAGS:
-        return deployed_tag
-    return None
-
-
 def resolved_remote_version(result: UpdateResult) -> str | None:
     if result.latest_version:
         return result.latest_version

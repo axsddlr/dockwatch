@@ -103,7 +103,3 @@ def compare_versions(current: str, latest: str) -> VersionDiff:
         bump_type = "PRE-RELEASE"
 
     return VersionDiff(bump_type, current_parsed, latest_parsed, current, latest)
-
-
-def format_diff(diff: VersionDiff) -> str:
-    return f"{diff.current_raw} -> {diff.latest_raw} ({diff.bump_type})"

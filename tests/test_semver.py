@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from dockwatch.semver import compare_versions, format_diff, parse_version
+from dockwatch.semver import compare_versions, parse_version
 
 
 class SemverTests(unittest.TestCase):
@@ -37,10 +37,6 @@ class SemverTests(unittest.TestCase):
     def test_mixed_non_semver_is_unknown(self) -> None:
         diff = compare_versions("1.2.3", "latest")
         self.assertEqual(diff.bump_type, "UNKNOWN")
-
-    def test_format_diff(self) -> None:
-        diff = compare_versions("1.25.3", "1.27.2")
-        self.assertEqual(format_diff(diff), "1.25.3 -> 1.27.2 (MINOR)")
 
     def test_parse_version_returns_none_for_empty(self) -> None:
         self.assertIsNone(parse_version(""))

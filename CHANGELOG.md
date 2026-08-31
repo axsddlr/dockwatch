@@ -6,8 +6,20 @@ All notable changes to dockwatch are documented here, grouped by release and the
 
 ### 2026-08-29
 
+#### Added
+- **Modernized container checklist in Monitoring Scope** — the plain checkbox lists (ignored / auto-update containers) are now clickable rows with a custom check indicator, a per-list "X of Y selected" count, and Select all / Clear all.
+
+#### Fixed
+- **Dashboard row actions now reflect immediately** — pin/unpin, update, rollback, delete, restart, and compose-config saves previously required a manual page refresh (rows were driven by the zustand store, but the mutations invalidated a non-existent react-query key). They now re-check and update the store on success.
+- **No phantom MAJOR bump on up-to-date containers** — a digest-matched container with a stale or mismatched version label (e.g. linuxserver.io images) could render "Up-to-date" alongside a MAJOR bump. A bump label is now only shown when an upgrade is actually available.
+
 #### Changed
-- **Internal refactor — no user-visible changes** — extracted shared utilities (list/boolean/number coercion, digest helpers, secret masking) into a new `src/dockwatch/utils.py`, consolidated the duplicated Docker client factory, and updated `config`, `models`, `docker_client`, `updater`, and the API serializers to import from it. Behavior is unchanged and covered by the existing test suite.
+- **Slimmer Docker image** — 502MB → 452MB by keeping the build-time `uv` tool out of the runtime image (multi-stage install).
+- **Removed dead code** — unused `resolved_deployed_version` and `format_diff`.
+- **Internal refactor** — extracted shared utilities into `src/dockwatch/utils.py` and consolidated the duplicated Docker client factory; behavior unchanged.
+
+#### Docs
+- Refreshed the README (badges, published-image quick start, auto-detected Docker socket group) and FAQ (rollback coverage, DOCKER_GID, onboarding tour); restored `docs/CHECK_AND_UPDATE.md`.
 
 ## [0.9.1] - 2026-08-29
 

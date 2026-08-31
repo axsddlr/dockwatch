@@ -85,10 +85,21 @@ def compose_labels_to_project_config(
     )
 
 
-def _tag_override_kwargs(labels: dict[str, str]) -> dict[str, list[str] | None]:
+def _parse_label_int(labels: dict[str, str], key: str) -> int | None:
+    raw_value = labels.get(key)
+    if raw_value is None:
+        return None
+    try:
+        return int(str(raw_value).strip())
+    except ValueError:
+        return None
+
+
+def _tag_override_kwargs(labels: dict[str, str]) -> dict[str, list[str] | int | None]:
     return {
         "include_tags_override": _parse_label_list(labels, "dockwatch.include_tags"),
         "exclude_tags_override": _parse_label_list(labels, "dockwatch.exclude_tags"),
+        "update_delay_days_override": _parse_label_int(labels, "dockwatch.update_delay_days"),
     }
 
 

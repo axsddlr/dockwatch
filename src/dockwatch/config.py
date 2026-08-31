@@ -69,6 +69,7 @@ class DockwatchConfig:
     schedule_jitter_seconds: int = 30
     run_on_startup: bool = True
     max_concurrent_checks: int = 5
+    update_delay_days: int = 0
     portainer: PortainerConfig = field(default_factory=PortainerConfig)
     compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
     trivy: TrivyConfig = field(default_factory=TrivyConfig)
@@ -192,6 +193,7 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"schedule_jitter_seconds = {config.schedule_jitter_seconds}\n"
         f"run_on_startup = {_bool_toml(config.run_on_startup)}\n"
         f"max_concurrent_checks = {config.max_concurrent_checks}\n"
+        f"update_delay_days = {config.update_delay_days}\n"
     )
     notifications = (
         "\n[notifications]\n"
@@ -373,6 +375,7 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
         schedule_jitter_seconds=max(0, int(config.schedule_jitter_seconds)),
         run_on_startup=bool(config.run_on_startup),
         max_concurrent_checks=max(1, int(config.max_concurrent_checks)),
+        update_delay_days=max(0, int(config.update_delay_days)),
         portainer=PortainerConfig(
             enabled=bool(config.portainer.enabled),
             url=config.portainer.url.strip(),
@@ -475,6 +478,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
         schedule_jitter_seconds=parse_int(data.get("schedule_jitter_seconds"), 30, minimum=0),
         run_on_startup=parse_bool(data.get("run_on_startup"), True),
         max_concurrent_checks=parse_int(data.get("max_concurrent_checks"), 5, minimum=1),
+        update_delay_days=parse_int(data.get("update_delay_days"), 0, minimum=0),
         portainer=PortainerConfig(
             enabled=parse_bool(portainer.get("enabled"), False) if isinstance(portainer, dict) else False,
             url=str(portainer.get("url", "")) if isinstance(portainer, dict) else "",

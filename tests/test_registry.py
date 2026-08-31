@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -888,6 +888,173 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             results = await check_all([container], config, store=store, max_concurrency=1)
 
         self.assertEqual(len(results), 0)
+
+
+    async def test_update_delay_suppresses_freshly_seen_update(self) -> None:
+        import tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+        from dockwatch.models import UpdateResult
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            container = ContainerInfo(
+                name="nginx",
+                container_id="abc123",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+            )
+            store.record_observation(
+                container,
+                latest_tag="2.0.0",
+                remote_digest="sha256:remote",
+                checked_at=datetime.now(timezone.utc).isoformat(),
+            )
+            outdated = UpdateResult(
+                container_info=container,
+                latest_tag="2.0.0",
+                latest_version="2.0.0",
+                is_outdated=True,
+                remote_tag="2.0.0",
+                remote_digest="sha256:remote",
+                comparison_reason="remote version 2.0.0 is newer than deployed 1.0.0",
+            )
+            config = DockwatchConfig(update_delay_days=7)
+
+            with patch("dockwatch.registry.check_container", new=AsyncMock(return_value=outdated)):
+                results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIs(results[0].is_outdated, False)
+        self.assertIsNone(results[0].version_diff)
+        self.assertIn("update delayed", results[0].comparison_reason or "")
+
+    async def test_update_delay_expires_after_configured_days(self) -> None:
+        import tempfile
+        from datetime import datetime, timedelta, timezone
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+        from dockwatch.models import UpdateResult
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            container = ContainerInfo(
+                name="nginx",
+                container_id="abc123",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+            )
+            store.record_observation(
+                container,
+                latest_tag="2.0.0",
+                remote_digest="sha256:remote",
+                checked_at=(datetime.now(timezone.utc) - timedelta(days=10)).isoformat(),
+            )
+            outdated = UpdateResult(
+                container_info=container,
+                latest_tag="2.0.0",
+                latest_version="2.0.0",
+                is_outdated=True,
+                remote_tag="2.0.0",
+                remote_digest="sha256:remote",
+                comparison_reason="remote version 2.0.0 is newer than deployed 1.0.0",
+            )
+            config = DockwatchConfig(update_delay_days=7)
+
+            with patch("dockwatch.registry.check_container", new=AsyncMock(return_value=outdated)):
+                results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIs(results[0].is_outdated, True)
+        self.assertNotIn("update delayed", results[0].comparison_reason or "")
+
+    async def test_update_delay_skipped_when_clock_never_started(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+        from dockwatch.models import UpdateResult
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            container = ContainerInfo(
+                name="nginx",
+                container_id="abc123",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+            )
+            outdated = UpdateResult(
+                container_info=container,
+                latest_tag="2.0.0",
+                latest_version="2.0.0",
+                is_outdated=True,
+                remote_tag="2.0.0",
+                remote_digest="sha256:remote",
+                comparison_reason="remote version 2.0.0 is newer than deployed 1.0.0",
+            )
+            config = DockwatchConfig(update_delay_days=7)
+
+            with patch("dockwatch.registry.check_container", new=AsyncMock(return_value=outdated)):
+                results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIs(results[0].is_outdated, True)
+
+    async def test_update_delay_label_override_beats_global(self) -> None:
+        import tempfile
+        from datetime import datetime, timedelta, timezone
+        from pathlib import Path
+
+        from dockwatch.db import ManifestStore
+        from dockwatch.models import UpdateResult
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(path=Path(tmp_dir) / "test.db")
+            container = ContainerInfo(
+                name="nginx",
+                container_id="abc123",
+                image_ref="nginx:1.0.0",
+                registry=RegistryType.DOCKERHUB,
+                namespace="library",
+                image_name="nginx",
+                current_tag="1.0.0",
+                update_delay_days_override=30,
+            )
+            store.record_observation(
+                container,
+                latest_tag="2.0.0",
+                remote_digest="sha256:remote",
+                checked_at=(datetime.now(timezone.utc) - timedelta(days=5)).isoformat(),
+            )
+            outdated = UpdateResult(
+                container_info=container,
+                latest_tag="2.0.0",
+                latest_version="2.0.0",
+                is_outdated=True,
+                remote_tag="2.0.0",
+                remote_digest="sha256:remote",
+                comparison_reason="remote version 2.0.0 is newer than deployed 1.0.0",
+            )
+            config = DockwatchConfig(update_delay_days=1)
+
+            with patch("dockwatch.registry.check_container", new=AsyncMock(return_value=outdated)):
+                results = await check_all([container], config, store=store, max_concurrency=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIs(results[0].is_outdated, False)
+        self.assertIn("update delayed", results[0].comparison_reason or "")
 
 
 if __name__ == "__main__":

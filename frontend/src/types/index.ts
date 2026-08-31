@@ -94,6 +94,7 @@ export interface DockwatchSettings {
   schedule_jitter_seconds: number
   run_on_startup: boolean
   max_concurrent_checks: number
+  update_delay_days: number
   portainer: {
     enabled: boolean
     url: string

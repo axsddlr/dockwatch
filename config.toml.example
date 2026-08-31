@@ -31,6 +31,11 @@ schedule_jitter_seconds = 30
 run_on_startup = true
 max_concurrent_checks = 5
 
+# Suppress update offers until this many days have passed since dockwatch
+# first observed the newer tag (0 = off). Per-container override via the
+# `dockwatch.update_delay_days` label.
+update_delay_days = 0
+
 [notifications]
 # Generic webhook endpoint (POST JSON payload)
 webhook_url = ""

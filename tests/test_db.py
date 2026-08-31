@@ -57,6 +57,57 @@ class ManifestStoreTests(unittest.TestCase):
 
         self.assertEqual(event, "update")
 
+    def test_latest_seen_at_tracks_first_observation_of_each_tag(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(Path(tmp_dir) / "manifests.db")
+            container = make_container()
+
+            first_seen = "2025-01-01T00:00:00+00:00"
+            store.record_observation(container, latest_tag="1.1.0", remote_digest="sha256:first", checked_at=first_seen)
+            self.assertEqual(store.get_latest_seen_at(container), first_seen)
+
+            # Re-observing the same tag preserves the clock start.
+            store.record_observation(
+                container,
+                latest_tag="1.1.0",
+                remote_digest="sha256:first",
+                checked_at="2025-01-02T00:00:00+00:00",
+            )
+            self.assertEqual(store.get_latest_seen_at(container), first_seen)
+
+            # A new tag restarts the clock.
+            second_seen = "2025-01-03T00:00:00+00:00"
+            store.record_observation(container, latest_tag="1.2.0", remote_digest="sha256:second", checked_at=second_seen)
+            self.assertEqual(store.get_latest_seen_at(container), second_seen)
+
+    def test_latest_seen_at_migrates_legacy_manifest_state(self) -> None:
+        import sqlite3
+
+        with TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "legacy.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """
+                CREATE TABLE manifest_state (
+                    image_key TEXT PRIMARY KEY,
+                    image_ref TEXT NOT NULL,
+                    current_tag TEXT NOT NULL,
+                    last_seen_digest TEXT,
+                    last_seen_latest_tag TEXT,
+                    last_checked_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO manifest_state (image_key, image_ref, current_tag, last_checked_at) VALUES (?, ?, ?, ?)",
+                ("nginx:1.0.0", "nginx:1.0.0", "1.0.0", "2025-01-01T00:00:00+00:00"),
+            )
+            conn.commit()
+            conn.close()
+
+            store = ManifestStore(db_path)
+            self.assertIsNone(store.get_latest_seen_at(make_container()))
+
     def test_equivalent_image_refs_share_the_same_identity(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             store = ManifestStore(Path(tmp_dir) / "manifests.db")

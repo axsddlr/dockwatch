@@ -11,6 +11,7 @@ export function SchedulerConfig({
   interval,
   jitter,
   maxConcurrent,
+  updateDelayDays,
   runOnStartup,
   onChange,
   onToggle,
@@ -18,6 +19,7 @@ export function SchedulerConfig({
   interval: number
   jitter: number
   maxConcurrent: number
+  updateDelayDays: number
   runOnStartup: boolean
   onChange: (field: string, value: string) => void
   onToggle: (field: string) => void
@@ -47,6 +49,15 @@ export function SchedulerConfig({
             type="number"
             value={maxConcurrent}
             onChange={(e) => onChange('max_concurrent_checks', e.target.value)}
+            className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-primary)] focus:outline-none"
+          />
+        </Field>
+        <Field label="Update delay (days)">
+          <input
+            type="number"
+            min={0}
+            value={updateDelayDays}
+            onChange={(e) => onChange('update_delay_days', e.target.value)}
             className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm text-[var(--color-text-primary)] focus:border-[var(--color-primary)] focus:outline-none"
           />
         </Field>

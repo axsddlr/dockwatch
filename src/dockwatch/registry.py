@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
+from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
@@ -54,6 +57,51 @@ def _skip_result(info: ContainerInfo, reason: str) -> UpdateResult:
         deployed_tag=info.current_tag,
         deployed_version=deployed_version_hint(info),
         deployed_digest=deployed_digest(info),
+    )
+
+
+def _apply_update_delay(
+    result: UpdateResult,
+    store: ManifestStore,
+    config: DockwatchConfig,
+) -> UpdateResult:
+    """Suppress an available update until it has been observed for the
+    configured number of days. The per-container ``dockwatch.update_delay_days``
+    label overrides the global setting. Digest drift (same tag, new digest) is
+    never delayed: it is usually a security republish of the running version.
+    """
+    if result.is_outdated is not True or result.digest_drift:
+        return result
+    info = result.container_info
+    delay_days = (
+        info.update_delay_days_override
+        if info.update_delay_days_override is not None
+        else config.update_delay_days
+    )
+    if delay_days <= 0:
+        return result
+    seen_at = store.get_latest_seen_at(info)
+    if seen_at is None:
+        return result
+    try:
+        first_seen = datetime.fromisoformat(seen_at)
+        if first_seen.tzinfo is None:
+            first_seen = first_seen.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return result
+    elapsed_days = (datetime.now(timezone.utc) - first_seen).total_seconds() / 86400
+    if elapsed_days >= delay_days:
+        return result
+    remaining = math.ceil(delay_days - elapsed_days)
+    target = result.latest_tag or result.remote_tag or "new version"
+    return replace(
+        result,
+        is_outdated=False,
+        version_diff=None,
+        comparison_reason=(
+            f"update delayed ({remaining} day{'s' if remaining != 1 else ''} "
+            f"remaining for {target})"
+        ),
     )
 
 
@@ -997,4 +1045,6 @@ async def check_all(
             return_exceptions=True,
         )
     results: list[UpdateResult] = [r for r in checked if isinstance(r, UpdateResult)]
+    if store is not None:
+        results = [_apply_update_delay(result, store, resolved_config) for result in results]
     return [*precomputed, *results]

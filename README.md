@@ -199,6 +199,7 @@ schedule_interval_seconds = 300
 schedule_jitter_seconds = 30
 run_on_startup = true
 max_concurrent_checks = 5
+update_delay_days = 0
 
 [notifications]
 webhook_url = ""
@@ -231,6 +232,7 @@ cache_ttl_minutes = 60
 - `first_check_notify` — whether first-time discovery of a container counts as notifiable
 - `schedule_interval_seconds` / `schedule_jitter_seconds` — daemon mode check cadence
 - `max_concurrent_checks` — parallel registry check limit
+- `update_delay_days` — suppress update offers until a newer tag has been observed for this many days (0 = off). Per-container override via the `dockwatch.update_delay_days` label (e.g. `dockwatch.update_delay_days=7` on a compose service)
 - `portainer.enabled` — turns on the Portainer source in CLI and dashboard
 - `portainer.environments` — optional environment ID allowlist; empty means all visible environments
 - `portainer.deploy_timeout` — seconds allowed for stack create/redeploy (image pull + recreate); default 120, raise it for large images
@@ -281,7 +283,10 @@ dockwatch.ignore=true
 dockwatch.notify=false
 dockwatch.include_tags=^2\.
 dockwatch.exclude_tags=-rc$
+dockwatch.update_delay_days=7
 ```
+
+Notification URLs are SSRF-guarded when saved from the dashboard: only `http(s)` schemes are accepted, and private/loopback/link-local/reserved addresses (literal or via DNS) are rejected — including cloud metadata endpoints.
 
 ## Portainer Integration
 

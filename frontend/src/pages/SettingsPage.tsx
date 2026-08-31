@@ -62,6 +62,7 @@ function SettingsPageInner() {
     schedule_jitter_seconds: 30,
     run_on_startup: true,
     max_concurrent_checks: 5,
+    update_delay_days: 0,
     portainer_enabled: false,
     portainer_url: '',
     portainer_api_key: '',
@@ -98,6 +99,7 @@ function SettingsPageInner() {
         schedule_jitter_seconds: data.schedule_jitter_seconds ?? 30,
         run_on_startup: data.run_on_startup ?? true,
         max_concurrent_checks: data.max_concurrent_checks ?? 5,
+        update_delay_days: data.update_delay_days ?? 0,
         portainer_enabled: data.portainer?.enabled ?? false,
         portainer_url: data.portainer?.url ?? '',
         portainer_api_key: data.portainer?.api_key ?? '',
@@ -121,6 +123,7 @@ function SettingsPageInner() {
     'schedule_interval_seconds',
     'schedule_jitter_seconds',
     'max_concurrent_checks',
+    'update_delay_days',
     'trivy_timeout_seconds',
     'trivy_cache_ttl_minutes',
     'portainer_deploy_timeout',
@@ -180,6 +183,7 @@ function SettingsPageInner() {
       schedule_jitter_seconds: form.schedule_jitter_seconds,
       run_on_startup: form.run_on_startup,
       max_concurrent_checks: form.max_concurrent_checks,
+      update_delay_days: form.update_delay_days,
         portainer: {
           enabled: form.portainer_enabled,
           url: form.portainer_url,
@@ -252,6 +256,7 @@ function SettingsPageInner() {
           interval={form.schedule_interval_seconds}
           jitter={form.schedule_jitter_seconds}
           maxConcurrent={form.max_concurrent_checks}
+          updateDelayDays={form.update_delay_days}
           runOnStartup={form.run_on_startup}
           onChange={handleChange}
           onToggle={handleToggle}

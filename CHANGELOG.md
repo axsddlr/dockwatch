@@ -2,6 +2,14 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.10.0] - 2026-08-31
+
+### 2026-08-31
+
+#### Added
+- **Update delay** — a global "Update delay (days)" setting (and per-container `dockwatch.update_delay_days` label override) suppresses update offers until dockwatch has observed the newer tag for that many days, so freshly published images can bake before you're asked to update. Delayed rows show as up-to-date with an "update delayed (N days remaining)" note.
+- **SSRF guard for notification URLs** — webhook, Discord, and ntfy URLs are validated on save: only http(s) schemes are allowed, literal private/loopback/link-local/reserved addresses are rejected, and hostnames that resolve only to such addresses (e.g. cloud metadata endpoints) are rejected too.
+
 ## [0.9.2] - 2026-08-29
 
 ### 2026-08-29

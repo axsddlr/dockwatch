@@ -102,6 +102,7 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
         "schedule_jitter_seconds": config.schedule_jitter_seconds,
         "run_on_startup": config.run_on_startup,
         "max_concurrent_checks": config.max_concurrent_checks,
+        "update_delay_days": config.update_delay_days,
         "portainer": {
             "enabled": config.portainer.enabled,
             "url": config.portainer.url,
@@ -148,6 +149,7 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
     existing.schedule_jitter_seconds = int(data.get("schedule_jitter_seconds", existing.schedule_jitter_seconds))
     existing.run_on_startup = bool(data.get("run_on_startup", existing.run_on_startup))
     existing.max_concurrent_checks = int(data.get("max_concurrent_checks", existing.max_concurrent_checks))
+    existing.update_delay_days = int(data.get("update_delay_days", existing.update_delay_days))
 
     portainer_data = data.get("portainer", {})
     if isinstance(portainer_data, dict):

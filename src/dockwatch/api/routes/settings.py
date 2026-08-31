@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import socket
 import threading
 from typing import Any
 from urllib.parse import urlparse
@@ -27,7 +28,23 @@ _mutate_limit = Depends(rate_limit(10, 60))
 _settings_write_lock = threading.Lock()
 
 
+def _is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
 def _validate_public_url(raw: str) -> str:
+    """SSRF guard for URLs dockwatch's server will request (webhook/discord/
+    ntfy notification URLs, Portainer URL). Rejects non-http(s) schemes, URLs
+    whose literal host is a private/reserved address, and hostnames that
+    resolve only to private/reserved addresses (e.g. cloud metadata or an
+    internal service)."""
     url = raw.strip()
     if not url:
         return url
@@ -39,10 +56,33 @@ def _validate_public_url(raw: str) -> str:
         raise HTTPException(status_code=422, detail="URL must include a hostname.")
     try:
         ip = ipaddress.ip_address(host)
-        if ip.is_loopback or ip.is_private or ip.is_link_local:
-            raise HTTPException(status_code=422, detail=f"URL must not target private or loopback addresses: {host}")
+        if _is_restricted_ip(ip):
+            raise HTTPException(
+                status_code=422, detail=f"URL must not target private or loopback addresses: {host}"
+            )
+        return url
     except ValueError:
         pass
+    # Hostname — resolve and block only when every address is restricted, so
+    # a round-robin/CDN host that also has a public address still passes.
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise HTTPException(status_code=422, detail=f"URL hostname does not resolve: {host}") from exc
+    addresses = {info[4][0] for info in infos}
+    ips = []
+    for address in addresses:
+        try:
+            ips.append(ipaddress.ip_address(address))
+        except ValueError:
+            continue
+    if not ips:
+        raise HTTPException(status_code=422, detail=f"URL hostname does not resolve: {host}")
+    if all(_is_restricted_ip(ip) for ip in ips):
+        raise HTTPException(
+            status_code=422, detail=f"URL must not target private or loopback addresses: {host}"
+        )
     return url
 
 
@@ -62,6 +102,11 @@ def put_settings(body: dict[str, Any]) -> Any:
             updated = deserialize_settings(body, existing, store)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=f"invalid settings value: {exc}") from exc
+        # SSRF guard: notification URLs must not target private/reserved networks.
+        for field in ("webhook_url", "discord_webhook", "ntfy_url"):
+            value = getattr(updated, field)
+            if value:
+                _validate_public_url(value)
         save_config(updated)
     return serialize_settings(updated, store)
 

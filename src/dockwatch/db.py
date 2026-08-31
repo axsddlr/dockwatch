@@ -31,6 +31,7 @@ class ManifestRecord:
     last_seen_digest: str | None
     last_seen_latest_tag: str | None
     last_checked_at: str
+    latest_seen_at: str | None = None
 
 
 @dataclass(slots=True)
@@ -115,7 +116,7 @@ class ManifestStore:
     def _fetch(self, connection: sqlite3.Connection, image_key: str) -> ManifestRecord | None:
         row = connection.execute(
             """
-            SELECT image_key, image_ref, current_tag, last_seen_digest, last_seen_latest_tag, last_checked_at
+            SELECT image_key, image_ref, current_tag, last_seen_digest, last_seen_latest_tag, last_checked_at, latest_seen_at
             FROM manifest_state
             WHERE image_key = ?
             """,
@@ -163,6 +164,16 @@ class ManifestStore:
         )
         connection.execute("DROP TABLE container_flags_old")
 
+    def _migrate_manifest_latest_seen_at(self, connection: sqlite3.Connection) -> None:
+        """Add manifest_state.latest_seen_at for databases created before the
+        update-delay feature existed. NULL means the clock was never started;
+        callers treat it as 'no delay'.
+        """
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(manifest_state)").fetchall()}
+        if "latest_seen_at" in columns:
+            return
+        connection.execute("ALTER TABLE manifest_state ADD COLUMN latest_seen_at TEXT")
+
     def _migrate_users_session_version(self, connection: sqlite3.Connection) -> None:
         """Add users.session_version for databases created before session
         invalidation existed. SQLite supports ALTER TABLE ADD COLUMN
@@ -197,10 +208,12 @@ class ManifestStore:
                     current_tag TEXT NOT NULL,
                     last_seen_digest TEXT,
                     last_seen_latest_tag TEXT,
-                    last_checked_at TEXT NOT NULL
+                    last_checked_at TEXT NOT NULL,
+                    latest_seen_at TEXT
                 )
                 """
             )
+            self._migrate_manifest_latest_seen_at(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS trivy_scan_cache (
@@ -324,8 +337,15 @@ class ManifestStore:
             previous = self._fetch(connection, image_key) or self._fetch(connection, legacy_key)
             if previous is None:
                 event = "new"
-            elif previous.last_seen_digest != remote_digest or previous.last_seen_latest_tag != latest_tag:
-                event = "update"
+                latest_seen_at = observed_at
+            else:
+                latest_seen_at = previous.latest_seen_at
+                if previous.last_seen_digest != remote_digest or previous.last_seen_latest_tag != latest_tag:
+                    event = "update"
+                    # The delay clock measures days since the *tag* was first
+                    # seen; digest-only drift of the same tag does not restart it.
+                    if previous.last_seen_latest_tag != latest_tag:
+                        latest_seen_at = observed_at
             connection.execute(
                 """
                 INSERT INTO manifest_state (
@@ -334,15 +354,17 @@ class ManifestStore:
                     current_tag,
                     last_seen_digest,
                     last_seen_latest_tag,
-                    last_checked_at
+                    last_checked_at,
+                    latest_seen_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(image_key) DO UPDATE SET
                     image_ref = excluded.image_ref,
                     current_tag = excluded.current_tag,
                     last_seen_digest = excluded.last_seen_digest,
                     last_seen_latest_tag = excluded.last_seen_latest_tag,
-                    last_checked_at = excluded.last_checked_at
+                    last_checked_at = excluded.last_checked_at,
+                    latest_seen_at = excluded.latest_seen_at
                 """,
                 (
                     image_key,
@@ -351,11 +373,21 @@ class ManifestStore:
                     remote_digest,
                     latest_tag,
                     observed_at,
+                    latest_seen_at,
                 ),
             )
             if legacy_key != image_key:
                 connection.execute("DELETE FROM manifest_state WHERE image_key = ?", (legacy_key,))
         return event
+
+    def get_latest_seen_at(self, info: ContainerInfo) -> str | None:
+        """Return when the current latest tag was first observed (delay clock
+        start), or None when the clock never started — a fresh install or a
+        row created before the update-delay feature existed.
+        """
+        with closing(self._connect()) as connection:
+            found = self._fetch_any(connection, info)
+            return found[1].latest_seen_at if found else None
 
     def trivy_cache_get(
         self,

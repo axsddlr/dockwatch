@@ -95,6 +95,11 @@ export const api = {
         '/api/settings/test-portainer',
         { method: 'POST', body: JSON.stringify({ url, api_key }) },
       ),
+    testAgent: (name: string) =>
+      request<{ ok: boolean; name: string; version?: string; docker?: string; containers: number }>(
+        '/api/settings/test-agent',
+        { method: 'POST', body: JSON.stringify({ name }) },
+      ),
   },
   environments: {
     list: () =>

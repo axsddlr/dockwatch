@@ -95,6 +95,7 @@ export interface DockwatchSettings {
   run_on_startup: boolean
   max_concurrent_checks: number
   update_delay_days: number
+  agents: AgentConfig[]
   portainer: {
     enabled: boolean
     url: string
@@ -112,6 +113,13 @@ export interface DockwatchSettings {
     cache_ttl_minutes: number
   }
   compose_projects?: Record<string, ComposeProjectConfig>
+}
+
+export interface AgentConfig {
+  name: string
+  url: string
+  token: string
+  enabled: boolean
 }
 
 export interface ComposeProjectConfig {

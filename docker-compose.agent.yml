@@ -1,0 +1,25 @@
+# Example: run a dockwatch AGENT on another Docker PC so a central dockwatch
+# instance can see and manage this host's containers.
+#
+#   docker compose -f docker-compose.agent.yml up -d
+#
+# Generate the shared token once (e.g. `openssl rand -hex 32`), put the same
+# value in DOCKWATCH_AGENT_TOKEN here and in the central instance's Settings →
+# Agents (name/url/token).
+#
+# The agent is stateless: no config volume, no dashboard. The token grants
+# full Docker control on this host — only expose it on networks you trust
+# (LAN/VPN/Tailscale or a TLS reverse proxy).
+
+services:
+  dockwatch-agent:
+    image: ghcr.io/axsddlr/dockwatch:latest
+    container_name: dockwatch-agent
+    restart: unless-stopped
+    environment:
+      DOCKWATCH_AGENT_TOKEN: "change-me-openssl-rand-hex-32"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8081:8081"
+    command: ["dockwatch", "agent", "--host", "0.0.0.0", "--port", "8081"]

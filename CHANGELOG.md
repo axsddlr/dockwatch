@@ -2,6 +2,21 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.11.0] - 2026-08-31
+
+### 2026-08-31
+
+#### Added
+- **Agents — monitor and manage Docker hosts from one instance** — run a lightweight `dockwatch agent` (same image, `dockwatch agent --token <shared>`) on other Docker PCs; the central instance discovers each agent's containers over a token-authenticated API and shows them in the dashboard with an agent-name badge. Checks run centrally (agents do no registry traffic), and update / rollback / restart / delete / logs all work across hosts. Configure agents in Settings → Agents or `config.toml` (`[[agents]]`); a per-agent "Test connection" button is included.
+- **Agent protocol** — `GET /health`, `GET /containers`, `POST /containers/{id}/update|rollback|restart`, `DELETE /containers/{id}|/images/{id}`, `GET /containers/{id}/logs`, all bearer-token-authenticated.
+
+#### Changed
+- **Scheduled checks cover all sources** — the daemon now discovers local + Portainer + agents, so scheduled checks and auto-updates work across every configured source.
+- **Non-compose updates via agents switch pinned tags** — the agent path rebuilds the image ref with the remote tag, so pinned-tag containers on agent hosts actually upgrade (the local plain path only re-pulls the deployed ref).
+
+#### Docs
+- README "Monitor multiple PCs (agents)" section, `docker-compose.agent.yml` example, `config.toml.example` `[[agents]]` block.
+
 ## [0.10.0] - 2026-08-31
 
 ### 2026-08-31

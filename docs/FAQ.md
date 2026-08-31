@@ -3,10 +3,10 @@
 ## Architecture & Deployment
 
 ### Does it work across multiple Docker hosts?
-Yes, via Portainer environments — one dockwatch instance can monitor containers across many hosts through Portainer's API, plus the local Docker socket.
+Yes, two ways: via Portainer environments (one dockwatch instance monitors many hosts through Portainer's API), or via **agents** (v0.11.0+) — run `dockwatch agent --token <shared>` on another Docker PC and register it in Settings → Agents; its containers appear in the same dashboard with an agent-name badge, and checks/updates/restarts/deletes/logs all work across hosts.
 
 ### Is this agent-based?
-No. Local mode uses the Docker socket directly. Remote hosts go through Portainer's existing API. Nothing to install on target hosts.
+Two modes. Local containers use the Docker socket directly; remote hosts can go through Portainer's existing API **or** through a dockwatch agent (a lightweight, token-authenticated service you run on the other host — no Portainer install needed).
 
 ### Do I need to configure `DOCKER_GID` for the container?
 No (v0.9.1+). The container's entrypoint detects the group that owns `/var/run/docker.sock` and grants the non-root `appuser` access automatically — on native Linux, Docker Desktop, and hosts where the GID is unknown (e.g. Portainer-only access).

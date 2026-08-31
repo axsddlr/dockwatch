@@ -9,10 +9,11 @@ import { NotificationDelivery } from '../components/settings/NotificationDeliver
 import { NotificationRules } from '../components/settings/NotificationRules'
 import { SchedulerConfig } from '../components/settings/SchedulerConfig'
 import { PortainerIntegration } from '../components/settings/PortainerIntegration'
+import { AgentIntegration } from '../components/settings/AgentIntegration'
 import { TrivyConfig } from '../components/settings/TrivyConfig'
 import { SettingsActions } from '../components/settings/SettingsActions'
 import { hasPermission, NoAccess } from '../components/RequireAuth'
-import type { DockwatchSettings } from '../types'
+import type { AgentConfig, DockwatchSettings } from '../types'
 
 function parseCsv(v: string): string[] {
   return v
@@ -63,6 +64,7 @@ function SettingsPageInner() {
     run_on_startup: true,
     max_concurrent_checks: 5,
     update_delay_days: 0,
+    agents: [] as AgentConfig[],
     portainer_enabled: false,
     portainer_url: '',
     portainer_api_key: '',
@@ -100,6 +102,7 @@ function SettingsPageInner() {
         run_on_startup: data.run_on_startup ?? true,
         max_concurrent_checks: data.max_concurrent_checks ?? 5,
         update_delay_days: data.update_delay_days ?? 0,
+        agents: data.agents ?? [],
         portainer_enabled: data.portainer?.enabled ?? false,
         portainer_url: data.portainer?.url ?? '',
         portainer_api_key: data.portainer?.api_key ?? '',
@@ -184,6 +187,7 @@ function SettingsPageInner() {
       run_on_startup: form.run_on_startup,
       max_concurrent_checks: form.max_concurrent_checks,
       update_delay_days: form.update_delay_days,
+      agents: form.agents,
         portainer: {
           enabled: form.portainer_enabled,
           url: form.portainer_url,
@@ -260,6 +264,11 @@ function SettingsPageInner() {
           runOnStartup={form.run_on_startup}
           onChange={handleChange}
           onToggle={handleToggle}
+        />
+
+        <AgentIntegration
+          agents={form.agents}
+          onChange={(agents) => setForm((prev) => ({ ...prev, agents }))}
         />
 
         <div className="space-y-4">

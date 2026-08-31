@@ -174,6 +174,49 @@ class ManifestStore:
             return
         connection.execute("ALTER TABLE manifest_state ADD COLUMN latest_seen_at TEXT")
 
+    def _migrate_update_history_agent_source(self, connection: sqlite3.Connection) -> None:
+        """Widen update_history.source's CHECK constraint to allow 'agent'
+        on databases created before the agent integration existed. SQLite
+        can't ALTER a CHECK constraint in place, so rebuild the table when
+        the old one is detected.
+        """
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'update_history'"
+        ).fetchone()
+        if row is None or row[0] is None or "'agent'" in row[0]:
+            return
+        connection.execute("ALTER TABLE update_history RENAME TO update_history_old")
+        connection.execute(
+            """
+            CREATE TABLE update_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                container_name TEXT NOT NULL,
+                action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
+                source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
+                environment_id TEXT,
+                old_tag TEXT,
+                new_tag TEXT,
+                old_digest TEXT,
+                new_digest TEXT,
+                status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+                error TEXT,
+                user_id INTEGER,
+                username TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO update_history ("
+            "id, container_name, action, source, environment_id, old_tag, new_tag, "
+            "old_digest, new_digest, status, error, user_id, username, created_at"
+            ") SELECT "
+            "id, container_name, action, source, environment_id, old_tag, new_tag, "
+            "old_digest, new_digest, status, error, user_id, username, created_at "
+            "FROM update_history_old"
+        )
+        connection.execute("DROP TABLE update_history_old")
+
     def _migrate_users_session_version(self, connection: sqlite3.Connection) -> None:
         """Add users.session_version for databases created before session
         invalidation existed. SQLite supports ALTER TABLE ADD COLUMN
@@ -281,7 +324,7 @@ class ManifestStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     container_name TEXT NOT NULL,
                     action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
-                    source TEXT NOT NULL CHECK (source IN ('local', 'portainer')),
+                    source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
                     environment_id TEXT,
                     old_tag TEXT,
                     new_tag TEXT,
@@ -295,6 +338,7 @@ class ManifestStore:
                 )
                 """
             )
+            self._migrate_update_history_agent_source(connection)
             existing_admin = connection.execute(
                 "SELECT permissions FROM roles WHERE name = 'admin'"
             ).fetchone()

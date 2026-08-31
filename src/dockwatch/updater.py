@@ -11,10 +11,10 @@ import docker
 from docker.errors import DockerException
 from docker.models.containers import Container
 
-from .config import ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
+from .config import AgentConfig, ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError, get_docker_client
-from .integrations import PortainerClient, PortainerError
-from .models import UpdateResult, deployed_display_result, remote_display
+from .integrations import AgentClient, AgentError, PortainerClient, PortainerError
+from .models import ContainerInfo, UpdateResult, deployed_display_result, remote_display
 
 # Upper bound for docker compose pull/up; prevents a hung compose command
 # from blocking the update path forever.
@@ -119,10 +119,109 @@ def _build_portainer_update_plan(result: UpdateResult) -> UpdatePlan:
     )
 
 
+def _replace_ref_tag(image_ref: str, new_tag: str) -> str:
+    """Return `image_ref` with its tag replaced by `new_tag`.
+
+    Handles optional registry host:port prefixes by splitting on the last
+    colon of the final path segment, and refs without any tag at all.
+    """
+    last_segment = image_ref.split("/")[-1]
+    if ":" in last_segment:
+        base, _ = image_ref.rsplit(":", 1)
+        return f"{base}:{new_tag}"
+    return f"{image_ref}:{new_tag}"
+
+
+def _agent_target_ref(info: ContainerInfo, result: UpdateResult) -> str:
+    """The image ref an agent should pull/recreate with.
+
+    Floating tags keep their ref (re-pull fetches the new digest); pinned
+    tags are rebuilt with the remote tag so the agent actually switches
+    versions (unlike the local plain path, which can only re-pull the
+    deployed ref).
+    """
+    remote_tag = result.remote_tag or result.latest_tag
+    if (
+        info.current_tag.lower() not in _FLOATING_TAGS
+        and remote_tag
+        and remote_tag != info.current_tag
+        and not remote_tag.lower().startswith("sha256:")
+    ):
+        return _replace_ref_tag(info.image_ref, remote_tag)
+    return info.image_ref
+
+
+def _build_agent_update_plan(result: UpdateResult) -> UpdatePlan:
+    info = result.container_info
+    if result.status == "PINNED":
+        return _blocked_plan(result, "pinned containers cannot be updated from dockwatch", mode="agent-update")
+    if result.check_error:
+        return _blocked_plan(result, "container check failed; refresh the row before updating", mode="agent-update")
+    if result.is_outdated is not True:
+        return _blocked_plan(result, "container is not marked outdated", mode="agent-update")
+    if not info.image_ref:
+        return _blocked_plan(result, "container image reference is missing", mode="agent-update")
+    if info.current_tag == DIGEST_PINNED_TAG or "@" in info.image_ref:
+        return _blocked_plan(result, "digest-pinned images are blocked for safe updates", mode="agent-update")
+    if info.registry.value == "unknown":
+        return _blocked_plan(result, "local-only or unsupported image references cannot be updated safely", mode="agent-update")
+    if info.current_tag.lower() in _FLOATING_TAGS and result.comparison_basis != "digest":
+        return _blocked_plan(result, "floating tags require digest-backed outdated detection", mode="agent-update")
+    if _is_compose_managed(result):
+        return _blocked_plan(
+            result,
+            "compose-managed containers cannot be updated through an agent (v1); manage them on the agent host directly",
+            mode="agent-update",
+        )
+
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="agent-update",
+        allowed=True,
+        image_ref=_agent_target_ref(info, result),
+        deployed_display=deployed_display_result(result),
+        remote_display=remote_display(result),
+        environment_id=info.environment_id,
+    )
+
+
+def _build_agent_rollback_plan(result: UpdateResult, *, old_tag: str, new_tag: str) -> UpdatePlan:
+    info = result.container_info
+    if info.current_tag != new_tag:
+        return _blocked_plan(
+            result,
+            f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
+            mode="agent-rollback",
+        )
+    if _is_compose_managed(result):
+        return _blocked_plan(
+            result,
+            "compose-managed containers cannot be rolled back through an agent (v1)",
+            mode="agent-rollback",
+        )
+    return UpdatePlan(
+        container_name=info.name,
+        container_id=info.container_id,
+        source=info.source,
+        mode="agent-rollback",
+        allowed=True,
+        image_ref=_replace_ref_tag(info.image_ref, old_tag),
+        deployed_display=deployed_display_result(result),
+        remote_display=old_tag,
+        current_tag=new_tag,
+        remote_tag=old_tag,
+        environment_id=info.environment_id,
+    )
+
+
 def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePlan:
     info = result.container_info
     if info.source == "portainer":
         return _build_portainer_update_plan(result)
+    if info.source == "agent":
+        return _build_agent_update_plan(result)
     if info.source != "local":
         return _blocked_plan(result, "read-only source; only local Docker and Portainer stack updates are supported")
     if result.status == "PINNED":
@@ -294,6 +393,8 @@ def build_rollback_plan(
         if not _is_compose_managed(result):
             return _blocked_plan(result, "rollback is only supported for compose-managed containers")
         return _build_portainer_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
+    if info.source == "agent":
+        return _build_agent_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
     if info.source != "local":
         return _blocked_plan(result, "read-only source; only local Docker and Portainer stack rollbacks are supported")
     if _is_compose_managed(result):
@@ -690,6 +791,52 @@ def execute_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecution
     if plan.mode == "compose":
         return _execute_compose_update(plan, config)
     return _execute_plain_update(plan)
+
+
+def _find_agent(config: DockwatchConfig, plan: UpdatePlan) -> AgentConfig | None:
+    name = plan.environment_id
+    for agent in config.agents:
+        if agent.enabled and agent.name == name:
+            return agent
+    return None
+
+
+async def execute_agent_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
+    if not plan.allowed:
+        return UpdateExecutionResult(False, plan.mode, plan.reason or "update is blocked")
+    agent = _find_agent(config, plan)
+    if agent is None:
+        return UpdateExecutionResult(False, plan.mode, f"agent '{plan.environment_id}' is not configured")
+    try:
+        client = AgentClient(base_url=agent.url, token=agent.token)
+        payload = await client.update_container(plan.container_id, plan.image_ref)
+    except AgentError as exc:
+        return UpdateExecutionResult(False, plan.mode, f"agent update failed: {exc}")
+    return _agent_result(payload, plan.mode)
+
+
+async def execute_agent_rollback(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
+    if not plan.allowed:
+        return UpdateExecutionResult(False, plan.mode, plan.reason or "rollback is blocked")
+    agent = _find_agent(config, plan)
+    if agent is None:
+        return UpdateExecutionResult(False, plan.mode, f"agent '{plan.environment_id}' is not configured")
+    try:
+        client = AgentClient(base_url=agent.url, token=agent.token)
+        payload = await client.rollback_container(plan.container_id, plan.image_ref)
+    except AgentError as exc:
+        return UpdateExecutionResult(False, plan.mode, f"agent rollback failed: {exc}")
+    return _agent_result(payload, plan.mode)
+
+
+def _agent_result(payload: dict, mode: str) -> UpdateExecutionResult:
+    return UpdateExecutionResult(
+        bool(payload.get("ok")),
+        mode,
+        str(payload.get("message") or "agent operation completed"),
+        details=[str(detail) for detail in payload.get("details") or [] if isinstance(detail, str)],
+        rollback_message=str(payload["rollback_message"]) if payload.get("rollback_message") else None,
+    )
 
 
 async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:

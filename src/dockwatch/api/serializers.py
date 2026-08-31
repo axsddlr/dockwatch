@@ -8,7 +8,7 @@ from typing import Any
 
 from packaging.version import Version
 
-from ..config import DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
+from ..config import AgentConfig, DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
 from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
@@ -110,6 +110,15 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
             "environments": config.portainer.environments,
             "deploy_timeout": config.portainer.deploy_timeout,
         },
+        "agents": [
+            {
+                "name": agent.name,
+                "url": agent.url,
+                "token": mask_secret(agent.token),
+                "enabled": agent.enabled,
+            }
+            for agent in config.agents
+        ],
         "trivy": {
             "enabled": config.trivy.enabled,
             "binary_path": config.trivy.binary_path,
@@ -164,6 +173,30 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         existing.portainer.deploy_timeout = max(
             15.0, float(portainer_data.get("deploy_timeout", existing.portainer.deploy_timeout))
         )
+
+    if "agents" in data:
+        agents_data = data.get("agents")
+        if isinstance(agents_data, list):
+            existing_agents = {agent.name: agent for agent in existing.agents}
+            parsed: list[AgentConfig] = []
+            for item in agents_data:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                prior = existing_agents.get(name)
+                raw_token = str(item.get("token", ""))
+                token = prior.token if prior is not None and is_masked(raw_token) else raw_token
+                parsed.append(
+                    AgentConfig(
+                        name=name,
+                        url=str(item.get("url", "")).strip(),
+                        token=token.strip(),
+                        enabled=bool(item.get("enabled", True)),
+                    )
+                )
+            existing.agents = parsed
 
     trivy_data = data.get("trivy", {})
     if isinstance(trivy_data, dict):

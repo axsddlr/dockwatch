@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...config import load_config, save_config
-from ...integrations import PortainerClient, PortainerError
+from ...integrations import AgentClient, AgentError, PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
 from ..deps import get_config, get_store
@@ -86,6 +86,25 @@ def _validate_public_url(raw: str) -> str:
     return url
 
 
+def _validate_agent_url(raw: str) -> str:
+    """Loose URL check for agent endpoints.
+
+    Agents are explicitly trusted by the admin (and usually live on
+    LAN/VPN/private networks), so unlike notification URLs this does NOT
+    apply the SSRF private-address restriction — only scheme + hostname
+    sanity.
+    """
+    url = raw.strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="Agent URL must not be empty.")
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=422, detail=f"Unsupported agent URL scheme: {parsed.scheme}")
+    if parsed.hostname is None:
+        raise HTTPException(status_code=422, detail="Agent URL must include a hostname.")
+    return url
+
+
 @router.get("/settings", dependencies=[Depends(require_permission("manage_settings"))])
 def get_settings() -> Any:
     config = get_config()
@@ -137,6 +156,33 @@ async def test_notification() -> Any:
     if errors:
         raise HTTPException(status_code=502, detail="; ".join(errors))
     return {"ok": True, "message": "Test notification sent."}
+
+
+@router.post("/settings/test-agent", dependencies=[Depends(require_permission("manage_settings")), _mutate_limit])
+def test_agent(body: dict[str, str]) -> Any:
+    name = str(body.get("name", "")).strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="'name' is required.")
+    config = load_config()
+    agent = next((a for a in config.agents if a.name == name), None)
+    if agent is None:
+        raise HTTPException(status_code=422, detail=f"agent '{name}' is not configured.")
+    if not agent.enabled:
+        raise HTTPException(status_code=422, detail=f"agent '{name}' is disabled.")
+    _validate_agent_url(agent.url)
+    try:
+        client = AgentClient(base_url=agent.url, token=agent.token)
+        health = asyncio.run(client.health())
+        containers = asyncio.run(client.list_containers())
+    except AgentError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "ok": True,
+        "name": name,
+        "version": health.get("version"),
+        "docker": health.get("docker"),
+        "containers": len(containers),
+    }
 
 
 @router.post("/settings/test-portainer", dependencies=[Depends(require_permission("manage_settings")), _mutate_limit])

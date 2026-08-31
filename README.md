@@ -47,6 +47,7 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - Per-container log viewer, right from the dashboard row (local containers)
 - Vulnerability scanning via bundled Trivy, cached by image ID
 - Webhook / Discord / ntfy notifications, opt-in per event type
+- Agents — run the agent on other Docker PCs and manage every host's containers from one instance
 - CLI for scripts and cron jobs, same engine as the dashboard
 - Two admin password-recovery paths if you're locked out — `dockwatch config set-password` or the CLI-issued-token `/recover` web flow
 
@@ -234,6 +235,7 @@ cache_ttl_minutes = 60
 - `max_concurrent_checks` — parallel registry check limit
 - `update_delay_days` — suppress update offers until a newer tag has been observed for this many days (0 = off). Per-container override via the `dockwatch.update_delay_days` label (e.g. `dockwatch.update_delay_days=7` on a compose service)
 - `portainer.enabled` — turns on the Portainer source in CLI and dashboard
+- `agents` — remote dockwatch agents (one `[[agents]]` entry per host: `name`, `url`, `token`, `enabled`) for multi-PC monitoring
 - `portainer.environments` — optional environment ID allowlist; empty means all visible environments
 - `portainer.deploy_timeout` — seconds allowed for stack create/redeploy (image pull + recreate); default 120, raise it for large images
 - `trivy.enabled` — must be `true` for scanning to work; opt-in by design (network + CPU cost)
@@ -294,6 +296,33 @@ Use Portainer as an additional container source — inspect, check, restart, upd
 
 - **Setup walkthrough**: [PORTAINER_SETUP.md](docs/PORTAINER_SETUP.md)
 - **Feature scope & programmatic API**: [PORTAINER_API.md](docs/PORTAINER_API.md)
+
+## Monitor multiple Docker PCs (agents)
+
+Run one central dockwatch instance on your main setup and a lightweight **dockwatch agent** on every other Docker PC. All containers show up in the central dashboard — checks, updates, rollbacks, restarts, deletes, logs, and the audit log all work across hosts, and agents do zero registry traffic (the central does all checking).
+
+**On each remote PC** (`docker-compose.agent.yml` example included):
+
+```bash
+DOCKWATCH_AGENT_TOKEN=$(openssl rand -hex 32)   # generate the shared secret once
+docker compose -f docker-compose.agent.yml up -d
+```
+
+The agent is the same image, started with `dockwatch agent --host 0.0.0.0 --port 8081 --token <token>` (or `DOCKWATCH_AGENT_TOKEN`); it mounts only the Docker socket and exposes a small token-authenticated API.
+
+**On the central instance** — Settings → Agents: add one entry per host (name, `http://<pc>:8081`, the shared token). Or in `config.toml`:
+
+```toml
+[[agents]]
+name = "media-pc"
+url = "http://media-pc:8081"
+token = "<shared token>"
+enabled = true
+```
+
+- The dashboard's source filter gains an **Agents** tab; agent rows show a `<agent-name>` badge.
+- **v1 scope**: agent-hosted compose stacks are read-only (updates/rollbacks are plain-container recreates); Trivy scanning stays on the central's own host.
+- **Security**: the agent token grants full Docker control on that PC (same as the Docker CLI) — only expose agents on networks you trust (LAN, VPN, Tailscale, or a TLS reverse proxy). Agent URLs are explicitly trusted, so they may be on private networks (unlike notification webhooks, which are SSRF-guarded).
 
 ## Vulnerability Scanning (Trivy)
 

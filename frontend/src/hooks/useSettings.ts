@@ -31,3 +31,9 @@ export function useTestPortainer() {
       api.settings.testPortainer(url, api_key),
   })
 }
+
+export function useTestAgent() {
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => api.settings.testAgent(name),
+  })
+}

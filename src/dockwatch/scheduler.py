@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from .config import DockwatchConfig
 from .db import ManifestStore
-from .docker_client import DockerConnectionError, get_running_containers
+from .docker_client import DockerConnectionError
 from .models import ContainerInfo, UpdateResult
 from .notifiers import send_configured_notifications
 from .registry import check_all, record_digest_drift_events
-from .updater import build_update_plan, execute_portainer_compose_update, execute_update
+from .sources import discover_containers
+from .updater import (
+    build_update_plan,
+    execute_agent_update,
+    execute_portainer_compose_update,
+    execute_update,
+)
 
 AUTO_UPDATE_USERNAME = "scheduler (auto-update)"
 
@@ -24,15 +31,21 @@ class ScheduledCheckRunner:
         config: DockwatchConfig,
         store: ManifestStore,
         notify: bool = True,
-        container_loader: Callable[[], list[ContainerInfo]] = get_running_containers,
+        container_loader: Callable[[], list[ContainerInfo] | Awaitable[list[ContainerInfo]]] | None = None,
         emit: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self.store = store
         self.notify = notify
-        self.container_loader = container_loader
+        # Default: discover every configured source (local Docker, Portainer,
+        # agents) so scheduled checks + auto-updates cover all of them.
+        self.container_loader = container_loader or self._discover_all
         self.emit = emit or (lambda _message: None)
         self._run_lock = asyncio.Lock()
+
+    async def _discover_all(self) -> list[ContainerInfo]:
+        discovery = await discover_containers(self.config, source="all")
+        return discovery.containers
 
     def next_delay(self) -> float:
         return float(self.config.schedule_interval_seconds) + random.uniform(0, self.config.schedule_jitter_seconds)
@@ -45,6 +58,8 @@ class ScheduledCheckRunner:
         async with self._run_lock:
             try:
                 containers = self.container_loader()
+                if inspect.isawaitable(containers):
+                    containers = await containers
             except DockerConnectionError as exc:
                 self.emit(f"Scheduled check failed: {exc}")
                 return True
@@ -88,6 +103,8 @@ class ScheduledCheckRunner:
 
             if plan.mode == "portainer-compose":
                 execution = await execute_portainer_compose_update(plan, self.config)
+            elif plan.mode == "agent-update":
+                execution = await execute_agent_update(plan, self.config)
             else:
                 execution = await asyncio.to_thread(execute_update, plan, self.config)
 

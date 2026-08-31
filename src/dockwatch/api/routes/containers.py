@@ -12,11 +12,18 @@ from docker.errors import DockerException
 
 from ... import docker_client
 from ...config import validate_compose_project_config, ComposeProjectConfig
-from ...integrations import PortainerClient, PortainerError
+from ...integrations import AgentClient, AgentError, PortainerClient, PortainerError
 from ...models import ContainerInfo, UpdateResult
 from ...registry import check_all, record_digest_drift_events
 from ...sources import discover_containers
-from ...updater import build_rollback_plan, build_update_plan, execute_portainer_compose_update, execute_update
+from ...updater import (
+    build_rollback_plan,
+    build_update_plan,
+    execute_agent_rollback,
+    execute_agent_update,
+    execute_portainer_compose_update,
+    execute_update,
+)
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
 from ..rate_limit import rate_limit
 from ..security import AuthenticatedUser, require_permission
@@ -55,6 +62,8 @@ def _merge_check_results(
             existing.container_info.source != "portainer"
             or (not existing.container_info.environment_id and r.container_info.environment_id)
         ):
+            deduped[name] = r
+        elif r.container_info.source == "local" and existing.container_info.source == "agent":
             deduped[name] = r
     deduped_list = list(deduped.values())
 
@@ -154,9 +163,20 @@ async def check_containers(
         return serialized
 
 
+def _find_configured_agent(config, name: str | None):
+    for agent in config.agents:
+        if agent.enabled and agent.name == name:
+            return agent
+    return None
+
+
 async def _execute_plan(plan, config) -> Any:
     if plan.mode == "portainer-compose":
         return await execute_portainer_compose_update(plan, config)
+    if plan.mode == "agent-update":
+        return await execute_agent_update(plan, config)
+    if plan.mode == "agent-rollback":
+        return await execute_agent_rollback(plan, config)
     return await asyncio.to_thread(execute_update, plan, config)
 
 
@@ -236,8 +256,30 @@ async def restart_container(
 ) -> Any:
     match = _find_result(name)
     info = match.container_info
+    if info.source == "agent":
+        agent = _find_configured_agent(get_config(), info.environment_id)
+        if agent is None:
+            raise HTTPException(status_code=422, detail=f"agent '{info.environment_id}' is not configured")
+        try:
+            client = AgentClient(base_url=agent.url, token=agent.token)
+            await client.restart_container(info.container_id)
+        except AgentError as exc:
+            _log_action(
+                name, "restart", "agent",
+                success=False, error=str(exc), current_user=current_user,
+                environment_id=info.environment_id,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        _log_action(
+            name, "restart", "agent",
+            success=True, error=None, current_user=current_user,
+            environment_id=info.environment_id,
+        )
+        payload = {"name": name, "success": True, "message": f"Restarted '{name}' via agent '{info.environment_id}'."}
+        await manager.broadcast("container_updated", payload)
+        return {"ok": True, "plan": payload}
     if info.source != "portainer":
-        raise HTTPException(status_code=422, detail="Restart is only supported for Portainer-managed containers.")
+        raise HTTPException(status_code=422, detail="Restart is only supported for Portainer-managed or agent containers.")
     if not info.environment_id:
         raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
 
@@ -292,6 +334,25 @@ async def delete_container(
             raise HTTPException(status_code=502, detail=str(exc))
         _log_action(
             name, "delete_container", "portainer",
+            success=True, error=None, current_user=current_user,
+            environment_id=info.environment_id,
+        )
+    elif info.source == "agent":
+        agent = _find_configured_agent(get_config(), info.environment_id)
+        if agent is None:
+            raise HTTPException(status_code=422, detail=f"agent '{info.environment_id}' is not configured")
+        try:
+            client = AgentClient(base_url=agent.url, token=agent.token)
+            await client.delete_container(info.container_id, force=force)
+        except AgentError as exc:
+            _log_action(
+                name, "delete_container", "agent",
+                success=False, error=str(exc), current_user=current_user,
+                environment_id=info.environment_id,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        _log_action(
+            name, "delete_container", "agent",
             success=True, error=None, current_user=current_user,
             environment_id=info.environment_id,
         )
@@ -406,7 +467,18 @@ def disable_auto_update(name: str) -> Any:
 @router.get("/containers/{name}/logs", dependencies=[Depends(require_permission("view_containers"))])
 async def get_container_logs(name: str, tail: int = Query(default=200, ge=1, le=2000)) -> Any:
     match = _find_result(name)
-    if match.container_info.source != "local":
+    info = match.container_info
+    if info.source == "agent":
+        agent = _find_configured_agent(get_config(), info.environment_id)
+        if agent is None:
+            raise HTTPException(status_code=422, detail=f"agent '{info.environment_id}' is not configured")
+        try:
+            client = AgentClient(base_url=agent.url, token=agent.token)
+            logs = await client.get_logs(info.container_id, tail=tail)
+        except AgentError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        return {"logs": logs}
+    if info.source != "local":
         raise HTTPException(status_code=422, detail="Logs are only available for locally managed containers.")
     try:
         logs = await asyncio.to_thread(docker_client.get_logs, name, tail=tail)

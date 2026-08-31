@@ -58,6 +58,16 @@ environments = [
   # "2",
 ]
 
+# Remote dockwatch agents: each agent runs on another Docker PC and exposes
+# that host's containers to this instance. Generate a token with
+# `openssl rand -hex 32` and start the agent with
+# `dockwatch agent --token <token>` (or DOCKWATCH_AGENT_TOKEN).
+[[agents]]
+name = "media-pc"
+url = "http://media-pc:8081"
+token = ""
+enabled = true
+
 [compose_projects]
 # Optional strict mappings for compose-managed container updates.
 # dockwatch will only run compose updates when the discovered

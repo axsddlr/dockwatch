@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { RefreshCw, Monitor, Server, Layers } from 'lucide-react'
+import { RefreshCw, Monitor, Server, Layers, Network } from 'lucide-react'
 import { api } from '../../api/client'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useEnvironments } from '../../hooks/useEnvironments'
@@ -21,12 +21,16 @@ export function Toolbar() {
 
   const { data: settings } = useSettings()
   const portainerEnabled = settings?.portainer?.enabled ?? false
+  const agentsConfigured = (settings?.agents?.length ?? 0) > 0
 
   useEffect(() => {
-    if (!portainerEnabled && source !== 'local') {
+    if (source === 'portainer' && !portainerEnabled) {
       setSource('local')
     }
-  }, [portainerEnabled, source, setSource])
+    if (source === 'agents' && !agentsConfigured) {
+      setSource('local')
+    }
+  }, [source, portainerEnabled, agentsConfigured, setSource])
 
   const initialCheckRef = useRef(false)
 
@@ -51,9 +55,12 @@ export function Toolbar() {
   const { data: envData } = useEnvironments(source === 'portainer' || source === 'all')
   const environments = envData?.environments ?? []
 
-  const sources: ('local' | 'portainer' | 'all')[] = portainerEnabled
-    ? ['local', 'portainer', 'all']
-    : ['local']
+  const sources: ('local' | 'portainer' | 'agents' | 'all')[] = [
+    'local',
+    ...(portainerEnabled ? (['portainer'] as const) : []),
+    ...(agentsConfigured ? (['agents'] as const) : []),
+    ...(portainerEnabled || agentsConfigured ? (['all'] as const) : []),
+  ]
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -108,6 +115,7 @@ export function Toolbar() {
           >
             {s === 'local' && <Monitor size={14} />}
             {s === 'portainer' && <Server size={14} />}
+            {s === 'agents' && <Network size={14} />}
             {s === 'all' && <Layers size={14} />}
             {s.charAt(0).toUpperCase() + s.slice(1)}
           </button>

@@ -31,6 +31,20 @@ class PortainerConfig:
 
 
 @dataclass(slots=True)
+class AgentConfig:
+    """A remote dockwatch agent exposing another host's Docker daemon.
+
+    `name` is the unique key shown in the dashboard and used to route
+    container actions back to the right agent.
+    """
+
+    name: str = ""
+    url: str = ""
+    token: str = ""
+    enabled: bool = True
+
+
+@dataclass(slots=True)
 class ComposeProjectConfig:
     workdir: str = ""
     files: list[str] = field(default_factory=list)
@@ -71,6 +85,7 @@ class DockwatchConfig:
     max_concurrent_checks: int = 5
     update_delay_days: int = 0
     portainer: PortainerConfig = field(default_factory=PortainerConfig)
+    agents: list[AgentConfig] = field(default_factory=list)
     compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
     trivy: TrivyConfig = field(default_factory=TrivyConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
@@ -209,6 +224,15 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"environments = {_toml_array(config.portainer.environments)}\n"
         f"deploy_timeout = {config.portainer.deploy_timeout}\n"
     )
+    agents = ""
+    for agent in config.agents:
+        agents += (
+            "\n[[agents]]\n"
+            f"name = {_toml_string(agent.name)}\n"
+            f"url = {_toml_string(agent.url)}\n"
+            f"token = {_toml_string(agent.token)}\n"
+            f"enabled = {_bool_toml(agent.enabled)}\n"
+        )
     trivy_section = (
         "\n[trivy]\n"
         f"enabled = {_bool_toml(config.trivy.enabled)}\n"
@@ -235,7 +259,28 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"password_hash = {_toml_string(config.auth.password_hash)}\n"
         f"secret_key = {_toml_string(config.auth.secret_key)}\n"
     )
-    return base + notifications + portainer + trivy_section + compose_projects + auth
+    return base + notifications + portainer + agents + trivy_section + compose_projects + auth
+
+
+def _parse_agents(data: object) -> list[AgentConfig]:
+    if not isinstance(data, list):
+        return []
+    agents: list[AgentConfig] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        agents.append(
+            AgentConfig(
+                name=name,
+                url=str(item.get("url", "")).strip(),
+                token=str(item.get("token", "")).strip(),
+                enabled=parse_bool(item.get("enabled"), True),
+            )
+        )
+    return agents
 
 
 def _parse_compose_projects(data: object) -> dict[str, ComposeProjectConfig]:
@@ -383,6 +428,16 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             environments=unique_ordered(config.portainer.environments),
             deploy_timeout=max(15.0, float(config.portainer.deploy_timeout)),
         ),
+        agents=[
+            AgentConfig(
+                name=agent.name.strip(),
+                url=agent.url.strip(),
+                token=agent.token.strip(),
+                enabled=bool(agent.enabled),
+            )
+            for agent in config.agents
+            if agent.name.strip()
+        ],
         compose_projects={
             key: ComposeProjectConfig(
                 workdir=value.workdir.strip(),
@@ -465,6 +520,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     compose_projects = data.get("compose_projects", {}) if isinstance(data, dict) else {}
     trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
     auth_raw = data.get("auth", {}) if isinstance(data, dict) else {}
+    agents_raw = data.get("agents", []) if isinstance(data, dict) else []
     config = DockwatchConfig(
         notify_only=parse_list(data.get("notify_only")),
         include_tags=parse_list(data.get("include_tags")),
@@ -486,6 +542,7 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
             environments=parse_list(portainer.get("environments")) if isinstance(portainer, dict) else [],
             deploy_timeout=parse_float(portainer.get("deploy_timeout") if isinstance(portainer, dict) else None, 120.0, minimum=15.0),
         ),
+        agents=_parse_agents(agents_raw),
         compose_projects=_parse_compose_projects(compose_projects),
         trivy=_parse_trivy_config(trivy_raw),
         auth=AuthConfig(

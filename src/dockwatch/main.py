@@ -355,6 +355,37 @@ def serve(
     uvicorn.run(create_app(), host=host, port=port)
 
 
+@app.command("agent")
+def agent(
+    host: str = typer.Option("0.0.0.0", "--host", help="Host interface to bind the agent API."),
+    port: int = typer.Option(8081, "--port", help="Port to bind the agent API."),
+    token: str = typer.Option(
+        "",
+        "--token",
+        envvar="DOCKWATCH_AGENT_TOKEN",
+        help="Shared bearer token the central instance must present. "
+        "Required (or set DOCKWATCH_AGENT_TOKEN).",
+    ),
+) -> None:
+    """Launch the agent API: expose this host's Docker containers to a
+    central dockwatch instance.
+
+    The agent is stateless — no config file or dashboard — and only serves
+    the /api/agent/v1 endpoints. The token grants full Docker control on
+    this host (same access as the Docker CLI), so only expose it on
+    networks you trust, ideally via a VPN/reverse proxy.
+    """
+    import logging
+    import uvicorn
+    from .agent import create_agent_app
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+    uvicorn.run(create_agent_app(token), host=host, port=port)
+
+
 @app.command("daemon")
 def daemon(
     notify: bool = typer.Option(True, "--notify/--no-notify", help="Send configured notifications after each run."),
@@ -460,6 +491,14 @@ def list_config() -> None:
         "  environments: "
         + (", ".join(config.portainer.environments) if config.portainer.environments else "(all)")
     )
+    typer.echo("Agents:")
+    if config.agents:
+        for agent in config.agents:
+            typer.echo(
+                f"  - {agent.name}: {agent.url} ({'enabled' if agent.enabled else 'disabled'})"
+            )
+    else:
+        typer.echo("  (none)")
     typer.echo("Compose projects:")
     if config.compose_projects:
         for name, project in config.compose_projects.items():

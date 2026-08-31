@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from dockwatch import __version__ as dockwatch_version
 from dockwatch.config import (
+    AgentConfig,
     AuthConfig,
     ComposeProjectConfig,
     DockwatchConfig,
@@ -123,6 +124,29 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.compose_projects["media"].workdir, "/srv/media")
             self.assertEqual(loaded.compose_projects["media"].files, ["compose.yml", "compose.override.yml"])
             self.assertEqual(loaded.compose_projects["media"].project_name, "media-stack")
+
+    def test_agents_save_and_reload_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                agents=[
+                    AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok-1", enabled=True),
+                    AgentConfig(name="backup-pc", url="http://backup-pc:8081", token="tok-2", enabled=False),
+                ]
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertEqual(len(loaded.agents), 2)
+            self.assertEqual(loaded.agents[0].name, "media-pc")
+            self.assertEqual(loaded.agents[0].url, "http://media-pc:8081")
+            self.assertEqual(loaded.agents[0].token, "tok-1")
+            self.assertTrue(loaded.agents[0].enabled)
+            self.assertFalse(loaded.agents[1].enabled)
+
+            # Agents with empty names are dropped on save.
+            source.agents.append(AgentConfig(name="  ", url="http://x:8081", token="t"))
+            save_config(source, config_path)
+            self.assertEqual(len(load_config(config_path).agents), 2)
 
     def test_save_normalizes_empty_notify_events_and_scheduler_mins(self) -> None:
         with TemporaryDirectory() as tmp_dir:

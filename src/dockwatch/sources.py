@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .agent.protocol import deserialize_container_info
 from .config import DockwatchConfig
 from .docker_client import DockerConnectionError, get_running_containers, parse_image_ref, _detect_portainer_source
-from .integrations import PortainerClient, PortainerEnvironment, PortainerError
+from .integrations import AgentClient, AgentError, PortainerClient, PortainerEnvironment, PortainerError
 from .models import ContainerInfo
 
 
@@ -109,6 +110,32 @@ async def discover_portainer(
     return result
 
 
+def _map_agent_container(payload: dict, agent_name: str) -> ContainerInfo:
+    info = deserialize_container_info(payload)
+    info.source = "agent"
+    info.environment_id = agent_name
+    info.environment_name = agent_name
+    return info
+
+
+async def discover_agents(config: DockwatchConfig) -> SourceDiscoveryResult:
+    """Discover containers from every enabled dockwatch agent. A failing
+    agent only contributes an error entry — it never blocks other agents
+    or sources."""
+    result = SourceDiscoveryResult()
+    for agent in config.agents:
+        if not agent.enabled:
+            continue
+        try:
+            client = AgentClient(base_url=agent.url, token=agent.token)
+            payload = await client.list_containers()
+        except AgentError as exc:
+            result.errors.append(f"agent '{agent.name}': {exc}")
+            continue
+        result.containers.extend(_map_agent_container(item, agent.name) for item in payload)
+    return result
+
+
 async def discover_containers(
     config: DockwatchConfig,
     *,
@@ -128,11 +155,14 @@ async def discover_containers(
         result.containers.extend(portainer_result.containers)
         result.environments = portainer_result.environments
         result.errors.extend(portainer_result.errors)
+    if source in {"agents", "all"}:
+        agent_result = await discover_agents(config)
+        result.containers.extend(agent_result.containers)
+        result.errors.extend(agent_result.errors)
 
     # Deduplicate: when source=all and the same container name appears
-    # from both local Docker and Portainer, keep the Portainer identity
-    # and discard the local one.  This prevents double-checking and
-    # ensures a single authoritative source per container.
+    # from multiple sources, keep a single authoritative one. Precedence:
+    # Portainer > local > agent.
     seen: dict[str, ContainerInfo] = {}
     for c in result.containers:
         existing = seen.get(c.name)
@@ -142,6 +172,8 @@ async def discover_containers(
             existing.source != "portainer"
             or (not existing.environment_id and c.environment_id)
         ):
+            seen[c.name] = c
+        elif c.source == "local" and existing.source == "agent":
             seen[c.name] = c
     result.containers = list(seen.values())
 

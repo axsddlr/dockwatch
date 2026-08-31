@@ -109,14 +109,15 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const canScan = hasPermission('scan_containers')
   const canDelete = hasPermission('delete_containers')
   const canViewHistory = hasPermission('manage_settings')
-  const canViewLogs = hasPermission('view_containers') && result.container_info.source === 'local'
+  const source = result.container_info.source
+  const canViewLogs = hasPermission('view_containers') && (source === 'local' || source === 'agent')
   const isComposeManaged = !!result.container_info.compose_project && !!result.container_info.compose_service
-  const showRestartBtn = result.container_info.source === 'portainer' && canUpdate
-  const showDeleteImageBtn = canDelete && result.container_info.source === 'local'
+  const showRestartBtn = (source === 'portainer' || source === 'agent') && canUpdate
+  const showDeleteImageBtn = canDelete && source === 'local'
   const showUpdateBtn =
     status === 'OUTDATED' &&
     canUpdate &&
-    (result.container_info.source === 'local' || (result.container_info.source === 'portainer' && isComposeManaged))
+    (source === 'local' || (source === 'portainer' && isComposeManaged) || (source === 'agent' && !isComposeManaged))
   const tag = result.container_info.current_tag?.toLowerCase()
   const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
   const hasFloatingHint = isFloatingTag && result.comparison_basis === 'digest'
@@ -133,7 +134,9 @@ export function ContainerRow({ result }: ContainerRowProps) {
             {result.container_info.image_name}
             {result.container_info.source !== 'local' && (
               <span className="ml-1.5 inline-flex items-center rounded border border-[var(--color-border)] px-1 py-px text-[10px]">
-                {result.container_info.source}
+                {result.container_info.source === 'agent'
+                  ? result.container_info.environment_name ?? 'agent'
+                  : result.container_info.source}
               </span>
             )}
           </div>
@@ -247,7 +250,9 @@ export function ContainerRow({ result }: ContainerRowProps) {
                 onClick={() => restartMutation.mutate()}
                 disabled={restartMutation.isPending}
               >
-                Restart via Portainer
+                {source === 'agent'
+                  ? `Restart via ${result.container_info.environment_name ?? 'agent'}`
+                  : 'Restart via Portainer'}
               </ActionMenuItem>
             )}
             {showDeleteImageBtn && (

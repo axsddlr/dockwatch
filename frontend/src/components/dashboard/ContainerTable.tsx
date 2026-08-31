@@ -21,9 +21,12 @@ export function ContainerTable() {
 
   // A malformed record (missing container_info) from a backend edge case
   // shouldn't blank the whole table before rendering even starts.
+  // The 'agents' tab value is the API source name; container rows carry the
+  // singular 'agent' source.
+  const actualSource = selectedSource === 'agents' ? 'agent' : selectedSource
   const filtered = results
     .filter((r) => r && r.container_info)
-    .filter((r) => selectedSource === 'all' || r.container_info.source === selectedSource)
+    .filter((r) => selectedSource === 'all' || r.container_info.source === actualSource)
     .filter((r) => selected.size === 0 || selected.has(deriveStatus(r)))
 
   return (

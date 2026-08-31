@@ -219,6 +219,42 @@ class UpdateExecutionTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("pinned", result.message)
 
+    def test_create_replacement_container_uses_supported_kwargs(self) -> None:
+        # Regression: the plain-recreate path previously passed `open_stdin`
+        # (not a docker-py create_container kwarg), so any non-compose update
+        # blew up with TypeError.
+        from dockwatch.updater import _create_replacement_container
+
+        container = MagicMock()
+        container.attrs = {
+            "Config": {
+                "Labels": {},
+                "Image": "busybox",
+                "Cmd": ["sleep", "3600"],
+                "Env": [],
+                "ExposedPorts": {},
+                "OpenStdin": True,
+                "Tty": False,
+                "Hostname": "web",
+                "User": None,
+                "WorkingDir": None,
+                "Entrypoint": None,
+            },
+            "HostConfig": {"NetworkMode": "default"},
+            "NetworkSettings": {"Networks": {}},
+            "Mounts": [],
+        }
+        client = MagicMock()
+        client.api.create_container.return_value = {"Id": "new-id"}
+        client.containers.get.return_value = MagicMock()
+
+        _create_replacement_container(container, client, "busybox", "web")
+
+        kwargs = client.api.create_container.call_args.kwargs
+        self.assertNotIn("open_stdin", kwargs)
+        self.assertIs(kwargs["stdin_open"], True)
+        self.assertEqual(kwargs["image"], "busybox")
+
     def test_compose_update_uses_subprocess(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workdir = Path(tmp)

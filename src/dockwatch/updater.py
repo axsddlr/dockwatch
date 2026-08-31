@@ -509,7 +509,6 @@ def _create_replacement_container(container: Container, client: docker.DockerCli
         labels=config.get("Labels"),
         name=original_name,
         networking_config=networking_config,
-        open_stdin=bool(config.get("OpenStdin")),
         ports=ports or None,
         stdin_open=bool(config.get("OpenStdin")),
         tty=bool(config.get("Tty")),
@@ -593,6 +592,18 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
         client.images.pull(plan.image_ref)
     except DockerException as exc:
         return UpdateExecutionResult(False, "plain", f"image pull failed: {exc}")
+
+    # Clear a stale leftover from a previous failed attempt: a container that
+    # still owns the backup name but is not the one being updated. Without
+    # this, retrying a failed plain update fails with a name-conflict 409.
+    try:
+        stale = client.containers.get(backup_name)
+        if stale.id != container.id:
+            stale.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+    except DockerException:
+        pass
 
     try:
         if was_running:

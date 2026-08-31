@@ -9,9 +9,12 @@ export function FilterBar() {
   const selectedSource = useDashboardStore((s) => s.selectedSource)
   const toggle = useDashboardStore((s) => s.toggleStatusFilter)
 
+  // The 'agents' tab value is the API source name; container rows carry the
+  // singular 'agent' source.
+  const actualSource = selectedSource === 'agents' ? 'agent' : selectedSource
   const sourceFiltered = selectedSource === 'all'
     ? results
-    : results.filter((r) => r.container_info.source === selectedSource)
+    : results.filter((r) => r.container_info.source === actualSource)
 
   const counts = sourceFiltered.reduce((acc, r) => {
     const status = deriveStatus(r)

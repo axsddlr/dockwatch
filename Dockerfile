@@ -39,6 +39,12 @@ RUN useradd -m -s /bin/bash appuser && \
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Image metadata — GHCR shows this on the package page. The description also
+# needs to be set as an index annotation for multi-arch builds (release.yml).
+LABEL org.opencontainers.image.title="dockwatch" \
+      org.opencontainers.image.description="Docker container update watcher with CLI and web dashboard" \
+      org.opencontainers.image.source="https://github.com/axsddlr/dockwatch"
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

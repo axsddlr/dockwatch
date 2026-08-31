@@ -45,6 +45,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
             ghcr.io/${{ github.repository }}:latest
+          # Multi-arch GHCR reads the description from the index annotations;
+          # the Dockerfile LABEL alone only lands in each per-arch manifest.
+          annotations: |
+            index:org.opencontainers.image.title=dockwatch
+            index:org.opencontainers.image.description=Docker container update watcher with CLI and web dashboard
+            index:org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

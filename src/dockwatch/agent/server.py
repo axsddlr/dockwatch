@@ -207,6 +207,8 @@ def create_agent_app(token: str) -> FastAPI:
         client = _open_client()
         try:
             client.images.remove(image_id, force=force)
+        except docker.errors.ImageNotFound as exc:
+            raise HTTPException(status_code=404, detail=f"image '{image_id}' not found") from exc
         except Exception as exc:  # noqa: BLE001
             _logger.error("agent: delete of image '%s' failed: %s", image_id, exc)
             raise HTTPException(status_code=502, detail="image delete failed") from exc

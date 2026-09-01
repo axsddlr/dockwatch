@@ -325,6 +325,10 @@ class AgentServerTests(unittest.TestCase):
                 self.removed = []
 
             def remove(self, image_id, force=False):
+                if image_id == "missing":
+                    import docker
+
+                    raise docker.errors.ImageNotFound("no such image")
                 self.removed.append(image_id)
 
         class FakeContainers:
@@ -366,6 +370,15 @@ class AgentServerTests(unittest.TestCase):
             client.get("/api/agent/v1/health", headers={"Authorization": "Bearer wrong"})
         response = client.get("/api/agent/v1/health", headers={"Authorization": "Bearer wrong"})
         self.assertEqual(response.status_code, 429)
+
+    def test_delete_image_not_found_returns_404(self) -> None:
+        client = self._app()
+        with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(None)):
+            response = client.delete(
+                "/api/agent/v1/images/missing",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+            )
+        self.assertEqual(response.status_code, 404)
 
     def test_health(self) -> None:
         client = self._app()

@@ -488,45 +488,47 @@ class UpdateHistoryMigrationTests(unittest.TestCase):
             self.assertEqual(len(records), 2)
 
 
-class AgentCentralRouteTests:
-    def test_restart_agent_container_via_route(self, tmp_path, monkeypatch) -> None:
+class AgentCentralRouteTests(unittest.TestCase):
+    def test_restart_agent_container_via_route(self) -> None:
         import dockwatch.config as config_module
         import dockwatch.db as db_module
         from dockwatch.api import deps as deps_module
         from dockwatch.api.app import create_app
 
-        config_path = tmp_path / "config.toml"
-        db_path = tmp_path / "manifests.db"
-        monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
-        monkeypatch.setattr(config_module.load_config, "__defaults__", (config_path,))
-        monkeypatch.setattr(db_module, "STATE_DB_PATH", db_path)
-        monkeypatch.setattr(db_module.ManifestStore.__init__, "__defaults__", (db_path,))
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config_path = tmp_path / "config.toml"
+            db_path = tmp_path / "manifests.db"
+            with patch.object(config_module, "CONFIG_PATH", config_path), patch.object(
+                config_module.load_config, "__defaults__", (config_path,),
+            ), patch.object(db_module, "STATE_DB_PATH", db_path), patch.object(
+                db_module.ManifestStore.__init__, "__defaults__", (db_path,),
+            ):
+                config = config_module.load_config(config_path)
+                config.auth.username = "admin"
+                config.auth.password_hash = config_module.hash_password("correct-password")
+                config.agents = [AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")]
+                config_module.save_config(config, config_path)
 
-        config = config_module.load_config(config_path)
-        config.auth.username = "admin"
-        config.auth.password_hash = config_module.hash_password("correct-password")
-        config.agents = [AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")]
-        config_module.save_config(config, config_path)
+                store = db_module.ManifestStore()
+                store.create_user("admin", config.auth.password_hash, "admin")
+                deps_module._store = db_module.ManifestStore(path=db_path)
 
-        store = db_module.ManifestStore()
-        store.create_user("admin", config.auth.password_hash, "admin")
-        deps_module._store = db_module.ManifestStore(path=db_path)
+                info = ContainerInfo(
+                    name="web", container_id="abcdef123456", image_ref="nginx:1.0.0",
+                    registry=RegistryType.DOCKERHUB, namespace="library", image_name="nginx", current_tag="1.0.0",
+                    source="agent", environment_id="media-pc",
+                )
+                result = UpdateResult(container_info=info, is_outdated=True, remote_tag="1.1.0")
+                deps_module.get_results_cache().append(result)
 
-        info = ContainerInfo(
-            name="web", container_id="abcdef123456", image_ref="nginx:1.0.0",
-            registry=RegistryType.DOCKERHUB, namespace="library", image_name="nginx", current_tag="1.0.0",
-            source="agent", environment_id="media-pc",
-        )
-        result = UpdateResult(container_info=info, is_outdated=True, remote_tag="1.1.0")
-        deps_module.get_results_cache().append(result)
+                mock_client = MagicMock()
+                mock_client.restart_container = AsyncMock()
 
-        mock_client = MagicMock()
-        mock_client.restart_container = AsyncMock()
+                client = TestClient(create_app())
+                client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
+                with patch("dockwatch.api.routes.containers.AgentClient", return_value=mock_client):
+                    response = client.post("/api/containers/web/restart")
 
-        client = TestClient(create_app())
-        client.post("/api/auth/login", json={"username": "admin", "password": "correct-password"})
-        with patch("dockwatch.api.routes.containers.AgentClient", return_value=mock_client):
-            response = client.post("/api/containers/web/restart")
-
-        self.assertEqual(response.status_code, 200)
-        mock_client.restart_container.assert_awaited_once_with("abcdef123456")
+                self.assertEqual(response.status_code, 200)
+                mock_client.restart_container.assert_awaited_once_with("abcdef123456")

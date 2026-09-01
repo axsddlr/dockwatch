@@ -268,6 +268,7 @@ function SettingsPageInner() {
 
         <AgentIntegration
           agents={form.agents}
+          savedAgents={data?.agents ?? []}
           onChange={(agents) => setForm((prev) => ({ ...prev, agents }))}
         />
 

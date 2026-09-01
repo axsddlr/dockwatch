@@ -11,11 +11,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
+function isSaved(agent: AgentConfig, savedAgents: AgentConfig[]): boolean {
+  return savedAgents.some(
+    (saved) =>
+      saved.name === agent.name && saved.url === agent.url && saved.token === agent.token,
+  )
+}
+
 export function AgentIntegration({
   agents,
+  savedAgents,
   onChange,
 }: {
   agents: AgentConfig[]
+  savedAgents: AgentConfig[]
   onChange: (agents: AgentConfig[]) => void
 }) {
   const testMutation = useTestAgent()
@@ -126,11 +135,27 @@ export function AgentIntegration({
                   }))
                 }
               }}
-              disabled={testMutation.isPending || !agent.name || !agent.url || !agent.token}
+              disabled={
+                testMutation.isPending ||
+                !agent.name ||
+                !agent.url ||
+                !agent.token ||
+                !isSaved(agent, savedAgents)
+              }
+              title={
+                isSaved(agent, savedAgents)
+                  ? undefined
+                  : 'Save settings before testing this agent'
+              }
               className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-border)] transition-colors disabled:opacity-50"
             >
               {testMutation.isPending ? 'Testing...' : 'Test Connection'}
             </button>
+            {!isSaved(agent, savedAgents) && agent.name && agent.url && agent.token && (
+              <span className="text-xs text-[var(--color-text-dim)]">
+                Save settings to test this agent
+              </span>
+            )}
             {testResults[index] && (
               <span
                 className={`text-xs ${

@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from dockwatch.config import DockwatchConfig
+from dockwatch.config import AgentConfig, DockwatchConfig
 from dockwatch.docker_client import DockerConnectionError
 from dockwatch.integrations import PortainerEnvironment
 from dockwatch.models import ContainerInfo, RegistryType
@@ -137,6 +137,34 @@ class DiscoverContainersTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.containers), 1)
         self.assertEqual(result.containers[0].source, "portainer")
         self.assertEqual(result.containers[0].environment_id, "1")
+
+    async def test_source_all_keeps_same_named_containers_from_different_agents(self) -> None:
+        # Two different agent hosts can each report a container literally
+        # named "web" -- they must not collapse into one, since they're
+        # different hosts/containers entirely.
+        config = DockwatchConfig(
+            agents=[
+                AgentConfig(name="host-a", url="http://a:8081", token="a" * 16, enabled=True),
+                AgentConfig(name="host-b", url="http://b:8081", token="b" * 16, enabled=True),
+            ]
+        )
+
+        async def fake_list_containers(self):
+            payload = {
+                "name": "web", "container_id": "abc123", "image_ref": "nginx:1.0.0",
+                "registry": "dockerhub", "namespace": "library", "image_name": "nginx",
+                "current_tag": "1.0.0",
+            }
+            return [payload]
+
+        with patch("dockwatch.sources.get_running_containers", return_value=[]), patch(
+            "dockwatch.sources.discover_portainer", return_value=_mock_portainer_result([]),
+        ), patch("dockwatch.integrations.agent.AgentClient.list_containers", fake_list_containers):
+            result = await discover_containers(config, source="all")
+
+        self.assertEqual(len(result.containers), 2)
+        environment_ids = {c.environment_id for c in result.containers}
+        self.assertSetEqual(environment_ids, {"host-a", "host-b"})
 
 
 if __name__ == "__main__":

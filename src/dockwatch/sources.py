@@ -163,19 +163,31 @@ async def discover_containers(
     # Deduplicate: when source=all and the same container name appears
     # from multiple sources, keep a single authoritative one. Precedence:
     # Portainer > local > agent.
-    seen: dict[str, ContainerInfo] = {}
+    #
+    # Two different agents can each report a container with the same
+    # name (e.g. both hosts run one named "web"). Group agent containers
+    # by (name, environment_id) so distinct hosts never collapse into
+    # one another; only collapse an agent container against a
+    # local/portainer container of the same name, per the precedence
+    # rules below.
+    non_agent_by_name: dict[str, ContainerInfo] = {}
     for c in result.containers:
-        existing = seen.get(c.name)
-        if existing is None:
-            seen[c.name] = c
-        elif c.source == "portainer" and (
-            existing.source != "portainer"
-            or (not existing.environment_id and c.environment_id)
-        ):
-            seen[c.name] = c
-        elif c.source == "local" and existing.source == "agent":
-            seen[c.name] = c
-    result.containers = list(seen.values())
+        if c.source != "agent":
+            existing = non_agent_by_name.get(c.name)
+            if existing is None:
+                non_agent_by_name[c.name] = c
+            elif c.source == "portainer" and (
+                existing.source != "portainer"
+                or (not existing.environment_id and c.environment_id)
+            ):
+                non_agent_by_name[c.name] = c
+
+    per_agent_host: dict[tuple[str, str], ContainerInfo] = {}
+    for c in result.containers:
+        if c.source == "agent" and c.name not in non_agent_by_name:
+            per_agent_host[(c.name, c.environment_id or "")] = c
+
+    result.containers = list(non_agent_by_name.values()) + list(per_agent_host.values())
 
     return result
 

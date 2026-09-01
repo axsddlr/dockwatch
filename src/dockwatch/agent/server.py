@@ -9,6 +9,7 @@ reuse the same plain-recreate machinery the central uses for its own socket.
 from __future__ import annotations
 
 import hmac
+import logging
 from typing import Annotated
 
 import docker
@@ -22,6 +23,7 @@ from ..updater import UpdateExecutionError, UpdatePlan, _execute_plain_update
 from .protocol import serialize_container_info
 
 _PREFIX = "/api/agent/v1"
+_logger = logging.getLogger(__name__)
 
 
 class ActionBody(BaseModel):
@@ -46,7 +48,8 @@ def create_agent_app(token: str) -> FastAPI:
         try:
             return get_docker_client()
         except DockerConnectionError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            _logger.error("agent: docker connection failed: %s", exc)
+            raise HTTPException(status_code=502, detail="docker connection failed") from exc
 
     def _lookup(
         client: docker.DockerClient, container_id: str,
@@ -98,7 +101,8 @@ def create_agent_app(token: str) -> FastAPI:
         try:
             infos = get_running_containers()
         except DockerConnectionError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            _logger.error("agent: list containers failed: %s", exc)
+            raise HTTPException(status_code=502, detail="docker connection failed") from exc
         return {"containers": [serialize_container_info(info) for info in infos]}
 
     @router.post("/containers/{container_id}/update")
@@ -137,7 +141,8 @@ def create_agent_app(token: str) -> FastAPI:
         try:
             result = _execute_plain_update(plan)
         except UpdateExecutionError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            _logger.error("agent: update of '%s' failed: %s", container_id, exc)
+            raise HTTPException(status_code=502, detail="container update failed") from exc
         return {
             "ok": result.success,
             "message": result.message,
@@ -154,7 +159,8 @@ def create_agent_app(token: str) -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"restart failed: {exc}") from exc
+            _logger.error("agent: restart of '%s' failed: %s", container_id, exc)
+            raise HTTPException(status_code=502, detail="restart failed") from exc
         finally:
             client.close()
         return {"ok": True}
@@ -168,7 +174,8 @@ def create_agent_app(token: str) -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"delete failed: {exc}") from exc
+            _logger.error("agent: delete of container '%s' failed: %s", container_id, exc)
+            raise HTTPException(status_code=502, detail="delete failed") from exc
         finally:
             client.close()
         return {"ok": True}
@@ -179,7 +186,8 @@ def create_agent_app(token: str) -> FastAPI:
         try:
             client.images.remove(image_id, force=force)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"image delete failed: {exc}") from exc
+            _logger.error("agent: delete of image '%s' failed: %s", image_id, exc)
+            raise HTTPException(status_code=502, detail="image delete failed") from exc
         finally:
             client.close()
         return {"ok": True}
@@ -193,7 +201,8 @@ def create_agent_app(token: str) -> FastAPI:
         except HTTPException:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"logs request failed: {exc}") from exc
+            _logger.error("agent: logs request for '%s' failed: %s", container_id, exc)
+            raise HTTPException(status_code=502, detail="logs request failed") from exc
         finally:
             client.close()
         return {"logs": _decode_logs(logs)}

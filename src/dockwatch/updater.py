@@ -532,20 +532,32 @@ def _rollback_plain_update(
     replacement: Container | None,
 ) -> str:
     details: list[str] = []
+    replacement_still_holds_name = False
     if replacement is not None:
         try:
             replacement.remove(force=True)
             details.append("removed failed replacement")
         except DockerException as exc:
-            details.append(f"failed to remove replacement: {exc}")
+            replacement_still_holds_name = True
+            details.append(
+                f"CRITICAL: failed to remove replacement container, it still occupies "
+                f"the name '{original_name}' and the original is stranded under a backup "
+                f"name until this is resolved manually: {exc}"
+            )
     try:
         original.reload()
     except DockerException:
         pass
-    try:
-        original.rename(original_name)
-    except DockerException as exc:
-        details.append(f"failed to restore original name: {exc}")
+    if replacement_still_holds_name:
+        details.append(
+            f"skipped restoring original container name '{original_name}' "
+            "because the replacement still holds it"
+        )
+    else:
+        try:
+            original.rename(original_name)
+        except DockerException as exc:
+            details.append(f"failed to restore original name: {exc}")
     if original_was_running:
         try:
             original.start()

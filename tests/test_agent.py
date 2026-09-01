@@ -136,9 +136,9 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_restart_sends_bearer_token(self) -> None:
         mock = MockAsyncClient([MockResponse(204)])
         with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock):
-            await AgentClient(base_url="http://agent.test", token="s3cret").restart_container("abc123")
+            await AgentClient(base_url="http://agent.test", token="s3cret-test-token-16chars").restart_container("abc123")
         headers = mock.calls[0][2]["headers"]
-        self.assertEqual(headers["Authorization"], "Bearer s3cret")
+        self.assertEqual(headers["Authorization"], "Bearer s3cret-test-token-16chars")
 
     async def test_http_error_raises_agent_error(self) -> None:
         with patch(
@@ -286,7 +286,7 @@ class AgentDiscoveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AgentServerTests(unittest.TestCase):
-    def _app(self, token: str = "s3cret"):
+    def _app(self, token: str = "s3cret-test-token-16chars"):
         return TestClient(create_agent_app(token))
 
     def _fake_container(self, *, labels=None, image_ref="nginx:1.0.0", name="web", container_id="abcdef123456"):
@@ -356,10 +356,21 @@ class AgentServerTests(unittest.TestCase):
         self.assertEqual(client.get("/api/agent/v1/health").status_code, 401)
         self.assertEqual(client.get("/api/agent/v1/health", headers={"Authorization": "Bearer wrong"}).status_code, 401)
 
+    def test_rejects_short_token(self) -> None:
+        with self.assertRaises(ValueError):
+            create_agent_app("short")
+
+    def test_lockout_after_repeated_auth_failures(self) -> None:
+        client = self._app()
+        for _ in range(10):
+            client.get("/api/agent/v1/health", headers={"Authorization": "Bearer wrong"})
+        response = client.get("/api/agent/v1/health", headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(response.status_code, 429)
+
     def test_health(self) -> None:
         client = self._app()
         with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(None)):
-            response = client.get("/api/agent/v1/health", headers={"Authorization": "Bearer s3cret"})
+            response = client.get("/api/agent/v1/health", headers={"Authorization": "Bearer s3cret-test-token-16chars"})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["ok"])
         self.assertEqual(response.json()["docker"], "ok")
@@ -371,7 +382,7 @@ class AgentServerTests(unittest.TestCase):
             registry=RegistryType.DOCKERHUB, namespace="library", image_name="nginx", current_tag="1.0.0",
         )
         with patch("dockwatch.agent.server.get_running_containers", return_value=[info]):
-            response = client.get("/api/agent/v1/containers", headers={"Authorization": "Bearer s3cret"})
+            response = client.get("/api/agent/v1/containers", headers={"Authorization": "Bearer s3cret-test-token-16chars"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["containers"][0]["name"], "web")
         self.assertEqual(response.json()["containers"][0]["registry"], "dockerhub")
@@ -385,7 +396,7 @@ class AgentServerTests(unittest.TestCase):
         ) as exec_mock:
             response = client.post(
                 "/api/agent/v1/containers/abcdef123456/update",
-                headers={"Authorization": "Bearer s3cret"},
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
                 json={"image_ref": "nginx:1.2.0"},
             )
         self.assertEqual(response.status_code, 200)
@@ -401,7 +412,7 @@ class AgentServerTests(unittest.TestCase):
         with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)):
             response = client.post(
                 "/api/agent/v1/containers/abcdef123456/update",
-                headers={"Authorization": "Bearer s3cret"},
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
                 json={"image_ref": "nginx:1.2.0"},
             )
         self.assertEqual(response.status_code, 422)
@@ -411,7 +422,7 @@ class AgentServerTests(unittest.TestCase):
         with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(None)):
             response = client.post(
                 "/api/agent/v1/containers/deadbeef1234/update",
-                headers={"Authorization": "Bearer s3cret"},
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
                 json={"image_ref": "nginx:1.2.0"},
             )
         self.assertEqual(response.status_code, 404)
@@ -420,9 +431,9 @@ class AgentServerTests(unittest.TestCase):
         client = self._app()
         container = self._fake_container()
         with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)):
-            restart = client.post("/api/agent/v1/containers/abcdef123456/restart", headers={"Authorization": "Bearer s3cret"})
-            delete = client.delete("/api/agent/v1/containers/abcdef123456?force=true", headers={"Authorization": "Bearer s3cret"})
-            logs = client.get("/api/agent/v1/containers/abcdef123456/logs?tail=50", headers={"Authorization": "Bearer s3cret"})
+            restart = client.post("/api/agent/v1/containers/abcdef123456/restart", headers={"Authorization": "Bearer s3cret-test-token-16chars"})
+            delete = client.delete("/api/agent/v1/containers/abcdef123456?force=true", headers={"Authorization": "Bearer s3cret-test-token-16chars"})
+            logs = client.get("/api/agent/v1/containers/abcdef123456/logs?tail=50", headers={"Authorization": "Bearer s3cret-test-token-16chars"})
         self.assertEqual(restart.status_code, 200)
         self.assertEqual(delete.status_code, 200)
         self.assertEqual(logs.status_code, 200)

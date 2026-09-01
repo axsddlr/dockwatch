@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import hmac
 import logging
+import time
+from collections import defaultdict
 from typing import Annotated
 
 import docker
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from .. import __version__
@@ -24,6 +26,9 @@ from .protocol import serialize_container_info
 
 _PREFIX = "/api/agent/v1"
 _logger = logging.getLogger(__name__)
+_MIN_TOKEN_LENGTH = 16
+_AUTH_FAIL_LIMIT = 10
+_AUTH_FAIL_WINDOW_SECONDS = 60.0
 
 
 class ActionBody(BaseModel):
@@ -33,13 +38,30 @@ class ActionBody(BaseModel):
 def create_agent_app(token: str) -> FastAPI:
     if not token:
         raise ValueError("agent token must not be empty")
+    if len(token) < _MIN_TOKEN_LENGTH:
+        raise ValueError(f"agent token must be at least {_MIN_TOKEN_LENGTH} characters")
     app = FastAPI(title="dockwatch agent", version=__version__)
 
-    def require_token(authorization: Annotated[str | None, Header()] = None) -> None:
+    auth_failures: dict[str, list[float]] = defaultdict(list)
+
+    def _locked_out(client_ip: str) -> bool:
+        now = time.monotonic()
+        attempts = [t for t in auth_failures[client_ip] if now - t < _AUTH_FAIL_WINDOW_SECONDS]
+        auth_failures[client_ip] = attempts
+        return len(attempts) >= _AUTH_FAIL_LIMIT
+
+    def require_token(
+        request: Request, authorization: Annotated[str | None, Header()] = None,
+    ) -> None:
+        client_ip = request.client.host if request.client else "unknown"
+        if _locked_out(client_ip):
+            raise HTTPException(status_code=429, detail="too many failed auth attempts")
         if authorization is None or not authorization.startswith("Bearer "):
+            auth_failures[client_ip].append(time.monotonic())
             raise HTTPException(status_code=401, detail="missing bearer token")
         supplied = authorization.removeprefix("Bearer ").strip()
         if not hmac.compare_digest(supplied, token):
+            auth_failures[client_ip].append(time.monotonic())
             raise HTTPException(status_code=401, detail="invalid agent token")
 
     router = APIRouter(prefix=_PREFIX, dependencies=[Depends(require_token)])

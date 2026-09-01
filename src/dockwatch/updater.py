@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import re
 import subprocess
@@ -21,6 +22,8 @@ from .models import ContainerInfo, UpdateResult, deployed_display_result, remote
 COMPOSE_COMMAND_TIMEOUT_SECONDS = 600
 
 _FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
+
+_logger = logging.getLogger(__name__)
 
 
 class UpdateExecutionError(RuntimeError):
@@ -614,8 +617,11 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
             stale.remove(force=True)
     except docker.errors.NotFound:
         pass
-    except DockerException:
-        pass
+    except DockerException as exc:
+        _logger.warning(
+            "failed to remove stale backup container '%s' before update of '%s': %s",
+            backup_name, plan.container_name, exc,
+        )
 
     try:
         if was_running:

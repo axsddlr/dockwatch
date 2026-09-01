@@ -6,9 +6,29 @@ machinery the central uses for its own Docker socket)."""
 
 from __future__ import annotations
 
+import asyncio
+from typing import Awaitable, Callable, TypeVar
+
 import httpx
 
 _AGENT_PREFIX = "/api/agent/v1"
+_T = TypeVar("_T")
+
+# A single retry after a short backoff for connection-level failures only
+# (refused/reset/timed-out connections) -- not for 4xx/5xx application
+# errors, which are never transient. Absorbs one flaky moment (agent host
+# briefly unreachable, slow TCP handshake) instead of failing an entire
+# scheduled check cycle over it.
+_RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)
+_RETRY_BACKOFF_SECONDS = 1.0
+
+
+async def _with_retry(call: Callable[[], Awaitable[_T]]) -> _T:
+    try:
+        return await call()
+    except _RETRYABLE:
+        await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
+        return await call()
 
 
 class AgentError(RuntimeError):
@@ -35,18 +55,24 @@ class AgentClient:
         return {"Authorization": f"Bearer {self.token}"}
 
     async def health(self) -> dict:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}{_AGENT_PREFIX}/health", headers=self._headers)
+                return await client.get(f"{self.base_url}{_AGENT_PREFIX}/health", headers=self._headers)
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent health request failed: {exc}") from exc
         return self._json_dict(response, "health")
 
     async def list_containers(self) -> list[dict]:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}{_AGENT_PREFIX}/containers", headers=self._headers)
+                return await client.get(f"{self.base_url}{_AGENT_PREFIX}/containers", headers=self._headers)
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent containers request failed: {exc}") from exc
@@ -65,61 +91,76 @@ class AgentClient:
         return await self._action("rollback", container_id, image_ref)
 
     async def _action(self, action: str, container_id: str, image_ref: str) -> dict:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.deploy_timeout) as client:
-                response = await client.post(
+                return await client.post(
                     f"{self.base_url}{_AGENT_PREFIX}/containers/{container_id}/{action}",
                     headers=self._headers,
                     json={"image_ref": image_ref},
                 )
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent {action} failed for container {container_id}: {exc}") from exc
         return self._json_dict(response, f"{action} response")
 
     async def restart_container(self, container_id: str) -> None:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
+                return await client.post(
                     f"{self.base_url}{_AGENT_PREFIX}/containers/{container_id}/restart",
                     headers=self._headers,
                 )
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent restart failed for container {container_id}: {exc}") from exc
 
     async def delete_container(self, container_id: str, *, force: bool = False) -> None:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.delete(
+                return await client.delete(
                     f"{self.base_url}{_AGENT_PREFIX}/containers/{container_id}",
                     headers=self._headers,
                     params={"force": "true" if force else "false"},
                 )
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent delete failed for container {container_id}: {exc}") from exc
 
     async def delete_image(self, image_id: str, *, force: bool = False) -> None:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.delete(
+                return await client.delete(
                     f"{self.base_url}{_AGENT_PREFIX}/images/{image_id}",
                     headers=self._headers,
                     params={"force": "true" if force else "false"},
                 )
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent image delete failed for {image_id}: {exc}") from exc
 
     async def get_logs(self, container_id: str, *, tail: int = 200) -> str:
-        try:
+        async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
+                return await client.get(
                     f"{self.base_url}{_AGENT_PREFIX}/containers/{container_id}/logs",
                     headers=self._headers,
                     params={"tail": tail},
                 )
+
+        try:
+            response = await _with_retry(_call)
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent logs request failed for container {container_id}: {exc}") from exc

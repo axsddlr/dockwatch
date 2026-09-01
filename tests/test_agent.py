@@ -44,17 +44,23 @@ class MockAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
+    def _next(self):
+        item = self._responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
     async def get(self, url: str, **kwargs):
         self.calls.append(("get", url, kwargs))
-        return self._responses.pop(0)
+        return self._next()
 
     async def post(self, url: str, **kwargs):
         self.calls.append(("post", url, kwargs))
-        return self._responses.pop(0)
+        return self._next()
 
     async def delete(self, url: str, **kwargs):
         self.calls.append(("delete", url, kwargs))
-        return self._responses.pop(0)
+        return self._next()
 
 
 class AgentProtocolTests(unittest.TestCase):
@@ -147,6 +153,22 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(AgentError):
                 await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
+
+    async def test_retries_once_on_connection_error(self) -> None:
+        request = httpx.Request("GET", "https://agent.test")
+        mock = MockAsyncClient([httpx.ConnectError("refused", request=request), MockResponse(204)])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock), patch(
+            "dockwatch.integrations.agent.asyncio.sleep", new=AsyncMock(),
+        ):
+            await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
+        self.assertEqual(len(mock.calls), 2)
+
+    async def test_does_not_retry_on_http_status_error(self) -> None:
+        mock = MockAsyncClient([MockResponse(401)])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock):
+            with self.assertRaises(AgentError):
+                await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
+        self.assertEqual(len(mock.calls), 1)
 
 
 def _make_result(**kwargs) -> UpdateResult:

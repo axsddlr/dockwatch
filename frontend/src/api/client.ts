@@ -100,6 +100,8 @@ export const api = {
         '/api/settings/test-agent',
         { method: 'POST', body: JSON.stringify({ name }) },
       ),
+    generateAgentToken: () =>
+      request<{ token: string }>('/api/settings/generate-agent-token', { method: 'POST' }),
   },
   environments: {
     list: () =>

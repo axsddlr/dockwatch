@@ -37,3 +37,9 @@ export function useTestAgent() {
     mutationFn: ({ name }: { name: string }) => api.settings.testAgent(name),
   })
 }
+
+export function useGenerateAgentToken() {
+  return useMutation({
+    mutationFn: () => api.settings.generateAgentToken(),
+  })
+}

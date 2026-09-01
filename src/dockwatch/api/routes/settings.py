@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import secrets
 import socket
 import threading
 from typing import Any
@@ -156,6 +157,11 @@ async def test_notification() -> Any:
     if errors:
         raise HTTPException(status_code=502, detail="; ".join(errors))
     return {"ok": True, "message": "Test notification sent."}
+
+
+@router.post("/settings/generate-agent-token", dependencies=[Depends(require_permission("manage_settings"))])
+def generate_agent_token() -> Any:
+    return {"token": secrets.token_hex(32)}
 
 
 @router.post("/settings/test-agent", dependencies=[Depends(require_permission("manage_settings")), _mutate_limit])

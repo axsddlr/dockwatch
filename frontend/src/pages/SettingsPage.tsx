@@ -208,8 +208,10 @@ function SettingsPageInner() {
     try {
       await saveMutation.mutateAsync(payload)
       setSaveMessage('Settings saved.')
+      return true
     } catch (e) {
       setSaveMessage(e instanceof Error ? e.message : 'Save failed')
+      return false
     }
   }
 
@@ -270,6 +272,7 @@ function SettingsPageInner() {
           agents={form.agents}
           savedAgents={data?.agents ?? []}
           onChange={(agents) => setForm((prev) => ({ ...prev, agents }))}
+          onSave={handleSave}
         />
 
         <div className="space-y-4">

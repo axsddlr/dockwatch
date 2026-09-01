@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from dockwatch.agent.protocol import MIN_AGENT_TOKEN_LENGTH
+from dockwatch.api.routes.settings import generate_agent_token
 from dockwatch.api.serializers import deserialize_settings
 from dockwatch.config import DockwatchConfig
 from dockwatch.db import ManifestStore
@@ -43,6 +45,17 @@ class DeserializeAgentsTests(unittest.TestCase):
             }
             updated = deserialize_settings(data, DockwatchConfig(), store)
             self.assertEqual({a.name for a in updated.agents}, {"media-pc", "nas"})
+
+
+class GenerateAgentTokenTests(unittest.TestCase):
+    def test_generates_token_meeting_minimum_length(self) -> None:
+        result = generate_agent_token()
+        self.assertGreaterEqual(len(result["token"]), MIN_AGENT_TOKEN_LENGTH)
+
+    def test_generates_distinct_tokens(self) -> None:
+        first = generate_agent_token()["token"]
+        second = generate_agent_token()["token"]
+        self.assertNotEqual(first, second)
 
 
 if __name__ == "__main__":

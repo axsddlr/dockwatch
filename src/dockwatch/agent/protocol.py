@@ -10,6 +10,11 @@ from __future__ import annotations
 
 from ..models import ContainerInfo, RegistryType
 
+# Enforced both when an agent process boots (server.py) and when the central
+# instance saves an agent's token (api/serializers.py), so a weak token is
+# rejected at save-time instead of failing later at connection time.
+MIN_AGENT_TOKEN_LENGTH = 16
+
 
 def serialize_container_info(info: ContainerInfo) -> dict:
     return {

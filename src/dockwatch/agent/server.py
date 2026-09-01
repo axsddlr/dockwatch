@@ -22,11 +22,10 @@ from .. import __version__
 from ..docker_client import DockerConnectionError, get_docker_client, get_running_containers, parse_image_ref
 from ..models import ContainerInfo
 from ..updater import UpdateExecutionError, UpdatePlan, _execute_plain_update
-from .protocol import serialize_container_info
+from .protocol import MIN_AGENT_TOKEN_LENGTH, serialize_container_info
 
 _PREFIX = "/api/agent/v1"
 _logger = logging.getLogger(__name__)
-_MIN_TOKEN_LENGTH = 16
 _AUTH_FAIL_LIMIT = 10
 _AUTH_FAIL_WINDOW_SECONDS = 60.0
 
@@ -38,8 +37,8 @@ class ActionBody(BaseModel):
 def create_agent_app(token: str) -> FastAPI:
     if not token:
         raise ValueError("agent token must not be empty")
-    if len(token) < _MIN_TOKEN_LENGTH:
-        raise ValueError(f"agent token must be at least {_MIN_TOKEN_LENGTH} characters")
+    if len(token) < MIN_AGENT_TOKEN_LENGTH:
+        raise ValueError(f"agent token must be at least {MIN_AGENT_TOKEN_LENGTH} characters")
     app = FastAPI(title="dockwatch agent", version=__version__)
 
     auth_failures: dict[str, list[float]] = defaultdict(list)

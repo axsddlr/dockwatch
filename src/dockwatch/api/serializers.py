@@ -8,6 +8,7 @@ from typing import Any
 
 from packaging.version import Version
 
+from ..agent.protocol import MIN_AGENT_TOKEN_LENGTH
 from ..config import AgentConfig, DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
 from ..db import ManifestStore
 from ..models import (
@@ -178,6 +179,7 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         agents_data = data.get("agents")
         if isinstance(agents_data, list):
             existing_agents = {agent.name: agent for agent in existing.agents}
+            seen_names: set[str] = set()
             parsed: list[AgentConfig] = []
             for item in agents_data:
                 if not isinstance(item, dict):
@@ -185,14 +187,21 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
                 name = str(item.get("name", "")).strip()
                 if not name:
                     continue
+                if name in seen_names:
+                    raise ValueError(f"duplicate agent name: '{name}'")
+                seen_names.add(name)
                 prior = existing_agents.get(name)
                 raw_token = str(item.get("token", ""))
-                token = prior.token if prior is not None and is_masked(raw_token) else raw_token
+                token = (prior.token if prior is not None and is_masked(raw_token) else raw_token).strip()
+                if token and len(token) < MIN_AGENT_TOKEN_LENGTH:
+                    raise ValueError(
+                        f"agent '{name}' token must be at least {MIN_AGENT_TOKEN_LENGTH} characters"
+                    )
                 parsed.append(
                     AgentConfig(
                         name=name,
                         url=str(item.get("url", "")).strip(),
-                        token=token.strip(),
+                        token=token,
                         enabled=bool(item.get("enabled", True)),
                     )
                 )

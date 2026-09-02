@@ -37,6 +37,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.agent.example
 
 # Local design/planning scratch
 .claude/

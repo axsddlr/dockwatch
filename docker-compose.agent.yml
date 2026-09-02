@@ -1,11 +1,14 @@
 # Example: run a dockwatch AGENT on another Docker PC so a central dockwatch
 # instance can see and manage this host's containers.
 #
+#   cp .env.agent.example .env
+#   # edit .env: paste a generated token (Settings -> Agents -> Generate on
+#   # the central instance, or `openssl rand -hex 32`) into DOCKWATCH_AGENT_TOKEN
 #   docker compose -f docker-compose.agent.yml up -d
 #
-# Generate the shared token once (e.g. `openssl rand -hex 32`), put the same
-# value in DOCKWATCH_AGENT_TOKEN here and in the central instance's Settings →
-# Agents (name/url/token).
+# Put the same token value in the central instance's Settings -> Agents
+# (name/url/token). Keeping it in .env (gitignored) instead of this file
+# avoids accidentally committing a real token.
 #
 # The agent is stateless: no config volume, no dashboard. The token grants
 # full Docker control on this host — only expose it on networks you trust
@@ -17,7 +20,7 @@ services:
     container_name: dockwatch-agent
     restart: unless-stopped
     environment:
-      DOCKWATCH_AGENT_TOKEN: "change-me-openssl-rand-hex-32"
+      - DOCKWATCH_AGENT_TOKEN=${DOCKWATCH_AGENT_TOKEN:?set DOCKWATCH_AGENT_TOKEN in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:

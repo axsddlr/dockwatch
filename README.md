@@ -301,16 +301,28 @@ Use Portainer as an additional container source — inspect, check, restart, upd
 
 Run one central dockwatch instance on your main setup and a lightweight **dockwatch agent** on every other Docker PC. All containers show up in the central dashboard — checks, updates, rollbacks, restarts, deletes, logs, and the audit log all work across hosts, and agents do zero registry traffic (the central does all checking).
 
+**Generate a token** once, either from the central instance's Settings → Agents panel (a **Generate** button next to the token field) or with `openssl rand -hex 32`. Tokens must be at least 16 characters — the agent refuses to start, and the central refuses to save, anything shorter.
+
 **On each remote PC** (`docker-compose.agent.yml` example included):
 
 ```bash
-DOCKWATCH_AGENT_TOKEN=$(openssl rand -hex 32)   # generate the shared secret once
+cp .env.agent.example .env   # paste your generated token into DOCKWATCH_AGENT_TOKEN
 docker compose -f docker-compose.agent.yml up -d
+```
+
+Or, for a quick one-off test without compose:
+
+```bash
+docker run -d --name dockwatch-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p 8081:8081 \
+  -e DOCKWATCH_AGENT_TOKEN=<your token> \
+  ghcr.io/axsddlr/dockwatch:latest dockwatch agent --host 0.0.0.0 --port 8081
 ```
 
 The agent is the same image, started with `dockwatch agent --host 0.0.0.0 --port 8081 --token <token>` (or `DOCKWATCH_AGENT_TOKEN`); it mounts only the Docker socket and exposes a small token-authenticated API.
 
-**On the central instance** — Settings → Agents: add one entry per host (name, `http://<pc>:8081`, the shared token). Or in `config.toml`:
+**On the central instance** — Settings → Agents: add one entry per host (name, `http://<pc>:8081`, the shared token), then **Save & Test** to confirm it's reachable (the button saves the entry first if needed, then runs the check). Or in `config.toml`:
 
 ```toml
 [[agents]]
@@ -320,9 +332,11 @@ token = "<shared token>"
 enabled = true
 ```
 
+Agent names must be unique — the central looks agents up by name, so a duplicate silently targets the wrong host.
+
 - The dashboard's source filter gains an **Agents** tab; agent rows show a `<agent-name>` badge.
 - **v1 scope**: agent-hosted compose stacks are read-only (updates/rollbacks are plain-container recreates); Trivy scanning stays on the central's own host.
-- **Security**: the agent token grants full Docker control on that PC (same as the Docker CLI) — only expose agents on networks you trust (LAN, VPN, Tailscale, or a TLS reverse proxy). Agent URLs are explicitly trusted, so they may be on private networks (unlike notification webhooks, which are SSRF-guarded).
+- **Security**: the agent token grants full Docker control on that PC (same as the Docker CLI) — only expose agents on networks you trust (LAN, VPN, Tailscale, or a TLS reverse proxy). Agent URLs are explicitly trusted, so they may be on private networks (unlike notification webhooks, which are SSRF-guarded). Repeated failed-token attempts from the same address are rate-limited.
 
 ## Vulnerability Scanning (Trivy)
 

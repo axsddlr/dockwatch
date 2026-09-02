@@ -328,6 +328,46 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.comparison_basis, "tag")
         self.assertIsNone(result.is_outdated)
 
+    async def test_check_dockerhub_ignores_unrelated_family_tags_for_floating_deploy(self) -> None:
+        # Same regression as the lscr case: a floating deployed tag has no
+        # version to scope candidates against, so the picker must fall back
+        # to the label-reported deployed version instead of sorting across
+        # the whole tag history unscoped.
+        info = ContainerInfo(
+            name="radarr",
+            container_id="abc123",
+            image_ref="linuxserver/radarr:latest",
+            registry=RegistryType.DOCKERHUB,
+            namespace="linuxserver",
+            image_name="radarr",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "6.3.0.10514-ls314"},
+            version_label="6.3.0.10514-ls314",
+        )
+        token_payload = {"token": "dh-token"}
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(
+                    200,
+                    _dh_rest_tags("latest", "5.14", "6.3.0.10514-ls314", "6.3.0.10515-ls315"),
+                    url="https://hub.docker.com/v2/repositories/linuxserver/radarr/tags",
+                ),
+                MockResponse(200, token_payload, url="https://auth.docker.io/token"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://registry-1.docker.io/v2/linuxserver/radarr/manifests/latest",
+                    headers={"Docker-Content-Digest": "sha256:dh-digest"},
+                ),
+            ]
+        )
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_dockerhub(info)
+
+        self.assertEqual(result.latest_tag, "6.3.0.10515-ls315")
+        self.assertNotEqual(result.latest_tag, "5.14")
+
     async def test_check_ghcr_uses_token_and_tags(self) -> None:
         info = make_container(registry=RegistryType.GHCR, current_tag="1.0.0")
         token_payload = {"token": "abc-token"}
@@ -485,6 +525,53 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(latest_result.version_status, "behind")
         self.assertIsNotNone(latest_result.version_diff)
         self.assertEqual(latest_result.version_diff.bump_type, "PATCH")
+
+    async def test_check_container_ignores_unrelated_family_tags_for_floating_deploy(self) -> None:
+        # Regression: a floating deployed tag ("latest") has no version of its
+        # own to scope the candidate pool against. Without falling back to the
+        # label-reported deployed version, the picker sorted across the whole
+        # tag history and could surface an ancient, unrelated-scheme tag (e.g.
+        # ["5.14"] from years-old release, has no "-lsNN" suffix so it's not
+        # in the deployed version's distro family) as "latest" instead of a
+        # current build in the same family as what's actually deployed.
+        info = ContainerInfo(
+            name="radarr",
+            container_id="abc123",
+            image_ref="lscr.io/linuxserver/radarr:latest",
+            registry=RegistryType.LSCR,
+            namespace="linuxserver",
+            image_name="radarr",
+            current_tag="latest",
+            labels={"org.opencontainers.image.version": "6.3.0.10514-ls314"},
+            version_label="6.3.0.10514-ls314",
+            compose_image_digest="sha256:local-digest",
+        )
+        payload = {
+            "tags": [
+                "latest",
+                "5.14",
+                "6.3.0.10514-ls314",
+                "6.3.0.10515-ls315",
+            ]
+        }
+
+        mock_client = MockAsyncClient(
+            [
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/radarr/tags/list"),
+                MockResponse(200, payload, url="https://lscr.io/v2/linuxserver/radarr/tags/list"),
+                MockResponse(
+                    200,
+                    {},
+                    url="https://lscr.io/v2/linuxserver/radarr/manifests/latest",
+                    headers={"Docker-Content-Digest": "sha256:local-digest"},
+                ),
+            ]
+        )
+        with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
+            result = await check_container(info)
+
+        self.assertEqual(result.latest_tag, "6.3.0.10515-ls315")
+        self.assertNotEqual(result.latest_tag, "5.14")
 
     async def test_check_container_skips_digest(self) -> None:
         digest_info = make_container(registry=RegistryType.DOCKERHUB, current_tag="DIGEST_PINNED")

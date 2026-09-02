@@ -553,11 +553,20 @@ async def _check_repository_tags(
             break
 
     tags = all_tags
+    # A floating deployed tag (e.g. "latest") has no version to scope the
+    # candidate pool against, so _select_latest_from_tags would sort across
+    # the repository's entire tag history unscoped -- including ancient,
+    # unrelated version-pinned tags from years-old release cycles. Fall back
+    # to the label-reported deployed version (e.g. LinuxServer.io's
+    # build_version label) so family/recency scoping still applies.
+    version_scoped_tag = info.current_tag
+    if version_scoped_tag.lower() in FLOATING_TAGS:
+        version_scoped_tag = deployed_version_hint(info) or version_scoped_tag
     latest_tag = _select_latest_from_tags(
         tags,
         include_patterns=include_patterns,
         exclude_patterns=exclude_patterns,
-        current_tag=info.current_tag,
+        current_tag=version_scoped_tag,
     )
     if not latest_tag:
         return _build_comparison_result(
@@ -724,11 +733,17 @@ async def check_dockerhub(
         if not tags:
             return _skip_result(info, "docker hub image not found or has no tags")
 
+        # See the matching comment in _check_repository_tags: a floating
+        # deployed tag has no version to scope candidates against, so fall
+        # back to the label-reported deployed version.
+        version_scoped_tag = info.current_tag
+        if version_scoped_tag.lower() in FLOATING_TAGS:
+            version_scoped_tag = deployed_version_hint(info) or version_scoped_tag
         latest_tag = _select_latest_from_tags(
             tags,
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
-            current_tag=info.current_tag,
+            current_tag=version_scoped_tag,
         )
         if not latest_tag:
             return _build_comparison_result(

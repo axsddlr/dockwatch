@@ -2,6 +2,33 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.12.0] - 2026-09-02
+
+### 2026-09-02
+
+#### Added
+- **Agent token generation** — a "Generate" button next to the token field in Settings → Agents fills it server-side (`POST /settings/generate-agent-token`), no more running `openssl rand -hex 32` in a separate terminal.
+- **Save & Test for agents** — "Test Connection" now saves the entry first automatically when there are unsaved changes, instead of just showing a hint and requiring a separate trip to the page-level Save button.
+- **Copy-paste agent deploy snippet** — a read-only `docker run` command, pre-filled with the current name/token, shown under each agent's form.
+- **Unscoped-version-comparison hint** — a tooltip icon next to the version bump badge for containers on a floating tag (`latest`/`edge`/`dev`/`nightly`) with no deployed-version label to scope the comparison against, so the shown "remote version" isn't mistaken for a reliable comparison.
+
+#### Fixed
+- **Wrong "latest" tag picked for floating deployments** — when the deployed tag is floating (e.g. `latest`), the tag picker had no version to scope its candidate pool against and could surface an ancient, unrelated-scheme tag from the registry's full history (seen live: `lscr.io/linuxserver/radarr` returned `5.14` from a years-old release line instead of a current build). Now falls back to the label-reported deployed version for scoping. Purely a display/version-diff fix; the actual up-to-date/outdated determination for floating tags is digest-based and was already correct.
+- **Agent rollback could strand a container** — if removing a failed replacement container also failed during rollback, the code still attempted the doomed rename-back, masking the real error behind a generic conflict. Now skips that step and reports the failure clearly so the stranded state is visible.
+- **`AgentCentralRouteTests` was never running** — the class didn't inherit `unittest.TestCase`, so pytest silently skipped the only test covering the central API's agent-restart route dispatch.
+- Agent `delete-image` returned 502 instead of 404 for an already-gone image.
+- Agent server error responses no longer leak raw Docker daemon exception text over the network.
+- Agent tokens now require a 16-character minimum and repeated failed-auth attempts are rate-limited.
+- Duplicate agent names and weak tokens are now rejected at save time instead of failing later with a confusing error.
+- Two different agent hosts reporting a same-named container no longer silently collapse into one, dropping the other.
+- `AgentClient` retries once on a transient connection failure instead of failing an entire scheduled check cycle.
+- SQLite connections set `check_same_thread=False`, matching project convention.
+- Frontend "Test Connection" no longer fires before an agent is saved (was returning a misleading 422).
+
+#### Docs
+- `docker-compose.agent.yml` now reads the token from `.env` (new `.env.agent.example`) instead of a hardcoded placeholder in the YAML.
+- README agent section covers the Generate button, Save & Test flow, one-liner `docker run` deploy path, and the unique-name/min-token-length requirements.
+
 ## [0.11.0] - 2026-08-31
 
 ### 2026-08-31

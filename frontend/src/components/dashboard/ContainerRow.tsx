@@ -121,6 +121,13 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const tag = result.container_info.current_tag?.toLowerCase()
   const isFloatingTag = !!tag && ['latest', 'edge', 'dev', 'nightly'].includes(tag)
   const hasFloatingHint = isFloatingTag && result.comparison_basis === 'digest'
+  // No version label was available to scope the "latest tag" pick against
+  // (deployed_version falls back to the deployed tag itself, e.g. "latest").
+  // The remote version/bump badge shown is then just whatever sorted
+  // highest across the registry's full tag history, which can be an
+  // unrelated or much older release line, not a reliable comparison.
+  const hasUnscopedVersionHint =
+    isFloatingTag && !!result.deployed_version && result.deployed_version === result.deployed_tag
 
   return (
     <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm last:border-b-0 hover:bg-[var(--color-bg-panel-alt)]/50 transition-colors">
@@ -180,6 +187,14 @@ export function ContainerRow({ result }: ContainerRowProps) {
         {bump && bump !== 'UNKNOWN' && BUMP_COLORS[bump] && (
           <span className={`flex-shrink-0 inline-flex rounded border px-1.5 py-px text-[10px] font-semibold ${BUMP_COLORS[bump]}`}>
             {bump}
+          </span>
+        )}
+        {bump && bump !== 'UNKNOWN' && hasUnscopedVersionHint && (
+          <span
+            className="flex-shrink-0 text-[var(--color-text-muted)] hover:text-[var(--color-warning)] transition-colors cursor-help"
+            title="No deployed version label is available for this image, so this is just the highest-sorting tag in the registry's full history, not a scoped comparison. It may not reflect what's actually newer."
+          >
+            <Info size={11} />
           </span>
         )}
       </div>

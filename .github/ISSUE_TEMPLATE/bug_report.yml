@@ -1,0 +1,202 @@
+name: Bug report
+description: Something in dockwatch is broken or misbehaving — file a bug report
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Before you start:
+        - Search the [open issues](https://github.com/axsddlr/dockwatch/issues) — yours may already be reported.
+        - If you're unsure whether it's a bug or a setup problem, check the [troubleshooting section of the README](https://github.com/axsddlr/dockwatch#troubleshooting) first.
+        - **Redact anything sensitive**: hostnames, IPs, image names with private registries, tokens, and paths are fine to keep vague.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the bug.
+      placeholder: e.g. dockwatch flags my pinned container as outdated even though no new image exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+      placeholder: e.g. A container pinned to a fixed version tag should be shown as up to date.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened instead? Paste any error messages verbatim.
+      placeholder: e.g. The container row shows "0.11.0 → 0.12.0 available" and clicking update fails with "manifest unknown".
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps from a clean state, so a maintainer can follow along.
+      placeholder: |
+        1. Deploy dockwatch with `docker compose up -d` using the config from my stack below
+        2. Add a container with image `nginx:1.27`
+        3. Wait for the next registry check
+        4. Observe ...
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: dockwatch version
+      description: Version shown in the dashboard footer, `dockwatch --version`, or your image tag.
+      options:
+        - "0.12.0"
+        - "0.11.x"
+        - "0.10.x"
+        - older release
+        - git main (built from source)
+        - not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is dockwatch deployed?
+      options:
+        - Docker image (ghcr.io/axsddlr/dockwatch)
+        - Docker Compose
+        - Python package (pip / uv) on the host
+        - From source (git checkout)
+        - Agent on a remote Docker host
+        - Other / not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host-os
+    attributes:
+      label: Host operating system
+      description: The OS dockwatch (or the agent) runs on.
+      options:
+        - Linux
+        - macOS
+        - Windows (native / WSL2)
+        - Not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Host OS details
+      description: Distro/version if Linux, e.g. Debian 12, Ubuntu 24.04, Fedora 41, Proxmox VE 8.
+      placeholder: e.g. Debian 12 (bookworm)
+    validations:
+      required: false
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Architecture
+      options:
+        - amd64 / x86_64
+        - arm64 / aarch64
+        - armv7 / 32-bit ARM
+        - Other / not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: docker-connection
+    attributes:
+      label: How does dockwatch reach Docker?
+      description: Relevant for checks and updates — remote and Portainer setups behave differently.
+      options:
+        - Local Docker socket
+        - Remote Docker host (DOCKER_HOST)
+        - Portainer (local)
+        - Portainer (remote)
+        - Not sure
+      default: 0
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: area
+    attributes:
+      label: Where did you see the problem?
+      description: Tick every surface that is affected.
+      options:
+        - label: Dashboard (web UI)
+        - label: CLI (`dockwatch check` / `dockwatch update` and friends)
+        - label: Agent (remote host check/update)
+        - label: Auto-update (per-container opt-in)
+        - label: Rollback to last known-good tag
+        - label: Registry check / digest comparison / update availability
+        - label: Portainer integration
+        - label: Vulnerability scan (Trivy)
+        - label: Notifications (webhook / Discord / ntfy)
+        - label: Log viewer
+        - label: Audit log
+        - label: Authentication / RBAC
+    validations:
+      required: true
+
+  - type: input
+    id: image
+    attributes:
+      label: Affected image(s)
+      description: Which container image(s) trigger the problem?
+      placeholder: e.g. nginx:1.27, ghcr.io/owner/app:latest
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: floating-tag
+    attributes:
+      label: Tag details
+      description: Helps triage version-comparison issues.
+      options:
+        - label: One or more of the affected images uses a floating tag such as `latest`, `stable`, or `alpine` (no fixed version)
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Paste relevant logs. Good sources:
+        - `docker logs <dockwatch-container>` (compose / image deploys)
+        - `dockwatch --debug check` (package / source deploys)
+        - the agent's logs for agent-side problems
+
+        Redact tokens, hosts, and private image names first.
+      placeholder: Paste logs here — no need to attach files.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots (drag & drop), config snippets with secrets removed, links to related issues — anything that helps.
+    validations:
+      required: false

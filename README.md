@@ -1,5 +1,9 @@
 <p align="center"><img src="docs/resources/icon-static.svg" width="96" height="96" alt="dockwatch"></p>
 
+# dockwatch
+
+_Docker container update watcher with CLI and web dashboard._
+
 <p align="center">
   <a href="https://github.com/axsddlr/dockwatch/actions"><img src="https://github.com/axsddlr/dockwatch/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/axsddlr/dockwatch/releases"><img src="https://img.shields.io/github/v/release/axsddlr/dockwatch" alt="Release"></a>
@@ -7,7 +11,13 @@
   <a href="https://github.com/axsddlr/dockwatch/pkgs/container/dockwatch"><img src="https://img.shields.io/badge/image-ghcr.io%2Faxsddlr%2Fdockwatch-c4453c?logo=docker&logoColor=white" alt="GHCR image"></a>
 </p>
 
-# dockwatch, a self-hosted Docker update watcher
+<p align="center">
+  <a href="#documentation">Explore the docs</a>
+  &middot;
+  <a href="https://github.com/axsddlr/dockwatch/issues">Report a bug</a>
+  &middot;
+  <a href="https://github.com/axsddlr/dockwatch/issues">Request a feature</a>
+</p>
 
 <img src="docs/resources/dashboard.png" width="100%" alt="dockwatch dashboard">
 
@@ -18,23 +28,33 @@ Most auto-updaters (Watchtower and friends) pull new images the moment they appe
 
 Automatic updates are opt-in per container. Nothing updates unless you tell it to.
 
-## Table of contents
+## Table of Contents
 
-- [main features](#main-features)
-- [deploy](#deploy)
-- [docker image](#docker-image)
-- [cli reference](#cli-reference)
-- [configuration](#configuration)
-- [authentication & rbac](#authentication--rbac)
-- [notifications](#notifications)
-- [portainer integration](#portainer-integration)
-- [vulnerability scanning](#vulnerability-scanning-trivy)
-- [check and update](./docs/CHECK_AND_UPDATE.md)
-- [screenshots](./docs/SCREENSHOTS.md)
-- [troubleshooting](#troubleshooting)
-- [development](#development)
+- [Features](#features)
+- [Documentation](#documentation)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Run the Published Image](#run-the-published-image)
+  - [Quick Start](#quick-start)
+  - [Docker Socket Access](#docker-socket-access)
+  - [Local Python Install (No Docker)](#local-python-install-no-docker)
+  - [Compose-Managed Container Updates](#compose-managed-container-updates)
+- [Docker Image](#docker-image)
+- [Usage](#usage)
+  - [CLI Reference](#cli-reference)
+  - [Examples](#examples)
+- [Configuration](#configuration)
+- [Authentication & RBAC](#authentication--rbac)
+- [Notifications](#notifications)
+- [Portainer Integration](#portainer-integration)
+- [Monitor Multiple Docker PCs (Agents)](#monitor-multiple-docker-pcs-agents)
+- [Vulnerability Scanning (Trivy)](#vulnerability-scanning-trivy)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Main features
+## Features
 
 - Web dashboard with authentication and per-role permissions
 - Digest-aware comparison, not just tag-string matching, catches `latest` silently pointing at a new image
@@ -51,86 +71,104 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - CLI for scripts and cron jobs, same engine as the dashboard
 - Two admin password-recovery paths if you're locked out: `dockwatch config set-password` or the CLI-issued-token `/recover` web flow
 
-## Deploy
+## Documentation
 
-- ### Run the published image (no clone needed)
+- [Check & Update guide](docs/CHECK_AND_UPDATE.md) — how dockwatch decides a container is outdated and what happens when you click Update
+- [Screenshots](docs/SCREENSHOTS.md) — the dashboard, login, settings, and users pages
+- [FAQ](docs/FAQ.md) — architecture, deployment, and troubleshooting questions
+- [Comparison: dockwatch vs Tugtainer](COMPARISON.md) — how the two "review before you update" tools differ
+- [Changelog](CHANGELOG.md) — what shipped in each release
 
-  The multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR as `ghcr.io/axsddlr/dockwatch` (version tags plus `latest`). A minimal stack:
+## Getting Started
 
-  ```yaml
-  services:
-    dockwatch:
-      image: ghcr.io/axsddlr/dockwatch:latest
-      container_name: dockwatch
-      restart: unless-stopped
-      ports:
-        - "10801:8080"
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - dockwatch_config:/home/appuser/.config/dockwatch
-      init: true
+You can run the published image with Docker Compose, clone the repo and use the bundled `docker-compose.yml`, or install locally without Docker for CLI-only use.
 
-  volumes:
-    dockwatch_config:
-  ```
+### Prerequisites
 
-  The dashboard is at `http://localhost:10801`. Set `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` (or register the first admin) before exposing it. The repo's own `docker-compose.yml` is the reference deployment: socket mount, config + Trivy-cache volumes, healthcheck, log rotation, resource limits, and a non-root user.
+- **Docker** and **Docker Compose** to run the container.
+- **Python 3.11+** only if you want a native install without Docker.
+- **Trivy** is bundled in the Docker image; native/pip installs add it separately for vulnerability scanning.
 
-- ### Quick start
+### Run the Published Image
 
-  Prerequisites: Docker and Docker Compose. Trivy (vulnerability scanning) is bundled in the image.
+No clone needed. The multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR as `ghcr.io/axsddlr/dockwatch` (version tags plus `latest`). A minimal stack:
 
-  ```bash
-  git clone <this-repo>
-  cd dockwatch
-  cp .env.example .env
-  ```
+```yaml
+services:
+  dockwatch:
+    image: ghcr.io/axsddlr/dockwatch:latest
+    container_name: dockwatch
+    restart: unless-stopped
+    ports:
+      - "10801:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockwatch_config:/home/appuser/.config/dockwatch
+    init: true
 
-  Edit `.env`, and at minimum, set a real password:
+volumes:
+  dockwatch_config:
+```
 
-  ```env
-  DOCKWATCH_USERNAME=admin
-  DOCKWATCH_PASSWORD=<pick something that isn't the placeholder>
-  ```
+The dashboard is at `http://localhost:10801`. Set `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` (or register the first admin) before exposing it.
 
-  Then start it:
+### Quick Start
 
-  ```bash
-  docker compose up -d
-  ```
+```bash
+git clone <this-repo>
+cd dockwatch
+cp .env.example .env
+```
 
-  Dashboard is now at `http://localhost:10801` (or whatever `DOCKWATCH_PORT` you set). Log in with the credentials from `.env`; they're only consumed once, to bootstrap the first admin account.
+Edit `.env`, and at minimum, set a real password:
 
-  > [!IMPORTANT]
-  > **Do not expose the dashboard to a network you don't control before an admin account exists.** Until the first account is created, `/register` is open to anyone who can reach it, and the first visitor becomes admin. Setting `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` in `.env` closes this window entirely; if you skip it, register immediately after starting the container.
+```env
+DOCKWATCH_USERNAME=admin
+DOCKWATCH_PASSWORD=<pick something that isn't the placeholder>
+```
 
-- ### Docker socket access (automatic)
+Then start it:
 
-  The container's entrypoint detects the group that owns `/var/run/docker.sock` at startup and grants the non-root `appuser` access automatically. No `DOCKER_GID` in `.env` is required (v0.9.1+). This works on native Linux, Docker Desktop, and hosts where only Portainer is reachable and the GID is unknown.
+```bash
+docker compose up -d
+```
 
-  If the dashboard shows zero containers, the socket isn't reachable from inside the container. Confirm the daemon is running, the socket is mounted (`/var/run/docker.sock:/var/run/docker.sock`), and check `docker logs dockwatch` for `Could not connect to Docker`.
+Dashboard is now at `http://localhost:10801` (or whatever `DOCKWATCH_PORT` you set). Log in with the credentials from `.env`; they're only consumed once, to bootstrap the first admin account.
 
-- ### Local Python install (no Docker), for CLI-only use
+> [!IMPORTANT]
+> **Do not expose the dashboard to a network you don't control before an admin account exists.** Until the first account is created, `/register` is open to anyone who can reach it, and the first visitor becomes admin. Setting `DOCKWATCH_USERNAME`/`DOCKWATCH_PASSWORD` in `.env` closes this window entirely; if you skip it, register immediately after starting the container.
 
-  ```bash
-  python -m pip install -e .
-  dockwatch --help
-  ```
+The repo's own `docker-compose.yml` is the reference deployment: socket mount, config + Trivy-cache volumes, healthcheck, log rotation, resource limits, and a non-root user.
 
-  Requires Python 3.11+. The web dashboard (`dockwatch serve`) still needs access to a Docker socket to discover containers.
+### Docker Socket Access
 
-- ### Compose-managed container updates
+The container's entrypoint detects the group that owns `/var/run/docker.sock` at startup and grants the non-root `appuser` access automatically. No `DOCKER_GID` in `.env` is required (v0.9.1+). This works on native Linux, Docker Desktop, and hosts where only Portainer is reachable and the GID is unknown.
 
-  For dockwatch to update compose-managed containers (rewrite the tag in the compose file and re-deploy), it needs filesystem access to those compose files, and the project must be registered in Settings (workdir + file paths):
+If the dashboard shows zero containers, the socket isn't reachable from inside the container. Confirm the daemon is running, the socket is mounted (`/var/run/docker.sock:/var/run/docker.sock`), and check `docker logs dockwatch` for `Could not connect to Docker`.
 
-  - **Docker Desktop (Windows/macOS)**: mount `- /:/hostroot` and set `HOST_MOUNT_PREFIX=/hostroot`. dockwatch auto-translates Windows host paths to the Desktop VM's mount convention.
-  - **Native Linux**: bind-mount only the specific directories containing your compose stacks (e.g. `/opt/stacks:/opt/stacks`); do **not** mount the whole host root. Leave `HOST_MOUNT_PREFIX` unset.
+### Local Python Install (No Docker)
 
-  The bundled `docker-compose.yml` runs as non-root, includes a healthcheck (`GET /health`), log rotation, resource limits (1 CPU / 512 MB), and `tini` for signal handling.
+For CLI-only use:
 
-## Docker image
+```bash
+python -m pip install -e .
+dockwatch --help
+```
 
-Multi-arch (`linux/amd64`, `linux/arm64`) images are published to GHCR on every tagged release: `ghcr.io/axsddlr/dockwatch:latest` plus a version tag per release (e.g. `:0.9.2`):
+Requires Python 3.11+. The web dashboard (`dockwatch serve`) still needs access to a Docker socket to discover containers.
+
+### Compose-Managed Container Updates
+
+For dockwatch to update compose-managed containers (rewrite the tag in the compose file and re-deploy), it needs filesystem access to those compose files, and the project must be registered in Settings (workdir + file paths):
+
+- **Docker Desktop (Windows/macOS)**: mount `- /:/hostroot` and set `HOST_MOUNT_PREFIX=/hostroot`. dockwatch auto-translates Windows host paths to the Desktop VM's mount convention.
+- **Native Linux**: bind-mount only the specific directories containing your compose stacks (e.g. `/opt/stacks:/opt/stacks`); do **not** mount the whole host root. Leave `HOST_MOUNT_PREFIX` unset.
+
+The bundled `docker-compose.yml` runs as non-root, includes a healthcheck (`GET /health`), log rotation, resource limits (1 CPU / 512 MB), and `tini` for signal handling.
+
+## Docker Image
+
+Multi-arch (`linux/amd64`, `linux/arm64`) images are published to GHCR on every tagged release: `ghcr.io/axsddlr/dockwatch:latest` plus a version tag per release (e.g. `:0.12.0`):
 
 ```bash
 docker pull ghcr.io/axsddlr/dockwatch:latest
@@ -138,7 +176,11 @@ docker pull ghcr.io/axsddlr/dockwatch:latest
 
 The image bundles the app, the Docker + Compose CLIs, and Trivy, runs as a non-root user, auto-detects the Docker socket's group at startup, and ships with a healthcheck (`GET /health`). See [Releases](https://github.com/axsddlr/dockwatch/releases) for the per-version changelog.
 
-## CLI reference
+## Usage
+
+The `dockwatch` CLI is the same engine the dashboard uses — everything below works headless, in scripts, and from cron.
+
+### CLI Reference
 
 ```
 dockwatch list       [--source local|portainer|all] [--environment ID]
@@ -160,7 +202,7 @@ dockwatch config recover-admin
 dockwatch notify test
 ```
 
-Common examples:
+### Examples
 
 ```bash
 # check everything, show only what's outdated
@@ -242,6 +284,7 @@ cache_ttl_minutes = 60
 - `trivy.cache_ttl_minutes`: how long a scan result is reused before re-scanning the same image ID
 
 Pinned/ignored containers are stored in SQLite (`container_flags` table), not `config.toml`. Manage them via CLI (`dockwatch pin`/`ignore`) or the dashboard checklist.
+
 </details>
 
 Relevant `.env` variables (container deploy only):
@@ -290,14 +333,14 @@ dockwatch.update_delay_days=7
 
 Notification URLs are SSRF-guarded when saved from the dashboard: only `http(s)` schemes are accepted, and private/loopback/link-local/reserved addresses (literal or via DNS) are rejected, including cloud metadata endpoints.
 
-## Portainer integration
+## Portainer Integration
 
 Use Portainer as an additional container source: inspect, check, restart, update, and delete containers on remote Docker hosts without giving dockwatch direct socket access to them.
 
 - **Setup walkthrough**: [PORTAINER_SETUP.md](docs/PORTAINER_SETUP.md)
 - **Feature scope & programmatic API**: [PORTAINER_API.md](docs/PORTAINER_API.md)
 
-## Monitor multiple Docker PCs (agents)
+## Monitor Multiple Docker PCs (Agents)
 
 Run one central dockwatch instance on your main setup and a lightweight **dockwatch agent** on every other Docker PC. All containers show up in the central dashboard: checks, updates, rollbacks, restarts, deletes, logs, and the audit log all work across hosts, and agents do zero registry traffic (the central does all checking).
 
@@ -338,7 +381,7 @@ Agent names must be unique. The central looks agents up by name, so a duplicate 
 - **v1 scope**: agent-hosted compose stacks are read-only (updates/rollbacks are plain-container recreates); Trivy scanning stays on the central's own host.
 - **Security**: the agent token grants full Docker control on that PC (same as the Docker CLI), so only expose agents on networks you trust (LAN, VPN, Tailscale, or a TLS reverse proxy). Agent URLs are explicitly trusted, so they may be on private networks (unlike notification webhooks, which are SSRF-guarded). Repeated failed-token attempts from the same address are rate-limited.
 
-## Vulnerability scanning (Trivy)
+## Vulnerability Scanning (Trivy)
 
 Separate from update checks: inspects the *content* of the image currently running for known CVEs, not whether a newer tag exists.
 
@@ -367,8 +410,6 @@ dockwatch scan --json   # full CVE details: ID, package, installed/fixed version
 - **Shell/exec access to the host or container**: `dockwatch config set-password` prompts for a username and new password and resets it directly. If the username doesn't exist yet, pass `--create` to mint it as a new admin account (omitting `--create` for a nonexistent user fails instead of silently creating one, a breaking change since 0.8.0). Both branches log a SECURITY warning.
 - **Web UI + log access only** (no shell exec into a running process needed beyond `docker exec`/`docker logs`): run `dockwatch config recover-admin` via `docker exec`. It finds the earliest-created admin user, prints a one-time recovery token to stdout (also visible via `docker logs`), and stores only a hash of it server-side with a 15-minute expiry. Browse to `/recover` (not linked from the login page; it's not advertised, to avoid a lockout-oracle UI element for anyone probing the login screen), enter the token and a new password, and submit. On success you're redirected to `/login`, and any existing session cookie for that user is invalidated.
 
-See also: [FAQ.md](docs/FAQ.md)
-
 ## Development
 
 ```bash
@@ -379,6 +420,20 @@ uv run ruff check src tests  # lint
 
 CI (`.github/workflows/ci.yml`) runs ruff and pytest on every push and pull request.
 
+## Contributing
+
+Bug reports, feature requests, and pull requests are all welcome.
+
+- **Ask a question or report a problem**: open a [GitHub issue](https://github.com/axsddlr/dockwatch/issues).
+- **Send a change**: fork the repo, create a branch, and open a pull request.
+- **Before you push**, run the same checks CI runs:
+
+```bash
+uv sync --group dev
+uv run ruff check src tests
+uv run pytest -q
+```
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Distributed under the [MIT License](LICENSE). © 2026 Andre Saddler. See [LICENSE](LICENSE) for the full text.

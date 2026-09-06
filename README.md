@@ -297,6 +297,7 @@ Relevant `.env` variables (container deploy only):
 | `DOCKWATCH_ALLOW_REGISTRATION` | Allow self-service `/register` after the first account exists |
 | `DOCKWATCH_SECURE_COOKIE` | Force the session cookie's `Secure` flag `true`/`false`. Unset by default: dockwatch auto-detects HTTPS (via request scheme or `X-Forwarded-Proto`) and marks the cookie `Secure` only when it sees it. Set explicitly to `true` if you're behind a reverse proxy that doesn't forward that header reliably; set to `false` to force plain HTTP even if HTTPS is detected |
 | `DOCKWATCH_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs (e.g. `172.18.0.0/16`) of reverse proxies trusted to set `X-Forwarded-For`. Unset uses the raw TCP peer IP for rate limiting/lockout (safe default) |
+| `DOCKWATCH_DISABLE_AUTH` | Set `true` to disable login entirely on both API and GUI — every request is treated as an authenticated admin. **Security warning:** this removes all access control (no login, no session, no permission checks) and unauthenticated WebSocket access to live container events. Anyone who can reach the host/port gets full admin control (start/stop/delete containers, edit settings, manage users) with no audit trail. Only use on localhost-only or fully isolated dev networks — never on an internet-facing or shared-network deployment |
 
 ## Authentication & RBAC
 

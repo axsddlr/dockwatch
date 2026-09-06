@@ -836,3 +836,16 @@ def test_auth_migration_is_idempotent(monkeypatch, tmp_path) -> None:
     migrate_auth_config_to_users(config, store)
 
     assert store.count_users() == 1
+
+
+def test_disable_auth_bypasses_session_check(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DOCKWATCH_DISABLE_AUTH", "true")
+    client = _make_client(monkeypatch, tmp_path)
+
+    response = client.get("/api/auth/session")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["authenticated"] is True
+    assert data["role"] == "admin"
+    assert "view_containers" in data["permissions"]

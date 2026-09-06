@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..config import load_config
 from ..db import ManifestStore
-from .security import _verify_raw_cookie
+from .security import _auth_disabled, _verify_raw_cookie
 
 router = APIRouter()
 
@@ -46,6 +46,17 @@ manager = ConnectionManager()
 
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
+    if _auth_disabled():
+        await manager.connect(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await manager.disconnect(websocket)
+        return
+
     config = load_config()
     try:
         data = _verify_raw_cookie(websocket, config)

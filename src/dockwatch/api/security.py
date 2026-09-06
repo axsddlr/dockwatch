@@ -11,13 +11,29 @@ from fastapi import Depends, HTTPException, Request, Response
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ..config import DockwatchConfig, load_config
-from ..db import ManifestStore
+from ..db import VALID_PERMISSIONS, ManifestStore
 from .client_ip import is_trusted_peer
 
 logger = logging.getLogger("dockwatch.auth")
 
 _COOKIE_NAME = "dockwatch_session"
 _MAX_AGE = 60 * 60 * 24 * 14  # 14 days
+
+_DISABLE_AUTH_ENV = "DOCKWATCH_DISABLE_AUTH"
+
+
+def _auth_disabled() -> bool:
+    return os.environ.get(_DISABLE_AUTH_ENV, "").strip().lower() == "true"
+
+
+def _bypass_user() -> AuthenticatedUser:
+    return AuthenticatedUser(
+        user_id=0,
+        username="anonymous",
+        role_name="admin",
+        permissions=frozenset(VALID_PERMISSIONS),
+        onboarding_seen=True,
+    )
 
 
 class _HasCookies(Protocol):
@@ -101,6 +117,8 @@ def _verify_raw_cookie(conn: _HasCookies, config: DockwatchConfig) -> dict:
 
 
 def require_auth(request: Request) -> AuthenticatedUser:
+    if _auth_disabled():
+        return _bypass_user()
     config = load_config()
     data = _verify_raw_cookie(request, config)
     user_id = data["uid"]

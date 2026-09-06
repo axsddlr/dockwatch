@@ -6,8 +6,14 @@ import { getSession, hasPermission } from '../RequireAuth'
 
 type TourStep = Step & { data: { route: string } }
 
-function buildSteps(): TourStep[] {
-  const dashboardSteps: TourStep[] = [
+const SETTINGS_TOUR_SEEN_KEY = 'dockwatch:settings-tour-seen'
+
+function isSettingsRoute(pathname: string) {
+  return pathname.startsWith('/settings') || pathname.startsWith('/users')
+}
+
+function buildDashboardSteps(): TourStep[] {
+  return [
     {
       target: '[data-tour="stat-cards"]',
       content: 'These cards summarize your containers: total, up-to-date, outdated, and pinned.',
@@ -44,14 +50,11 @@ function buildSteps(): TourStep[] {
       data: { route: '/' },
     },
   ]
+}
 
+function buildSettingsSteps(): TourStep[] {
   const settingsSteps: TourStep[] = hasPermission('manage_settings')
     ? [
-        {
-          target: '[data-tour="nav-settings"]',
-          content: "Settings is where you configure how dockwatch monitors and notifies you.",
-          data: { route: '/' },
-        },
         {
           target: '[data-tour="settings-monitoring"]',
           content: 'Choose which containers to ignore or auto-update.',
@@ -105,7 +108,23 @@ function buildSteps(): TourStep[] {
       ]
     : []
 
-  return [...dashboardSteps, ...settingsSteps, ...usersSteps]
+  return [...settingsSteps, ...usersSteps]
+}
+
+function settingsTourSeen() {
+  try {
+    return localStorage.getItem(SETTINGS_TOUR_SEEN_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function markSettingsTourSeen() {
+  try {
+    localStorage.setItem(SETTINGS_TOUR_SEEN_KEY, 'true')
+  } catch {
+    // ignore storage failures
+  }
 }
 
 export function OnboardingTour() {
@@ -113,17 +132,35 @@ export function OnboardingTour() {
   const location = useLocation()
   const session = getSession()
 
-  const [run, setRun] = useState(() => session?.onboarding_seen === false)
+  const [activeTour, setActiveTour] = useState<'dashboard' | 'settings' | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
 
-  const steps = useMemo(buildSteps, [])
+  const dashboardSteps = useMemo(buildDashboardSteps, [])
+  const settingsSteps = useMemo(buildSettingsSteps, [])
+  const steps = activeTour === 'dashboard' ? dashboardSteps : activeTour === 'settings' ? settingsSteps : []
+  const run = activeTour !== null
+
+  useEffect(() => {
+    if (activeTour !== null) return
+    if (location.pathname === '/' && session?.onboarding_seen === false) {
+      setActiveTour('dashboard')
+      setStepIndex(0)
+    } else if (isSettingsRoute(location.pathname) && !settingsTourSeen()) {
+      setActiveTour('settings')
+      setStepIndex(0)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   const finish = () => {
-    setRun(false)
-    if (session && !session.onboarding_seen) {
+    if (activeTour === 'dashboard' && session && !session.onboarding_seen) {
       session.onboarding_seen = true
       api.users.completeOnboarding().catch(() => {})
     }
+    if (activeTour === 'settings') {
+      markSettingsTourSeen()
+    }
+    setActiveTour(null)
   }
 
   const handleEvent: EventHandler = (data) => {
@@ -156,16 +193,20 @@ export function OnboardingTour() {
 
   useEffect(() => {
     const restart = () => {
-      if (location.pathname !== '/') navigate('/')
+      if (isSettingsRoute(location.pathname)) {
+        setActiveTour('settings')
+      } else {
+        if (location.pathname !== '/') navigate('/')
+        setActiveTour('dashboard')
+      }
       setStepIndex(0)
-      setRun(true)
     }
     window.addEventListener('dockwatch:restart-tour', restart)
     return () => window.removeEventListener('dockwatch:restart-tour', restart)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [location.pathname])
 
-  if (steps.length === 0) return null
+  if (dashboardSteps.length === 0 && settingsSteps.length === 0) return null
 
   return (
     <Joyride
@@ -179,6 +220,46 @@ export function OnboardingTour() {
         showProgress: true,
         buttons: ['back', 'close', 'primary', 'skip'],
         skipBeacon: true,
+        arrowColor: 'var(--color-bg-panel)',
+        backgroundColor: 'var(--color-bg-panel)',
+        overlayColor: 'rgba(0, 0, 0, 0.6)',
+        primaryColor: 'var(--color-primary)',
+        textColor: 'var(--color-text-primary)',
+      }}
+      styles={{
+        tooltip: {
+          borderRadius: 12,
+          border: '1px solid var(--color-border-strong)',
+          padding: 20,
+        },
+        tooltipTitle: {
+          fontSize: 15,
+          fontWeight: 600,
+          color: 'var(--color-text-primary)',
+        },
+        tooltipContent: {
+          fontSize: 13.5,
+          lineHeight: 1.5,
+          color: 'var(--color-text-muted)',
+        },
+        buttonPrimary: {
+          backgroundColor: 'var(--color-primary)',
+          color: '#fff',
+          borderRadius: 8,
+          fontSize: 13,
+          padding: '8px 14px',
+        },
+        buttonBack: {
+          color: 'var(--color-text-muted)',
+          fontSize: 13,
+        },
+        buttonSkip: {
+          color: 'var(--color-text-dim)',
+          fontSize: 13,
+        },
+        buttonClose: {
+          color: 'var(--color-text-dim)',
+        },
       }}
     />
   )

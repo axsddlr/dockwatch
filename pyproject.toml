@@ -33,3 +33,18 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dockwatch"]
+
+[tool.ruff]
+# Pin the target so a ruff bump cannot silently change which modernizations are
+# applied. Without this, ruff infers it from requires-python.
+target-version = "py311"
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom calls in argument defaults by design
+# (e.g. `user: User = Depends(require_permission("containers", "write"))`), so
+# B008 is a false positive for these callables. Rewriting the routes to call
+# them inside the body would break the dependency-injection contract.
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "dockwatch.api.security.require_permission",
+]

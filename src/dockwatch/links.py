@@ -10,7 +10,7 @@ def _source_url(info: ContainerInfo) -> str | None:
     if not source:
         return None
     source = source.strip()
-    if source.startswith("http://") or source.startswith("https://"):
+    if source.startswith(("http://", "https://")):
         return source
     return None
 

@@ -750,9 +750,13 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        with patch("dockwatch.registry.get_local_platform", return_value=("linux", "amd64")):
-            with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
-                result = await check_container(info)
+        with (
+            patch(
+                "dockwatch.registry.get_local_platform", return_value=("linux", "amd64")
+            ),
+            patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await check_container(info)
 
         self.assertEqual(result.comparison_basis, "digest")
         self.assertFalse(result.is_outdated)
@@ -790,9 +794,13 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        with patch("dockwatch.registry.get_local_platform", return_value=("linux", "amd64")):
-            with patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client):
-                result = await check_container(info)
+        with (
+            patch(
+                "dockwatch.registry.get_local_platform", return_value=("linux", "amd64")
+            ),
+            patch("dockwatch.registry.httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await check_container(info)
 
         # No amd64 entry in the list: falls back to the list's own digest,
         # which happens to match here, so not reported as outdated.

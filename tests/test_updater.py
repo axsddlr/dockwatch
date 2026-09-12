@@ -11,15 +11,15 @@ from dockwatch.updater import build_rollback_plan, build_update_plan, execute_up
 
 
 def _result(**kwargs) -> UpdateResult:
-    container_kwargs = dict(
-        name="web",
-        container_id="abcdef123456",
-        image_ref="nginx:1.0.0",
-        registry=RegistryType.DOCKERHUB,
-        namespace="library",
-        image_name="nginx",
-        current_tag="1.0.0",
-    )
+    container_kwargs = {
+        "name": "web",
+        "container_id": "abcdef123456",
+        "image_ref": "nginx:1.0.0",
+        "registry": RegistryType.DOCKERHUB,
+        "namespace": "library",
+        "image_name": "nginx",
+        "current_tag": "1.0.0",
+    }
     container_kwargs.update(kwargs.pop("container_overrides", {}))
     container = ContainerInfo(**container_kwargs)
     return UpdateResult(

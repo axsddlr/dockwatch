@@ -143,9 +143,11 @@ class DeleteTests(unittest.TestCase):
 
         fake_client = FakeDockerClient()
         fake_client.container_get_raises = DockerException("container not found")
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                delete_container("nonexistent")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_container("nonexistent")
 
         self.assertIn("container not found", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -158,10 +160,12 @@ class DeleteTests(unittest.TestCase):
         container.remove = lambda force=False: (_ for _ in ()).throw(
             DockerException("container in use")
         )
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with patch.object(fake_client, "get", return_value=container):
-                with self.assertRaises(DockerException) as ctx:
-                    delete_container("web")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            patch.object(fake_client, "get", return_value=container),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_container("web")
 
         self.assertIn("container in use", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -171,9 +175,11 @@ class DeleteTests(unittest.TestCase):
 
         fake_client = FakeDockerClient()
         fake_client.image_remove_raises = DockerException("image in use")
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                delete_image("sha256:abc123")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_image("sha256:abc123")
 
         self.assertIn("image in use", str(ctx.exception))
         self.assertTrue(fake_client.close_called)

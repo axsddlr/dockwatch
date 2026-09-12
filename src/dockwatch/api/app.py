@@ -117,7 +117,8 @@ async def _lifespan(app: FastAPI):
                     try:
                         await manager.broadcast("check_complete", {"results": serialized})
                     except Exception:
-                        pass
+                        # A dead socket must not stop the scheduler loop.
+                        logger.debug("check_complete broadcast failed", exc_info=True)
             except asyncio.CancelledError:
                 break
             except Exception:

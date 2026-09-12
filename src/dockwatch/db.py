@@ -625,7 +625,7 @@ class ManifestStore:
 
     def create_role(self, name: str, permissions: list[str]) -> bool:
         name = name.strip()
-        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        normalized = sorted({p for p in permissions if p in VALID_PERMISSIONS})
         if not normalized:
             raise ValueError("Role must have at least one valid permission.")
         with closing(self._connect()) as connection, connection:
@@ -643,7 +643,7 @@ class ManifestStore:
 
     def update_role_permissions(self, name: str, permissions: list[str]) -> bool:
         name = name.strip()
-        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        normalized = sorted({p for p in permissions if p in VALID_PERMISSIONS})
         if not normalized:
             raise ValueError("Role must have at least one valid permission.")
         with closing(self._connect()) as connection, connection:

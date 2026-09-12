@@ -6,8 +6,19 @@ from dataclasses import dataclass, field
 
 from .agent.protocol import deserialize_container_info
 from .config import DockwatchConfig
-from .docker_client import DockerConnectionError, get_running_containers, parse_image_ref, _detect_portainer_source
-from .integrations import AgentClient, AgentError, PortainerClient, PortainerEnvironment, PortainerError
+from .docker_client import (
+    DockerConnectionError,
+    _detect_portainer_source,
+    get_running_containers,
+    parse_image_ref,
+)
+from .integrations import (
+    AgentClient,
+    AgentError,
+    PortainerClient,
+    PortainerEnvironment,
+    PortainerError,
+)
 from .models import ContainerInfo
 
 
@@ -174,9 +185,7 @@ async def discover_containers(
     for c in result.containers:
         if c.source != "agent":
             existing = non_agent_by_name.get(c.name)
-            if existing is None:
-                non_agent_by_name[c.name] = c
-            elif c.source == "portainer" and (
+            if existing is None or c.source == "portainer" and (
                 existing.source != "portainer"
                 or (not existing.environment_id and c.environment_id)
             ):

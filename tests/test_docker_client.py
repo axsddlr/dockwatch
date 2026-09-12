@@ -4,7 +4,13 @@ import unittest
 from unittest.mock import patch
 
 import dockwatch.docker_client as docker_client_module
-from dockwatch.docker_client import delete_container, delete_image, get_local_platform, get_running_containers, parse_image_ref
+from dockwatch.docker_client import (
+    delete_container,
+    delete_image,
+    get_local_platform,
+    get_running_containers,
+    parse_image_ref,
+)
 from dockwatch.models import RegistryType
 
 

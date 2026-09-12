@@ -6,7 +6,15 @@ from rich.console import Console
 from rich.table import Table
 
 from .links import build_registry_link
-from .models import ContainerInfo, TrivyScanResult, UpdateResult, comparison_summary, deployed_display, deployed_display_result, remote_display
+from .models import (
+    ContainerInfo,
+    TrivyScanResult,
+    UpdateResult,
+    comparison_summary,
+    deployed_display,
+    deployed_display_result,
+    remote_display,
+)
 
 console = Console()
 

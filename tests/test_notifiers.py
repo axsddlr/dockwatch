@@ -55,7 +55,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            async def post(self, url: str, json=None, **kwargs):  # noqa: ANN001
+            async def post(self, url: str, json=None, **kwargs):
                 captured.append({"url": url, "json": json, "kwargs": kwargs})
                 return CaptureResponse()
 
@@ -84,7 +84,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            async def post(self, url: str, content=None, headers=None, **kwargs):  # noqa: ANN001
+            async def post(self, url: str, content=None, headers=None, **kwargs):
                 captured.append({"url": url, "content": content, "headers": headers, "kwargs": kwargs})
                 return CaptureResponse()
 
@@ -122,7 +122,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             )
         ]
 
-        async def capture_send(self_inner, r):  # noqa: ANN001
+        async def capture_send(self_inner, r):
             sent.append(r)
 
         with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
@@ -134,7 +134,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
     async def test_notify_only_empty_sends_all(self) -> None:
         sent: list[list[UpdateResult]] = []
 
-        async def capture_send(self_inner, r):  # noqa: ANN001
+        async def capture_send(self_inner, r):
             sent.append(r)
 
         config = DockwatchConfig(webhook_url="https://example.test/webhook")
@@ -177,7 +177,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        async def capture_send(self_inner, r):  # noqa: ANN001
+        async def capture_send(self_inner, r):
             sent.append(r)
 
         with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
@@ -208,7 +208,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        async def capture_send(self_inner, r):  # noqa: ANN001
+        async def capture_send(self_inner, r):
             sent.append(r)
 
         with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
@@ -242,7 +242,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             )
         ]
 
-        async def capture_send(self_inner, r):  # noqa: ANN001
+        async def capture_send(self_inner, r):
             sent.append(r)
 
         with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", capture_send):
@@ -283,7 +283,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
             discord_webhook="https://discord.test/hook",
         )
 
-        async def fail_send(self, _results):  # noqa: ANN001
+        async def fail_send(self, _results):
             raise RuntimeError("failed")
 
         with patch("dockwatch.notifiers.webhook.WebhookNotifier.send", fail_send), patch(
@@ -297,7 +297,7 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         config = DockwatchConfig(webhook_url="https://example.test/webhook")
         calls = {"count": 0}
 
-        async def flaky_send(self, _results):  # noqa: ANN001
+        async def flaky_send(self, _results):
             calls["count"] += 1
             if calls["count"] < 3:
                 raise RuntimeError("temporary")

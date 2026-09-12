@@ -9,14 +9,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from dockwatch.agent.protocol import deserialize_container_info, serialize_container_info
+from dockwatch.agent.protocol import (
+    deserialize_container_info,
+    serialize_container_info,
+)
 from dockwatch.agent.server import create_agent_app
 from dockwatch.config import AgentConfig, DockwatchConfig
 from dockwatch.db import ManifestStore
 from dockwatch.integrations.agent import AgentClient, AgentError
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.sources import discover_agents
-from dockwatch.updater import UpdateExecutionResult, build_rollback_plan, build_update_plan, execute_agent_rollback, execute_agent_update
+from dockwatch.updater import (
+    UpdateExecutionResult,
+    build_rollback_plan,
+    build_update_plan,
+    execute_agent_rollback,
+    execute_agent_update,
+)
 
 
 class MockResponse:

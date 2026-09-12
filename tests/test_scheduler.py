@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from dockwatch.config import DockwatchConfig
@@ -42,10 +42,10 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
                 store=store,
                 emit=emitted.append,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
-            async def slow_check_all(*args, **kwargs):  # noqa: ANN002, ANN003
+            async def slow_check_all(*args, **kwargs):
                 await asyncio.sleep(0.05)
                 return []
 
@@ -72,7 +72,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
                 store=store,
                 notify=False,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
@@ -103,7 +103,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
                 store=store,
                 notify=False,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
             portainer_plan = MagicMock(
@@ -138,7 +138,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
                 store=store,
                 notify=False,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
@@ -159,7 +159,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
                 store=store,
                 notify=False,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
@@ -180,7 +180,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             runner = ScheduledCheckRunner(
                 config=config,
                 store=store,
-                container_loader=lambda: [],
+                container_loader=list,
             )
 
             with patch("dockwatch.scheduler.random.uniform", return_value=7.5):

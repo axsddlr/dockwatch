@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .semver import VersionDiff
@@ -166,7 +165,7 @@ class TrivyFinding:
 @dataclass(slots=True)
 class TrivyScanResult:
     image_ref: str
-    findings: list[TrivyFinding]  # noqa: RUF012
+    findings: list[TrivyFinding]
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0

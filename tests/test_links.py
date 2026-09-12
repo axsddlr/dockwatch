@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from dockwatch.links import build_registry_url
-from dockwatch.links import build_registry_link
+from dockwatch.links import build_registry_link, build_registry_url
 from dockwatch.models import ContainerInfo, RegistryType
 
 

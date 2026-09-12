@@ -7,8 +7,12 @@ import unittest
 
 from dockwatch.config import TrivyConfig
 from dockwatch.models import TrivyFinding, TrivyScanResult
-from dockwatch.trivy import _parse_trivy_json, _build_cmd, _TrivyScanArgs, check_trivy_available
-
+from dockwatch.trivy import (
+    _build_cmd,
+    _parse_trivy_json,
+    _TrivyScanArgs,
+    check_trivy_available,
+)
 
 SAMPLE_TRIVY_JSON = json.dumps({
     "Results": [

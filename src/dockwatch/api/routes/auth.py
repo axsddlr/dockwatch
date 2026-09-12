@@ -6,7 +6,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -206,8 +206,8 @@ def recover(body: dict[str, str], request: Request) -> Any:
             valid = False
         else:
             if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            valid = datetime.now(timezone.utc) < expires_at
+                expires_at = expires_at.replace(tzinfo=UTC)
+            valid = datetime.now(UTC) < expires_at
 
     if not valid:
         _record_failure(key)

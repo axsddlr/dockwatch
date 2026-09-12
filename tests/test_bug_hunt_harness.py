@@ -11,7 +11,7 @@ import json
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -19,10 +19,10 @@ from docker.errors import DockerException
 from typer.testing import CliRunner
 
 from dockwatch.api.ws import ConnectionManager
-from dockwatch.config import DockwatchConfig, ComposeProjectConfig
+from dockwatch.config import ComposeProjectConfig, DockwatchConfig
 from dockwatch.db import ManifestStore
 from dockwatch.docker_client import get_image_id, get_running_containers
-from dockwatch.trivy import _TrivyScanArgs, _scan_one
+from dockwatch.trivy import _scan_one, _TrivyScanArgs
 from dockwatch.updater import UpdatePlan, _execute_compose_update, _execute_plain_update
 
 
@@ -163,7 +163,7 @@ class TestTrivyCacheCorruption:
 
     def _store_with_row(self, tmp_path: Path, scan_json: str) -> ManifestStore:
         store = ManifestStore(tmp_path / "state.sqlite3")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with sqlite3.connect(store.path) as conn:
             conn.execute(
                 """

@@ -65,17 +65,16 @@ class ValidatePublicUrlTests(unittest.TestCase):
         with patch(
             "dockwatch.api.routes.settings.socket.getaddrinfo",
             side_effect=OSError("no address"),
-        ):
-            with self.assertRaises(HTTPException):
-                _validate_public_url("http://no-such-host.invalid/hook")
+        ), self.assertRaises(HTTPException):
+            _validate_public_url("http://no-such-host.invalid/hook")
 
 
 class TestPutSettingsSsrftests:
     def test_put_settings_rejects_private_webhook(self, tmp_path, monkeypatch) -> None:
-        import dockwatch.config as config_module
-        import dockwatch.db as db_module
         from fastapi.testclient import TestClient
 
+        import dockwatch.config as config_module
+        import dockwatch.db as db_module
         from dockwatch.api import deps as deps_module
         from dockwatch.api.app import create_app
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+from ..config import DockwatchConfig
+from ..models import UpdateResult
 from .base import BaseNotifier
 from .discord import DiscordNotifier
 from .ntfy import NtfyNotifier
 from .webhook import WebhookNotifier
-from ..config import DockwatchConfig
-from ..models import UpdateResult
 
 
 def build_notifiers(config: DockwatchConfig) -> list[BaseNotifier]:
@@ -52,7 +52,7 @@ async def _send_with_retry(notifier: BaseNotifier, results: list[UpdateResult]) 
         try:
             await notifier.send(results)
             return
-        except Exception:  # noqa: BLE001
+        except Exception:
             if attempt >= 3:
                 raise
             await asyncio.sleep(delay)

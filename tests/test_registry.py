@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -885,7 +886,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             make_container(registry=RegistryType.UNKNOWN, current_tag="latest"),
         ]
 
-        async def boom(*args, **kwargs):  # noqa: ANN002, ANN003
+        async def boom(*args, **kwargs):
             raise RuntimeError("boom")
 
         with patch("dockwatch.registry.check_container", side_effect=boom):
@@ -979,7 +980,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_delay_suppresses_freshly_seen_update(self) -> None:
         import tempfile
-        from datetime import datetime, timezone
+        from datetime import datetime
         from pathlib import Path
 
         from dockwatch.db import ManifestStore
@@ -1000,7 +1001,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 container,
                 latest_tag="2.0.0",
                 remote_digest="sha256:remote",
-                checked_at=datetime.now(timezone.utc).isoformat(),
+                checked_at=datetime.now(UTC).isoformat(),
             )
             outdated = UpdateResult(
                 container_info=container,
@@ -1023,7 +1024,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_delay_expires_after_configured_days(self) -> None:
         import tempfile
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         from pathlib import Path
 
         from dockwatch.db import ManifestStore
@@ -1044,7 +1045,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 container,
                 latest_tag="2.0.0",
                 remote_digest="sha256:remote",
-                checked_at=(datetime.now(timezone.utc) - timedelta(days=10)).isoformat(),
+                checked_at=(datetime.now(UTC) - timedelta(days=10)).isoformat(),
             )
             outdated = UpdateResult(
                 container_info=container,
@@ -1101,7 +1102,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_delay_label_override_beats_global(self) -> None:
         import tempfile
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         from pathlib import Path
 
         from dockwatch.db import ManifestStore
@@ -1123,7 +1124,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 container,
                 latest_tag="2.0.0",
                 remote_digest="sha256:remote",
-                checked_at=(datetime.now(timezone.utc) - timedelta(days=5)).isoformat(),
+                checked_at=(datetime.now(UTC) - timedelta(days=5)).isoformat(),
             )
             outdated = UpdateResult(
                 container_info=container,

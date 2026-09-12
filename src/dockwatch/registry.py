@@ -8,7 +8,7 @@ import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
@@ -86,10 +86,10 @@ def _apply_update_delay(
     try:
         first_seen = datetime.fromisoformat(seen_at)
         if first_seen.tzinfo is None:
-            first_seen = first_seen.replace(tzinfo=timezone.utc)
+            first_seen = first_seen.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return result
-    elapsed_days = (datetime.now(timezone.utc) - first_seen).total_seconds() / 86400
+    elapsed_days = (datetime.now(UTC) - first_seen).total_seconds() / 86400
     if elapsed_days >= delay_days:
         return result
     remaining = math.ceil(delay_days - elapsed_days)

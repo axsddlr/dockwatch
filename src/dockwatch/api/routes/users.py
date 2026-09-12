@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...config import hash_password
-from ...db import ManifestStore, UserRecord, VALID_PERMISSIONS
+from ...db import VALID_PERMISSIONS, ManifestStore, UserRecord
 from ..deps import get_store
 from ..rate_limit import rate_limit
 from ..security import AuthenticatedUser, require_auth, require_permission

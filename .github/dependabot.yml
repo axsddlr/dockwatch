@@ -8,6 +8,19 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
+    # Grouped so a single PR carries one lockfile update. Ungrouped bumps each
+    # rewrite uv.lock independently, so two open PRs always conflict and have to
+    # be rebased one at a time.
+    groups:
+      # Runtime deps ship in the image; keep them in their own PR so a broken
+      # tooling bump (see ruff 0.16, which needed code fixes) can't delay them.
+      uv-runtime:
+        dependency-type: "production"
+        patterns: ["*"]
+      # Dev tools: ruff, mypy, pytest, pytest-asyncio, types-docker.
+      uv-dev:
+        dependency-type: "development"
+        patterns: ["*"]
 
   # Frontend (dashboard) dependencies
   - package-ecosystem: "npm"
@@ -17,3 +30,10 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
+    groups:
+      frontend-runtime:
+        dependency-type: "production"
+        patterns: ["*"]
+      frontend-dev:
+        dependency-type: "development"
+        patterns: ["*"]

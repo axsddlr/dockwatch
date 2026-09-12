@@ -136,7 +136,7 @@ async def _scan_one(args: _TrivyScanArgs) -> TrivyScanResult:
             timeout=args.timeout_seconds,
         )
         await proc.wait()
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()
         logger.warning("trivy scan of %s timed out after %ss", args.image_ref, args.timeout_seconds)

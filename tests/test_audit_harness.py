@@ -5,19 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-
 from dockwatch.api.serializers import deserialize_settings, serialize_settings
-from dockwatch.db import ManifestStore
 from dockwatch.config import (
     DockwatchConfig,
     PortainerConfig,
-    save_config,
-    load_config,
     _toml_string,
+    load_config,
+    save_config,
 )
-from dockwatch.utils import unique_ordered
+from dockwatch.db import ManifestStore
 from dockwatch.docker_client import get_image_id, parse_image_ref
 from dockwatch.semver import compare_versions
+from dockwatch.utils import unique_ordered
 
 
 class TestConfigAtomicity:
@@ -235,8 +234,8 @@ class TestVersionSync:
     """FIX: app.py:18 — FastAPI version imported from __init__.py."""
 
     def test_api_app_version_matches_package(self):
-        from dockwatch.api.app import create_app
         from dockwatch import __version__
+        from dockwatch.api.app import create_app
         app = create_app()
         assert app.version == __version__
 
@@ -317,6 +316,7 @@ class TestPinUnpinRace:
 
     def test_concurrent_pins_do_not_lose_updates(self, tmp_path):
         import threading
+
         from dockwatch.db import ManifestStore
 
         store = ManifestStore(path=tmp_path / "test.db")
@@ -340,6 +340,7 @@ class TestPinUnpinRace:
 
     def test_concurrent_pin_and_unpin_of_different_names_both_succeed(self, tmp_path):
         import threading
+
         from dockwatch.db import ManifestStore
 
         store = ManifestStore(path=tmp_path / "test.db")
@@ -373,6 +374,7 @@ class TestComposeFileWriteAtomicity:
 
     def test_rewrite_uses_atomic_replace(self, tmp_path: Path):
         from unittest.mock import patch as mock_patch
+
         from dockwatch import updater as updater_module
 
         compose_file = tmp_path / "compose.yml"
@@ -435,11 +437,12 @@ class TestSettingsPutValidation:
             pass
 
     def test_put_settings_route_returns_422_not_500(self, monkeypatch, tmp_path):
+        from fastapi.testclient import TestClient
+
         import dockwatch.config as config_module
         import dockwatch.db as db_module
-        from fastapi.testclient import TestClient
-        from dockwatch.api.app import create_app
         from dockwatch.api import deps as deps_module
+        from dockwatch.api.app import create_app
 
         config_path = tmp_path / "config.toml"
         db_path = tmp_path / "manifests.db"

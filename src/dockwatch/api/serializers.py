@@ -9,7 +9,12 @@ from typing import Any
 from packaging.version import Version
 
 from ..agent.protocol import MIN_AGENT_TOKEN_LENGTH
-from ..config import AgentConfig, DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
+from ..config import (
+    AgentConfig,
+    ComposeProjectConfig,
+    DockwatchConfig,
+    strip_host_mount_prefix,
+)
 from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
@@ -43,7 +48,7 @@ def _custom_dict(items: list[tuple[str, Any]]) -> dict[str, Any]:
 def serialize_container_info(info: ContainerInfo) -> dict[str, Any]:
     return _custom_dict([
         (f.name, getattr(info, f.name))
-        for f in info.__dataclass_fields__.values()  # noqa: SLF001
+        for f in info.__dataclass_fields__.values()
     ])
 
 

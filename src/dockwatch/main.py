@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import asdict
+from datetime import UTC
 from enum import Enum
 
 import typer
@@ -21,16 +23,26 @@ from .config import (
     migrate_pinned_ignored_to_db,
 )
 from .db import ManifestStore
-from .display import render_containers_table, render_scan_results, render_summary, render_update_table
+from .display import (
+    render_containers_table,
+    render_scan_results,
+    render_summary,
+    render_update_table,
+)
 from .docker_client import get_image_id, get_running_containers
 from .models import ContainerInfo, RegistryType, TrivyScanResult, UpdateResult
-from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
+from .notifiers import (
+    build_notifiers,
+    filter_notification_results,
+    send_configured_notifications,
+)
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
 from .sources import discover_containers, discover_environments
 from .trivy import TrivyNotFoundError, scan_image
 from .updater import build_update_plan, describe_update_plan, execute_update
 
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(
     help=(
@@ -119,7 +131,7 @@ def check_updates(
         ]
 
     if json_output:
-        def _serialize(value):  # noqa: ANN001
+        def _serialize(value):
             if isinstance(value, Enum):
                 return value.value
             if isinstance(value, Version):
@@ -163,7 +175,7 @@ def scan_images(
 
     try:
         discovery = asyncio.run(discover_containers(config, source=source, selected_environment=environment))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         typer.echo(f"Container discovery failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -252,7 +264,7 @@ def list_environments() -> None:
     config = load_config()
     try:
         environments = asyncio.run(discover_environments(config))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -330,8 +342,9 @@ def serve(
     port: int = typer.Option(8080, "--port", help="Port to bind web dashboard."),
 ) -> None:
     """Launch web dashboard."""
-    import logging
+
     import uvicorn
+
     from .api.app import create_app
 
     logging.basicConfig(
@@ -375,8 +388,8 @@ def agent(
     this host (same access as the Docker CLI), so only expose it on
     networks you trust, ideally via a VPN/reverse proxy.
     """
-    import logging
     import uvicorn
+
     from .agent import create_agent_app
 
     logging.basicConfig(
@@ -525,7 +538,6 @@ def set_password(
     exec access, so both branches are logged as security events for
     auditing.
     """
-    import logging
 
     store = ManifestStore()
     existing = store.get_user_by_username(username)
@@ -538,7 +550,7 @@ def set_password(
             )
             raise typer.Exit(code=1)
         store.create_user(username, hash_password(password), "admin")
-        logging.warning(
+        logger.warning(
             "[dockwatch] SECURITY: user '%s' was created with the admin role "
             "via `dockwatch config set-password --create` (container/host "
             "exec access). If this wasn't you, someone with access to this "
@@ -549,7 +561,7 @@ def set_password(
     else:
         store.update_user_password(existing.id, hash_password(password))
         store.bump_session_version(existing.id)
-        logging.warning(
+        logger.warning(
             "[dockwatch] SECURITY: password for user '%s' was reset via "
             "`dockwatch config set-password` (container/host exec access). "
             "If this wasn't you, someone with access to this host can take "
@@ -571,9 +583,8 @@ def recover_admin() -> None:
     event for auditing.
     """
     import hashlib
-    import logging
     import secrets
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     store = ManifestStore()
     admin = store.get_earliest_user_by_role("admin")
@@ -583,10 +594,10 @@ def recover_admin() -> None:
 
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    expires_at = (datetime.now(UTC) + timedelta(minutes=15)).isoformat()
     store.create_recovery_token(admin.id, token_hash, expires_at)
 
-    logging.warning(
+    logger.warning(
         "[dockwatch] SECURITY: password recovery token issued for admin user "
         "'%s' via `dockwatch config recover-admin` (container/host exec "
         "access). If this wasn't you, someone with access to this host can "

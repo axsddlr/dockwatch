@@ -7,7 +7,8 @@ machinery the central uses for its own Docker socket)."""
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import httpx
 

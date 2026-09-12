@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import logging
-from pathlib import Path
 import re
 import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import docker
 from docker.errors import DockerException
 from docker.models.containers import Container
 
-from .config import AgentConfig, ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
+from .config import (
+    AgentConfig,
+    ComposeProjectConfig,
+    DockwatchConfig,
+    resolve_compose_file,
+    resolve_host_path,
+)
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError, get_docker_client
 from .integrations import AgentClient, AgentError, PortainerClient, PortainerError
 from .models import ContainerInfo, UpdateResult, deployed_display_result, remote_display

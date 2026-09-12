@@ -19,7 +19,12 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from pydantic import BaseModel
 
 from .. import __version__
-from ..docker_client import DockerConnectionError, get_docker_client, get_running_containers, parse_image_ref
+from ..docker_client import (
+    DockerConnectionError,
+    get_docker_client,
+    get_running_containers,
+    parse_image_ref,
+)
 from ..models import ContainerInfo
 from ..updater import UpdateExecutionError, UpdatePlan, _execute_plain_update
 from .protocol import MIN_AGENT_TOKEN_LENGTH, serialize_container_info
@@ -179,7 +184,7 @@ def create_agent_app(token: str) -> FastAPI:
             container.restart(timeout=10)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: restart of '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="restart failed") from exc
         finally:
@@ -194,7 +199,7 @@ def create_agent_app(token: str) -> FastAPI:
             container.remove(force=force)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: delete of container '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="delete failed") from exc
         finally:
@@ -208,7 +213,7 @@ def create_agent_app(token: str) -> FastAPI:
             client.images.remove(image_id, force=force)
         except docker.errors.ImageNotFound as exc:
             raise HTTPException(status_code=404, detail=f"image '{image_id}' not found") from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: delete of image '%s' failed: %s", image_id, exc)
             raise HTTPException(status_code=502, detail="image delete failed") from exc
         finally:
@@ -223,7 +228,7 @@ def create_agent_app(token: str) -> FastAPI:
             logs = container.logs(tail=tail, timestamps=True)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: logs request for '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="logs request failed") from exc
         finally:

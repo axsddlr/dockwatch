@@ -6,12 +6,11 @@ import asyncio
 from dataclasses import replace
 from typing import Any
 
+from docker.errors import DockerException
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from docker.errors import DockerException
-
 from ... import docker_client
-from ...config import validate_compose_project_config, ComposeProjectConfig
+from ...config import ComposeProjectConfig, validate_compose_project_config
 from ...integrations import AgentClient, AgentError, PortainerClient, PortainerError
 from ...models import ContainerInfo, UpdateResult
 from ...registry import check_all, record_digest_drift_events
@@ -56,14 +55,10 @@ def _merge_check_results(
     for r in results:
         name = r.container_info.name
         existing = deduped.get(name)
-        if existing is None:
-            deduped[name] = r
-        elif r.container_info.source == "portainer" and (
+        if existing is None or r.container_info.source == "portainer" and (
             existing.container_info.source != "portainer"
             or (not existing.container_info.environment_id and r.container_info.environment_id)
-        ):
-            deduped[name] = r
-        elif r.container_info.source == "local" and existing.container_info.source == "agent":
+        ) or r.container_info.source == "local" and existing.container_info.source == "agent":
             deduped[name] = r
     deduped_list = list(deduped.values())
 

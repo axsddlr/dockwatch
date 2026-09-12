@@ -41,12 +41,14 @@ class ValidatePublicUrlTests(unittest.TestCase):
 
     def test_rejects_hostname_resolving_only_to_restricted_addresses(self) -> None:
         sockaddr = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 80))
-        with patch(
-            "dockwatch.api.routes.settings.socket.getaddrinfo",
-            return_value=[sockaddr, (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))],
+        with (
+            patch(
+                "dockwatch.api.routes.settings.socket.getaddrinfo",
+                return_value=[sockaddr, (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))],
+            ),
+            self.assertRaises(HTTPException),
         ):
-            with self.assertRaises(HTTPException):
-                _validate_public_url("http://internal.example.test/hook")
+            _validate_public_url("http://internal.example.test/hook")
 
     def test_accepts_hostname_with_any_public_address(self) -> None:
         # Round-robin hosts that also carry a public address must pass even
@@ -65,17 +67,16 @@ class ValidatePublicUrlTests(unittest.TestCase):
         with patch(
             "dockwatch.api.routes.settings.socket.getaddrinfo",
             side_effect=OSError("no address"),
-        ):
-            with self.assertRaises(HTTPException):
-                _validate_public_url("http://no-such-host.invalid/hook")
+        ), self.assertRaises(HTTPException):
+            _validate_public_url("http://no-such-host.invalid/hook")
 
 
 class TestPutSettingsSsrftests:
     def test_put_settings_rejects_private_webhook(self, tmp_path, monkeypatch) -> None:
-        import dockwatch.config as config_module
-        import dockwatch.db as db_module
         from fastapi.testclient import TestClient
 
+        import dockwatch.config as config_module
+        import dockwatch.db as db_module
         from dockwatch.api import deps as deps_module
         from dockwatch.api.app import create_app
 

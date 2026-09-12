@@ -23,6 +23,7 @@ def test_static_frontend_does_not_mask_api_routes(monkeypatch, tmp_path) -> None
     store.create_user("admin", config.auth.password_hash, "admin")
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
     from dockwatch.api import deps as deps_module
 

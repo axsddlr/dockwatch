@@ -215,50 +215,51 @@ export function OnboardingTour() {
       stepIndex={stepIndex}
       continuous
       onEvent={handleEvent}
+      // Tour always renders in light-mode colors, independent of the app theme.
       options={{
         zIndex: 10000,
         showProgress: true,
         buttons: ['back', 'close', 'primary', 'skip'],
         skipBeacon: true,
-        arrowColor: 'var(--color-bg-panel)',
-        backgroundColor: 'var(--color-bg-panel)',
+        arrowColor: '#ffffff',
+        backgroundColor: '#ffffff',
         overlayColor: 'rgba(0, 0, 0, 0.6)',
-        primaryColor: 'var(--color-primary)',
-        textColor: 'var(--color-text-primary)',
+        primaryColor: '#b23a32',
+        textColor: '#22201e',
       }}
       styles={{
         tooltip: {
           borderRadius: 12,
-          border: '1px solid var(--color-border-strong)',
+          border: '1px solid rgba(0, 0, 0, 0.14)',
           padding: 20,
         },
         tooltipTitle: {
           fontSize: 15,
           fontWeight: 600,
-          color: 'var(--color-text-primary)',
+          color: '#22201e',
         },
         tooltipContent: {
           fontSize: 13.5,
           lineHeight: 1.5,
-          color: 'var(--color-text-muted)',
+          color: '#6b6a67',
         },
         buttonPrimary: {
-          backgroundColor: 'var(--color-primary)',
+          backgroundColor: '#b23a32',
           color: '#fff',
           borderRadius: 8,
           fontSize: 13,
           padding: '8px 14px',
         },
         buttonBack: {
-          color: 'var(--color-text-muted)',
+          color: '#6b6a67',
           fontSize: 13,
         },
         buttonSkip: {
-          color: 'var(--color-text-dim)',
+          color: '#a19f9a',
           fontSize: 13,
         },
         buttonClose: {
-          color: 'var(--color-text-dim)',
+          color: '#a19f9a',
         },
       }}
     />

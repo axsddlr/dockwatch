@@ -21,6 +21,26 @@
     --color-pinned: #4f8bc9;
   }
 
+  :root[data-theme="light"] {
+    --color-bg-page: #f7f6f4;
+    --color-bg-panel: #ffffff;
+    --color-bg-panel-alt: #f2f1ef;
+    --color-bg-table-head: #f5f4f2;
+    --color-bg-input: #ffffff;
+    --color-border: rgba(0, 0, 0, 0.08);
+    --color-border-strong: rgba(0, 0, 0, 0.14);
+    --color-text-primary: #22201e;
+    --color-text-muted: #6b6a67;
+    --color-text-dim: #a19f9a;
+    --color-primary: #b23a32;
+    --color-accent: #b23a32;
+    --color-success: #3c7d45;
+    --color-warning: #a8721f;
+    --color-danger: #b8493d;
+    --color-info: #3f70a3;
+    --color-pinned: #3f70a3;
+  }
+
   body {
     @apply bg-[var(--color-bg-page)] text-[var(--color-text-primary)] antialiased;
     font-family: "SF Pro Display", "Geist Sans", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;

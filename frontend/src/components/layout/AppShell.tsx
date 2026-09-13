@@ -8,15 +8,25 @@ import {
   X,
   LogOut,
   HelpCircle,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
 import { OnboardingTour } from '../onboarding/OnboardingTour'
+import { getTheme, setTheme } from '../../lib/theme'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [version, setVersion] = useState('')
+  const [theme, setThemeState] = useState(getTheme)
   const navigate = useNavigate()
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    setThemeState(next)
+  }
 
   useEffect(() => {
     fetch('/api/version')
@@ -66,6 +76,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             {version && <span className="text-xs text-[var(--color-text-muted)]">v{version}</span>}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('dockwatch:restart-tour'))}
               title="Replay guided tour"

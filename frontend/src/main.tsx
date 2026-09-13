@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { applyStoredTheme } from './lib/theme'
 import './style.css'
+
+applyStoredTheme()
 
 const queryClient = new QueryClient({
   defaultOptions: {

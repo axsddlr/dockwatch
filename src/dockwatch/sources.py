@@ -62,6 +62,10 @@ def _map_portainer_container(
         info.source = "portainer"
     info.environment_id = str(environment.id)
     info.environment_name = environment.name
+    # Portainer's container listing already carries State; per-container health
+    # would need an N+1 inspect call, so health_status stays None here.
+    raw_state = payload.get("State")
+    info.state = str(raw_state) if raw_state is not None else None
     return info
 
 

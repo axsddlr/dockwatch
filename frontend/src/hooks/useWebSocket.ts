@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
-import type { WsMessage } from '../types'
-import { useDashboardStore } from '../store/dashboardStore'
+import type { WsMessage, HealthStateRecord } from '../types'
+import { useDashboardStore, refreshDashboardResults } from '../store/dashboardStore'
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null)
@@ -39,6 +39,35 @@ export function useWebSocket() {
           }
           case 'container_updated':
             setIsChecking(false)
+            break
+          case 'health_updated': {
+            // Patch each row's state/health_status from the health engine's
+            // snapshot, so the health indicator updates live without a full
+            // container re-check.
+            const states = (msg.payload.states as HealthStateRecord[]) || []
+            const byName = new Map(states.map((s) => [s.container_name, s]))
+            const store = useDashboardStore.getState()
+            store.setResults(
+              store.results.map((r) => {
+                const hs = byName.get(r.container_info.name)
+                if (!hs) return r
+                return {
+                  ...r,
+                  container_info: { ...r.container_info, state: hs.state, health_status: hs.health_status },
+                }
+              }),
+            )
+            break
+          }
+          case 'health_restarted':
+            // A container was auto-restarted; re-check so its row reflects
+            // the new running state.
+            void refreshDashboardResults()
+            break
+          case 'prune_started':
+          case 'prune_complete':
+            // Pruning progress is owned by the PruneDialog mutation; the
+            // dashboard has no separate prune state to reflect.
             break
           case 'error':
             setIsChecking(false)

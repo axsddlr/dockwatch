@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from .base import BaseNotifier
+from .base import BaseNotifier, NotificationEvent
 from ..links import build_registry_url
 from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
 
@@ -46,6 +46,20 @@ class WebhookNotifier(BaseNotifier):
                 }
                 for result in results
             ],
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(self.url, json=payload)
+            response.raise_for_status()
+
+    async def send_event(self, event: NotificationEvent) -> None:
+        payload = {
+            "event": {
+                "kind": event.kind,
+                "title": event.title,
+                "message": event.message,
+                "severity": event.severity,
+                "fields": event.fields,
+            }
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(self.url, json=payload)

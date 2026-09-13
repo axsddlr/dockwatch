@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from enum import Enum
 
@@ -13,6 +14,7 @@ from packaging.version import Version
 from . import __version__
 from .config import (
     CONFIG_PATH,
+    VALID_PRUNE_MODES,
     DockwatchConfig,
     bootstrap_auth_from_env,
     hash_password,
@@ -22,9 +24,11 @@ from .config import (
 )
 from .db import ManifestStore
 from .display import render_containers_table, render_scan_results, render_summary, render_update_table
-from .docker_client import get_image_id, get_running_containers
+from .docker_client import get_image_id, get_running_containers, in_use_image_ids, list_images
+from .health import HealthMonitor
 from .models import ContainerInfo, RegistryType, TrivyScanResult, UpdateResult
 from .notifiers import build_notifiers, filter_notification_results, send_configured_notifications
+from .prune import PruneScheduler, plan_prune, prune_all
 from .registry import check_all
 from .scheduler import ScheduledCheckRunner
 from .sources import discover_containers, discover_environments
@@ -318,6 +322,116 @@ def update_container(
         render_summary(refreshed_results)
 
 
+@app.command("health")
+def health(
+    json_output: bool = typer.Option(False, "--json", help="Print health state as JSON."),
+    restart_unhealthy: bool = typer.Option(False, "--restart-unhealthy", help="Restart unhealthy containers."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report health without restarting anything."),
+) -> None:
+    """Run one container-health check and report each container's state."""
+    config = load_config()
+    store = ManifestStore()
+    # A manual one-shot must run even while the background feature is off.
+    config.health.enabled = True
+    # A plain `dockwatch health` is a check: it must never restart, even when the
+    # configured auto_restart toggle is on. Only an explicit --restart-unhealthy
+    # (and never --dry-run) turns restarting on for this one run.
+    config.health.auto_restart = restart_unhealthy and not dry_run
+
+    monitor = HealthMonitor(
+        config=config,
+        store=store,
+        notify=False,
+        emit=lambda message: typer.echo(message, err=True),
+    )
+    asyncio.run(monitor.run_once(force=True))
+
+    states = store.list_health_states()
+    if json_output:
+        typer.echo(json.dumps([asdict(state) for state in states], indent=2))
+        return
+
+    if not states:
+        typer.echo("No container health state recorded.")
+    for state in states:
+        health_status = state.health_status or "-"
+        typer.echo(f"{state.container_name}: state={state.state or '-'}, health={health_status}")
+
+
+@app.command("prune")
+def prune(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the prune plan without removing anything."),
+    mode: str | None = typer.Option(None, "--mode", help="Prune mode: dangling or unused."),
+    keep: int | None = typer.Option(None, "--keep", help="Keep the newest N images per repository (0 disables the guard)."),
+    json_output: bool = typer.Option(False, "--json", help="Print the prune result as JSON."),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation and execute immediately."),
+) -> None:
+    """Prune unused Docker images, honouring the per-repository retention guard."""
+    config = load_config()
+    if not config.prune.enabled:
+        typer.echo("Image pruning is not enabled. Set prune.enabled = true in config.", err=True)
+        raise typer.Exit(code=1)
+
+    resolved_mode = mode or config.prune.mode
+    if resolved_mode not in VALID_PRUNE_MODES:
+        typer.echo(
+            f"Invalid mode '{resolved_mode}'. Use one of: {', '.join(sorted(VALID_PRUNE_MODES))}.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    resolved_keep = keep if keep is not None else config.prune.keep_recent_per_repository
+    if resolved_keep < 0:
+        typer.echo("--keep must be >= 0.", err=True)
+        raise typer.Exit(code=1)
+
+    images = list_images()
+    in_use = in_use_image_ids()
+    preview = plan_prune(images, in_use, mode=resolved_mode, keep_recent=resolved_keep)
+
+    if json_output and dry_run:
+        typer.echo(json.dumps({
+            "mode": preview.mode,
+            "keep_recent": preview.keep_recent,
+            "estimated_bytes": preview.estimated_bytes,
+            "candidates": [asdict(candidate) for candidate in preview.candidates],
+            "retained": [asdict(candidate) for candidate in preview.retained],
+        }, indent=2))
+        return
+
+    for candidate in preview.candidates:
+        typer.echo(f"  - {candidate.image_id} ({candidate.reason})")
+    typer.echo(f"{len(preview.candidates)} image(s) to remove ({preview.estimated_bytes} bytes reclaimable).")
+
+    enabled_agents = [agent for agent in config.agents if agent.enabled]
+    if enabled_agents:
+        typer.echo(
+            f"Note: {len(enabled_agents)} enabled agent host(s) are also pruned in the same "
+            "sweep. Their images are not enumerated here — each agent runs the "
+            "retention-guarded sweep against its own daemon."
+        )
+
+    if dry_run:
+        typer.echo("Dry run complete.")
+        return
+    if not yes and not typer.confirm("Proceed with pruning these images?"):
+        typer.echo("Prune cancelled.")
+        raise typer.Exit(code=1)
+
+    store = ManifestStore()
+    result = asyncio.run(prune_all(config, mode=resolved_mode, keep_recent=resolved_keep, store=store))
+
+    if json_output:
+        typer.echo(json.dumps({
+            "removed": result.removed,
+            "failed": result.failed,
+            "reclaimed_bytes": result.reclaimed_bytes,
+        }, indent=2))
+    else:
+        typer.echo(f"Removed {len(result.removed)} image(s), reclaimed {result.reclaimed_bytes} bytes.")
+        for image_id, error in result.failed:
+            typer.echo(f"  failed: {image_id}: {error}", err=True)
+
+
 @app.command("version")
 def version() -> None:
     """Print dockwatch version."""
@@ -386,6 +500,28 @@ def agent(
     uvicorn.run(create_agent_app(token), host=host, port=port)
 
 
+async def _run_daemon(
+    config: DockwatchConfig,
+    store: ManifestStore,
+    runner: ScheduledCheckRunner,
+    emit: Callable[[str], None],
+) -> None:
+    """Build and await the daemon's background tasks.
+
+    The check runner always runs; the health monitor and prune scheduler are
+    added only when their feature is enabled. All tasks are gathered so a
+    shutdown (KeyboardInterrupt cancelling the main task) cancels them together.
+    """
+    tasks = [asyncio.create_task(runner.serve_forever())]
+    if config.health.enabled:
+        monitor = HealthMonitor(config=config, store=store, emit=emit)
+        tasks.append(asyncio.create_task(monitor.serve_forever()))
+    if config.prune.enabled:
+        scheduler = PruneScheduler(config=config, store=store, emit=emit)
+        tasks.append(asyncio.create_task(scheduler.serve_forever()))
+    await asyncio.gather(*tasks)
+
+
 @app.command("daemon")
 def daemon(
     notify: bool = typer.Option(True, "--notify/--no-notify", help="Send configured notifications after each run."),
@@ -406,8 +542,9 @@ def daemon(
         f"run_on_startup={config.run_on_startup}, "
         f"workers={config.max_concurrent_checks})."
     )
+
     try:
-        asyncio.run(runner.serve_forever())
+        asyncio.run(_run_daemon(config, store, runner, typer.echo))
     except KeyboardInterrupt:
         typer.echo("Daemon stopped.")
 

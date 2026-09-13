@@ -9,7 +9,7 @@ from typing import Any
 from packaging.version import Version
 
 from ..agent.protocol import MIN_AGENT_TOKEN_LENGTH
-from ..config import AgentConfig, DockwatchConfig, ComposeProjectConfig, strip_host_mount_prefix
+from ..config import AgentConfig, DockwatchConfig, ComposeProjectConfig, HookConfig, _clamp_hook_timeout, _normalize_prune_mode, strip_host_mount_prefix
 from ..db import ManifestStore
 from ..models import (
     ContainerInfo,
@@ -91,6 +91,7 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
         "pinned": store.get_pinned(),
         "ignored": store.get_ignored(),
         "auto_update": store.get_auto_update(),
+        "health_restart": store.get_health_restart(),
         "notify_only": config.notify_only,
         "include_tags": config.include_tags,
         "exclude_tags": config.exclude_tags,
@@ -137,6 +138,39 @@ def serialize_settings(config: DockwatchConfig, store: ManifestStore) -> dict[st
             }
             for key, value in config.compose_projects.items()
         },
+        "health": {
+            "enabled": config.health.enabled,
+            "interval_seconds": config.health.interval_seconds,
+            "auto_restart": config.health.auto_restart,
+            "restart_unhealthy_only": config.health.restart_unhealthy_only,
+            "unhealthy_after_samples": config.health.unhealthy_after_samples,
+            "max_restarts_per_hour": config.health.max_restarts_per_hour,
+            "cooldown_seconds": config.health.cooldown_seconds,
+            "notify_transitions": config.health.notify_transitions,
+        },
+        "hooks": {
+            name: {
+                "pre_update": hook.pre_update,
+                "post_update": hook.post_update,
+                "pre_stop": hook.pre_stop,
+                "pre_rollback": hook.pre_rollback,
+                "post_rollback": hook.post_rollback,
+            }
+            for name, hook in config.hooks.items()
+        },
+        "hook_defaults": {
+            "timeout_seconds": config.hook_defaults.timeout_seconds,
+            "user": config.hook_defaults.user,
+            "workdir": config.hook_defaults.workdir,
+        },
+        "prune": {
+            "enabled": config.prune.enabled,
+            "interval_hours": config.prune.interval_hours,
+            "run_on_startup": config.prune.run_on_startup,
+            "mode": config.prune.mode,
+            "keep_recent_per_repository": config.prune.keep_recent_per_repository,
+            "notify": config.prune.notify,
+        },
     }
 
 
@@ -147,6 +181,8 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
         store.set_ignored(ensure_list(data.get("ignored"), store.get_ignored()))
     if "auto_update" in data:
         store.set_auto_update(ensure_list(data.get("auto_update"), store.get_auto_update()))
+    if "health_restart" in data:
+        store.set_health_restart(ensure_list(data.get("health_restart"), store.get_health_restart()))
     existing.notify_only = ensure_list(data.get("notify_only", existing.notify_only), existing.notify_only)
     existing.include_tags = ensure_list(data.get("include_tags", existing.include_tags), existing.include_tags)
     existing.exclude_tags = ensure_list(data.get("exclude_tags", existing.exclude_tags), existing.exclude_tags)
@@ -232,5 +268,67 @@ def deserialize_settings(data: dict[str, Any], existing: DockwatchConfig, store:
                 project_name=str(raw_cfg.get("project_name", "")),
             )
         existing.compose_projects = projects
+
+    health_data = data.get("health", {})
+    if isinstance(health_data, dict):
+        existing.health.enabled = bool(health_data.get("enabled", existing.health.enabled))
+        existing.health.interval_seconds = max(
+            10, int(health_data.get("interval_seconds", existing.health.interval_seconds))
+        )
+        existing.health.auto_restart = bool(health_data.get("auto_restart", existing.health.auto_restart))
+        existing.health.restart_unhealthy_only = bool(
+            health_data.get("restart_unhealthy_only", existing.health.restart_unhealthy_only)
+        )
+        existing.health.unhealthy_after_samples = max(
+            1, int(health_data.get("unhealthy_after_samples", existing.health.unhealthy_after_samples))
+        )
+        existing.health.max_restarts_per_hour = max(
+            0, int(health_data.get("max_restarts_per_hour", existing.health.max_restarts_per_hour))
+        )
+        existing.health.cooldown_seconds = max(
+            0, int(health_data.get("cooldown_seconds", existing.health.cooldown_seconds))
+        )
+        existing.health.notify_transitions = bool(
+            health_data.get("notify_transitions", existing.health.notify_transitions)
+        )
+
+    hooks_data = data.get("hooks", None)
+    if isinstance(hooks_data, dict):
+        hooks: dict[str, HookConfig] = {}
+        for name, raw_cfg in hooks_data.items():
+            if not isinstance(raw_cfg, dict):
+                continue
+            key = str(name).strip()
+            if not key:
+                continue
+            hooks[key] = HookConfig(
+                pre_update=ensure_list(raw_cfg.get("pre_update", []), []),
+                post_update=ensure_list(raw_cfg.get("post_update", []), []),
+                pre_stop=ensure_list(raw_cfg.get("pre_stop", []), []),
+                pre_rollback=ensure_list(raw_cfg.get("pre_rollback", []), []),
+                post_rollback=ensure_list(raw_cfg.get("post_rollback", []), []),
+            )
+        existing.hooks = hooks
+
+    hook_defaults_data = data.get("hook_defaults", {})
+    if isinstance(hook_defaults_data, dict):
+        existing.hook_defaults.timeout_seconds = _clamp_hook_timeout(
+            int(hook_defaults_data.get("timeout_seconds", existing.hook_defaults.timeout_seconds))
+        )
+        existing.hook_defaults.user = str(hook_defaults_data.get("user", existing.hook_defaults.user))
+        existing.hook_defaults.workdir = str(hook_defaults_data.get("workdir", existing.hook_defaults.workdir))
+
+    prune_data = data.get("prune", {})
+    if isinstance(prune_data, dict):
+        existing.prune.enabled = bool(prune_data.get("enabled", existing.prune.enabled))
+        existing.prune.interval_hours = max(
+            1, int(prune_data.get("interval_hours", existing.prune.interval_hours))
+        )
+        existing.prune.run_on_startup = bool(prune_data.get("run_on_startup", existing.prune.run_on_startup))
+        existing.prune.mode = _normalize_prune_mode(prune_data.get("mode", existing.prune.mode))
+        existing.prune.keep_recent_per_repository = max(
+            0, int(prune_data.get("keep_recent_per_repository", existing.prune.keep_recent_per_repository))
+        )
+        existing.prune.notify = bool(prune_data.get("notify", existing.prune.notify))
 
     return existing

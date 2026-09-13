@@ -16,9 +16,7 @@ from .registry import check_all, record_digest_drift_events
 from .sources import discover_containers
 from .updater import (
     build_update_plan,
-    execute_agent_update,
-    execute_portainer_compose_update,
-    execute_update,
+    execute_plan,
 )
 
 AUTO_UPDATE_USERNAME = "scheduler (auto-update)"
@@ -101,12 +99,7 @@ class ScheduledCheckRunner:
                 self.emit(f"Auto-update skipped for '{plan.container_name}': {plan.reason}")
                 continue
 
-            if plan.mode == "portainer-compose":
-                execution = await execute_portainer_compose_update(plan, self.config)
-            elif plan.mode == "agent-update":
-                execution = await execute_agent_update(plan, self.config)
-            else:
-                execution = await asyncio.to_thread(execute_update, plan, self.config)
+            execution = await execute_plan(plan, self.config)
 
             self.store.record_update_event(
                 container_name=plan.container_name,

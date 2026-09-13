@@ -13,7 +13,11 @@ from dockwatch.config import (
     AuthConfig,
     ComposeProjectConfig,
     DockwatchConfig,
+    HealthConfig,
+    HookConfig,
+    HookDefaultsConfig,
     PortainerConfig,
+    PruneConfig,
     bootstrap_auth_from_env,
     hash_password,
     load_config,
@@ -165,6 +169,235 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.schedule_interval_seconds, 10)
             self.assertEqual(loaded.schedule_jitter_seconds, 0)
             self.assertEqual(loaded.max_concurrent_checks, 1)
+
+
+class HealthConfigTests(unittest.TestCase):
+    def test_defaults(self) -> None:
+        health = HealthConfig()
+        self.assertFalse(health.enabled)
+        self.assertEqual(health.interval_seconds, 60)
+        self.assertFalse(health.auto_restart)
+        self.assertTrue(health.restart_unhealthy_only)
+        self.assertEqual(health.unhealthy_after_samples, 2)
+        self.assertEqual(health.max_restarts_per_hour, 3)
+        self.assertEqual(health.cooldown_seconds, 300)
+        self.assertTrue(health.notify_transitions)
+
+    def test_toml_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                health=HealthConfig(
+                    enabled=True,
+                    interval_seconds=120,
+                    auto_restart=True,
+                    restart_unhealthy_only=False,
+                    unhealthy_after_samples=5,
+                    max_restarts_per_hour=10,
+                    cooldown_seconds=600,
+                    notify_transitions=False,
+                )
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertTrue(loaded.health.enabled)
+            self.assertEqual(loaded.health.interval_seconds, 120)
+            self.assertTrue(loaded.health.auto_restart)
+            self.assertFalse(loaded.health.restart_unhealthy_only)
+            self.assertEqual(loaded.health.unhealthy_after_samples, 5)
+            self.assertEqual(loaded.health.max_restarts_per_hour, 10)
+            self.assertEqual(loaded.health.cooldown_seconds, 600)
+            self.assertFalse(loaded.health.notify_transitions)
+
+    def test_save_config_preserves_non_defaults(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                health=HealthConfig(interval_seconds=90, max_restarts_per_hour=7, cooldown_seconds=0)
+            )
+            save_config(source, config_path)
+            raw = config_path.read_text(encoding="utf-8")
+            self.assertIn("interval_seconds = 90", raw)
+            self.assertIn("max_restarts_per_hour = 7", raw)
+            self.assertIn("cooldown_seconds = 0", raw)
+
+    def test_clamps(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                health=HealthConfig(
+                    interval_seconds=5,
+                    unhealthy_after_samples=0,
+                    max_restarts_per_hour=-3,
+                    cooldown_seconds=-1,
+                )
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertEqual(loaded.health.interval_seconds, 10)
+            self.assertEqual(loaded.health.unhealthy_after_samples, 1)
+            self.assertEqual(loaded.health.max_restarts_per_hour, 0)
+            self.assertEqual(loaded.health.cooldown_seconds, 0)
+
+
+class HookConfigTests(unittest.TestCase):
+    def test_defaults(self) -> None:
+        hook = HookConfig()
+        self.assertEqual(hook.pre_update, [])
+        self.assertEqual(hook.post_update, [])
+        self.assertEqual(hook.pre_stop, [])
+        self.assertEqual(hook.pre_rollback, [])
+        self.assertEqual(hook.post_rollback, [])
+        defaults = HookDefaultsConfig()
+        self.assertEqual(defaults.timeout_seconds, 60)
+        self.assertEqual(defaults.user, "")
+        self.assertEqual(defaults.workdir, "")
+
+    def test_toml_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                hooks={
+                    "web": HookConfig(
+                        pre_update=["echo hi", "echo there"],
+                        post_update=["docker compose up -d"],
+                        pre_stop=["echo stopping"],
+                    ),
+                    "db": HookConfig(
+                        pre_rollback=["echo rollback"],
+                        post_rollback=["echo done"],
+                    ),
+                    "empty": HookConfig(),
+                },
+                hook_defaults=HookDefaultsConfig(timeout_seconds=90, user="appuser", workdir="/srv"),
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertIn("web", loaded.hooks)
+            self.assertEqual(loaded.hooks["web"].pre_update, ["echo hi", "echo there"])
+            self.assertEqual(loaded.hooks["web"].post_update, ["docker compose up -d"])
+            self.assertEqual(loaded.hooks["web"].pre_stop, ["echo stopping"])
+            self.assertEqual(loaded.hooks["web"].pre_rollback, [])
+            self.assertEqual(loaded.hooks["web"].post_rollback, [])
+            self.assertIn("db", loaded.hooks)
+            self.assertEqual(loaded.hooks["db"].pre_rollback, ["echo rollback"])
+            self.assertEqual(loaded.hooks["db"].post_rollback, ["echo done"])
+            self.assertIn("empty", loaded.hooks)
+            self.assertEqual(loaded.hooks["empty"].pre_update, [])
+            self.assertEqual(loaded.hook_defaults.timeout_seconds, 90)
+            self.assertEqual(loaded.hook_defaults.user, "appuser")
+            self.assertEqual(loaded.hook_defaults.workdir, "/srv")
+
+    def test_save_config_preserves_non_defaults(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                hooks={"web": HookConfig(pre_update=["echo hi"])},
+                hook_defaults=HookDefaultsConfig(timeout_seconds=42),
+            )
+            save_config(source, config_path)
+            raw = config_path.read_text(encoding="utf-8")
+            self.assertIn('[hooks."web"]', raw)
+            self.assertIn('pre_update = ["echo hi"]', raw)
+            self.assertIn("timeout_seconds = 42", raw)
+
+    def test_hook_defaults_timeout_clamp(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            save_config(
+                DockwatchConfig(hook_defaults=HookDefaultsConfig(timeout_seconds=0)),
+                config_path,
+            )
+            self.assertEqual(load_config(config_path).hook_defaults.timeout_seconds, 1)
+
+    def test_hook_defaults_timeout_ceiling_on_load(self) -> None:
+        # The agent exec endpoint caps a single command's deadline at 300s; a
+        # configured hook timeout above that would 422 on agent-managed
+        # containers, so load must clamp it to the shared ceiling.
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            config_path.write_text(
+                "[hook_defaults]\ntimeout_seconds = 600\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_config(config_path).hook_defaults.timeout_seconds, 300)
+
+    def test_hook_defaults_timeout_ceiling_on_save(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            save_config(
+                DockwatchConfig(hook_defaults=HookDefaultsConfig(timeout_seconds=600)),
+                config_path,
+            )
+            raw = config_path.read_text(encoding="utf-8")
+            self.assertIn("[hook_defaults]\ntimeout_seconds = 300", raw)
+            self.assertEqual(load_config(config_path).hook_defaults.timeout_seconds, 300)
+
+
+class PruneConfigTests(unittest.TestCase):
+    def test_defaults(self) -> None:
+        prune = PruneConfig()
+        self.assertFalse(prune.enabled)
+        self.assertEqual(prune.interval_hours, 24)
+        self.assertFalse(prune.run_on_startup)
+        self.assertEqual(prune.mode, "dangling")
+        self.assertEqual(prune.keep_recent_per_repository, 3)
+        self.assertFalse(prune.notify)
+
+    def test_toml_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                prune=PruneConfig(
+                    enabled=True,
+                    interval_hours=48,
+                    run_on_startup=True,
+                    mode="unused",
+                    keep_recent_per_repository=5,
+                    notify=True,
+                )
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertTrue(loaded.prune.enabled)
+            self.assertEqual(loaded.prune.interval_hours, 48)
+            self.assertTrue(loaded.prune.run_on_startup)
+            self.assertEqual(loaded.prune.mode, "unused")
+            self.assertEqual(loaded.prune.keep_recent_per_repository, 5)
+            self.assertTrue(loaded.prune.notify)
+
+    def test_save_config_preserves_non_defaults(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(prune=PruneConfig(interval_hours=48, keep_recent_per_repository=5))
+            save_config(source, config_path)
+            raw = config_path.read_text(encoding="utf-8")
+            self.assertIn("interval_hours = 48", raw)
+            self.assertIn("keep_recent_per_repository = 5", raw)
+
+    def test_clamps(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            source = DockwatchConfig(
+                prune=PruneConfig(interval_hours=0, keep_recent_per_repository=-1)
+            )
+            save_config(source, config_path)
+            loaded = load_config(config_path)
+            self.assertEqual(loaded.prune.interval_hours, 1)
+            self.assertEqual(loaded.prune.keep_recent_per_repository, 0)
+
+    def test_mode_invalid_falls_back_to_dangling_on_load(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            config_path.write_text('[prune]\nmode = "bogus"\n', encoding="utf-8")
+            self.assertEqual(load_config(config_path).prune.mode, "dangling")
+
+    def test_mode_invalid_falls_back_to_dangling_on_save(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            save_config(DockwatchConfig(prune=PruneConfig(mode="bogus")), config_path)
+            raw = config_path.read_text(encoding="utf-8")
+            self.assertIn('mode = "dangling"', raw)
 
 
 class UnpinUnignoreTests(unittest.TestCase):

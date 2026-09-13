@@ -2,6 +2,31 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
+## [0.13.0] - 2026-09-12
+
+### 2026-09-12
+
+#### Added
+- **Container health monitoring with opt-in auto-restart** — a health loop samples every discovered container's state and Docker healthcheck status, persists a rolling per-container record, and can auto-restart unhealthy (or exited) containers under an `unhealthy_after_samples` / `max_restarts_per_hour` / `cooldown_seconds` policy. Auto-restart is opt-in per container via the `dockwatch.health.auto_restart=true` label or the Monitoring Scope checklist (a `dockwatch.health=false` label opts out entirely). State transitions notify when `notify_transitions` is on; every restart attempt is audited. Off by default.
+- **Lifecycle hooks** — run shell commands inside a container at five points (`pre_update`, `post_update`, `pre_stop`, `pre_rollback`, `post_rollback`). `pre_*` phases are blocking (a non-zero exit, error, or timeout aborts the operation); `post_*` phases are report-only. Configured per container in `[hooks.<container>]` or via the `dockwatch.hook.<phase>` label, gated by `DOCKWATCH_ENABLE_HOOKS=true`. Agent-managed containers run hooks on the central instance (the agent needs `DOCKWATCH_AGENT_ENABLE_EXEC=true`); every attempt is audited.
+- **Opt-in image pruning with a retention guard** — removes dangling (default) or unused images, never via `docker images prune` and never force-removing, keeping the newest `keep_recent_per_repository` images per repository. Prunes the local daemon and every enabled agent host in one sweep, with a `dockwatch prune --dry-run` preview and a `prune_images` permission. Off by default.
+
+#### Changed
+- RBAC now has **eight** fixed permissions: added `restart_containers` (restart + health-restart routes) and `prune_images` (prune routes), both synced into the existing `admin` role on startup.
+
+#### Fixed
+- **Hook timeout ceiling** — `hook_defaults.timeout_seconds` is now clamped to 1–300s on both config load and save, matching the agent exec endpoint's ceiling, so a configured timeout > 300 no longer works locally but 422s on agent-managed containers.
+- **Audit labels** — the dashboard history panel now shows human-readable labels for `health_restart`, `hook`, and `prune_images` rows instead of raw action strings.
+- **Prune action hidden when disabled** — the "Prune images" toolbar button is now gated on `prune.enabled`, matching the features-default-OFF convention, instead of opening and then surfacing a 422.
+- **Manual health check reachable** — a "Run health check" button in Settings → Advanced → Health drives the previously-unused `POST /api/health/check` and refreshes the dashboard on success.
+- **Hooks gate blank-string desync** — the hooks-change check now filters blank commands from both sides, so the dashboard's empty-string cleanup can never register a spurious 422.
+- **Honest CLI prune confirmation** — `dockwatch prune` now states that enabled agent hosts are pruned in the same sweep and that their images are not enumerated locally.
+
+#### Docs
+- README: three new feature sections (Health Monitoring, Lifecycle Hooks, Image Pruning), the `DOCKWATCH_ENABLE_HOOKS` / `DOCKWATCH_AGENT_ENABLE_EXEC` env vars, the `dockwatch.health` / `dockwatch.hook.*` label namespace, and the two new permissions in the RBAC table.
+- `config.toml.example`: documented `[health]`, `[hooks]`, `[hook_defaults]`, and `[prune]` blocks.
+- FAQ: "What's NOT supported yet?" now notes Portainer hooks, Portainer image pruning, and Portainer healthcheck-level monitoring.
+
 ## [0.12.0] - 2026-09-02
 
 ### 2026-09-02

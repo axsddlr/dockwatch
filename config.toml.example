@@ -105,6 +105,83 @@ skip_db_update = false
 # Cache scan results (minutes)
 cache_ttl_minutes = 60
 
+[health]
+# Health-check watchdog: samples container health and can auto-restart
+# unhealthy containers and notify on state transitions.
+enabled = false
+
+# How often to sample container health (seconds, minimum 10)
+interval_seconds = 60
+
+# Restart unhealthy containers automatically
+auto_restart = false
+
+# Auto-restart is per container, not global: a container also needs the
+# `dockwatch.health.auto_restart=true` label or the "Auto-restart" checklist
+# entry in Monitoring Scope. A `dockwatch.health=false` label opts a container
+# out entirely and beats both.
+
+# Only restart containers that became unhealthy (false also restarts exited)
+restart_unhealthy_only = true
+
+# Consecutive unhealthy samples before acting
+unhealthy_after_samples = 2
+
+# Max auto-restarts per container per hour (0 = unlimited)
+max_restarts_per_hour = 3
+
+# Cooldown between restarts of the same container (seconds)
+cooldown_seconds = 300
+
+# Notify on health state transitions
+notify_transitions = true
+
+[hooks]
+# Per-container lifecycle hooks. Set DOCKWATCH_ENABLE_HOOKS=true in the
+# backend process to enable hook execution. Create one
+# [hooks."<container-name>"] section per container; each phase is a list of
+# shell commands run in order. The five phases are pre_update, post_update,
+# pre_stop, pre_rollback, and post_rollback. A per-phase
+# `dockwatch.hook.<phase>` label wins over the config entry for that phase.
+#
+# For agent-managed containers hooks run ONLY on the central instance; the
+# agent itself needs DOCKWATCH_AGENT_ENABLE_EXEC=true to expose exec.
+
+[hooks."example"]
+pre_update = [
+  # "echo before update",
+]
+post_update = []
+pre_stop = []
+pre_rollback = []
+post_rollback = []
+
+[hook_defaults]
+# Defaults applied to every container hook.
+# timeout_seconds is clamped to 1-300 (the agent exec endpoint's ceiling).
+timeout_seconds = 60
+user = ""
+workdir = ""
+
+[prune]
+# Image pruning for the local Docker daemon (and every enabled agent host).
+enabled = false
+
+# Run the prune sweep this often (hours, minimum 1)
+interval_hours = 24
+
+# Run a prune sweep on startup
+run_on_startup = false
+
+# "dangling" (untagged images only) or "unused" (all images with no container)
+mode = "dangling"
+
+# Keep this many recent images per repository (0 disables the guard)
+keep_recent_per_repository = 3
+
+# Notify after a prune sweep
+notify = false
+
 # Optional container labels can override tag filters:
 # dockwatch.include_tags = "^1\\.;^2\\."
 # dockwatch.exclude_tags = "-rc$"

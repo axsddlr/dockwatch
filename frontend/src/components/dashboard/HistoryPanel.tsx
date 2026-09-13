@@ -15,6 +15,9 @@ const ACTION_LABEL: Record<string, string> = {
   rollback: 'Rollback',
   restart: 'Restart',
   digest_drift_detected: 'Digest drift',
+  health_restart: 'Health restart',
+  hook: 'Hook',
+  prune_images: 'Image prune',
 }
 
 export function HistoryPanel({ name, onClose }: { name: string; onClose: () => void }) {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { History, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, ScrollText, Trash2, Zap, ZapOff } from 'lucide-react'
+import { History, HeartPulse, ImageOff, Info, Pin, PinOff, PowerCircle, RefreshCw, Rocket, ScrollText, Trash2, Zap, ZapOff } from 'lucide-react'
 import { api } from '../../api/client'
 import { hasPermission } from '../RequireAuth'
 import { refreshDashboardResults, useDashboardStore } from '../../store/dashboardStore'
@@ -106,13 +106,14 @@ export function ContainerRow({ result }: ContainerRowProps) {
 
   const bump = result.version_diff?.bump_type
   const canUpdate = hasPermission('update_containers')
+  const canRestart = hasPermission('restart_containers')
   const canScan = hasPermission('scan_containers')
   const canDelete = hasPermission('delete_containers')
   const canViewHistory = hasPermission('manage_settings')
   const source = result.container_info.source
   const canViewLogs = hasPermission('view_containers') && (source === 'local' || source === 'agent')
   const isComposeManaged = !!result.container_info.compose_project && !!result.container_info.compose_service
-  const showRestartBtn = (source === 'portainer' || source === 'agent') && canUpdate
+  const showRestartBtn = canRestart && (source === 'local' || source === 'portainer' || source === 'agent')
   const showDeleteImageBtn = canDelete && source === 'local'
   const showUpdateBtn =
     status === 'OUTDATED' &&
@@ -129,10 +130,28 @@ export function ContainerRow({ result }: ContainerRowProps) {
   const hasUnscopedVersionHint =
     isFloatingTag && !!result.deployed_version && result.deployed_version === result.deployed_tag
 
+  const healthStatus = result.container_info.health_status
+  const healthIndicator =
+    healthStatus === 'healthy'
+      ? { color: 'text-green-400', label: 'healthy' }
+      : healthStatus === 'unhealthy'
+        ? { color: 'text-red-400', label: 'unhealthy' }
+        : healthStatus === 'starting'
+          ? { color: 'text-yellow-400', label: 'starting' }
+          : null
+
   return (
     <div className="grid grid-cols-12 items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm last:border-b-0 hover:bg-[var(--color-bg-panel-alt)]/50 transition-colors">
       <div className="col-span-3 flex items-center gap-3 min-w-0">
         <span className={`h-2 w-2 flex-shrink-0 rounded-full ${cfg.color.replace('text-', 'bg-')}`} />
+        {healthIndicator && (
+          <span
+            className={`flex-shrink-0 ${healthIndicator.color}`}
+            title={`Health: ${healthIndicator.label}`}
+          >
+            <HeartPulse size={14} />
+          </span>
+        )}
         <div className="min-w-0">
           <div className="truncate font-medium text-[var(--color-text-primary)]">
             {result.container_info.name}
@@ -267,7 +286,9 @@ export function ContainerRow({ result }: ContainerRowProps) {
               >
                 {source === 'agent'
                   ? `Restart via ${result.container_info.environment_name ?? 'agent'}`
-                  : 'Restart via Portainer'}
+                  : source === 'portainer'
+                    ? 'Restart via Portainer'
+                    : 'Restart'}
               </ActionMenuItem>
             )}
             {showDeleteImageBtn && (

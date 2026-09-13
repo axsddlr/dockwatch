@@ -83,10 +83,10 @@ Click the **Refresh** button in the toolbar, or wait for the next scheduled back
 ## Permissions & Security
 
 ### What permissions are available?
-Six fixed permissions: `view_containers`, `update_containers`, `delete_containers`, `scan_containers`, `manage_settings`, `manage_users`. Combinable into custom roles. Built-in roles: `admin` (all six) and `viewer` (view only).
+Eight fixed permissions: `view_containers`, `update_containers`, `restart_containers`, `delete_containers`, `scan_containers`, `prune_images`, `manage_settings`, `manage_users`. Combinable into custom roles. Built-in roles: `admin` (all eight) and `viewer` (view only).
 
 ### What's the trust boundary?
-`manage_settings`, `update_containers`, and `delete_containers` are effectively admin-equivalent — all three can reach the host's Docker daemon indirectly. Only grant these to people you'd trust with direct `docker.sock` access.
+`manage_settings`, `update_containers`, `restart_containers`, `delete_containers`, and `prune_images` are effectively admin-equivalent — all five can reach the host's Docker daemon indirectly. Only grant these to people you'd trust with direct `docker.sock` access.
 
 ---
 
@@ -96,6 +96,9 @@ Six fixed permissions: `view_containers`, `update_containers`, `delete_container
 - Full stack recreate with network/volume changes via Portainer (only image tag updates are supported)
 - Kubernetes environments
 - Image deletion for Portainer-sourced containers
+- Portainer lifecycle hooks — hooks run for local and agent-managed containers only; a Portainer-managed update reports a non-blocking "hooks are not supported" note
+- Portainer image pruning — the Portainer prune proxy cannot honour the per-repository keep-N retention guard, so pruning is local + agent hosts only
+- Portainer healthcheck-level monitoring — Portainer carries container *state* only (running/stopped), not Docker's healthcheck *status*, so `unhealthy`/`healthy` is only available for local and agent containers
 
 ### Does it work with Docker Swarm?
 Not currently. Portainer integration targets standalone Docker environments.

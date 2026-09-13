@@ -4,9 +4,21 @@ from __future__ import annotations
 
 import httpx
 
-from .base import BaseNotifier
+from .base import BaseNotifier, NotificationEvent
 from ..links import build_registry_url
 from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
+
+SEVERITY_COLORS: dict[str, int] = {
+    "info": 3447003,      # blue
+    "warning": 16753920,  # orange
+    "error": 15158332,    # red
+}
+DEFAULT_COLOR = SEVERITY_COLORS["info"]
+
+
+def event_color(severity: str) -> int:
+    """Deterministically map an event severity to a Discord embed color."""
+    return SEVERITY_COLORS.get(severity, DEFAULT_COLOR)
 
 
 class DiscordNotifier(BaseNotifier):
@@ -65,6 +77,25 @@ class DiscordNotifier(BaseNotifier):
                     "description": "\n".join(description),
                     "color": 0xF39C12 if outdated else 0x2ECC71,
                     "fields": fields,
+                }
+            ]
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(self.webhook_url, json=payload)
+            response.raise_for_status()
+
+    async def send_event(self, event: NotificationEvent) -> None:
+        payload = {
+            "embeds": [
+                {
+                    "title": event.title,
+                    "description": event.message,
+                    "color": event_color(event.severity),
+                    "fields": [
+                        {"name": key, "value": value, "inline": False}
+                        for key, value in event.fields.items()
+                    ],
                 }
             ]
         }

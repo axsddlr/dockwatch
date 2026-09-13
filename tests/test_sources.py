@@ -9,7 +9,7 @@ from dockwatch.config import AgentConfig, DockwatchConfig
 from dockwatch.docker_client import DockerConnectionError
 from dockwatch.integrations import PortainerEnvironment
 from dockwatch.models import ContainerInfo, RegistryType
-from dockwatch.sources import discover_containers
+from dockwatch.sources import _map_portainer_container, discover_containers
 
 
 def _local_container(name: str) -> ContainerInfo:
@@ -46,6 +46,34 @@ def _mock_portainer_result(containers: list[ContainerInfo]) -> AsyncMock:
     discovery.environments = [PortainerEnvironment(id=1, name="prod")]
     discovery.errors = []
     return discovery
+
+
+class PortainerContainerMappingTests(unittest.TestCase):
+    def test_maps_state_from_raw_listing_json(self) -> None:
+        info = _map_portainer_container(
+            {
+                "Id": "abcdef1234567890",
+                "Names": ["/web"],
+                "Image": "nginx:1.0.0",
+                "State": "running",
+                "Labels": {},
+            },
+            PortainerEnvironment(id=1, name="prod"),
+            {},
+        )
+
+        self.assertEqual(info.state, "running")
+        # Per-container health would need an N+1 inspect call; out of scope.
+        self.assertIsNone(info.health_status)
+
+    def test_state_is_none_when_listing_omits_state(self) -> None:
+        info = _map_portainer_container(
+            {"Id": "abcdef1234567890", "Names": ["/web"], "Image": "nginx:1.0.0"},
+            PortainerEnvironment(id=1, name="prod"),
+            {},
+        )
+
+        self.assertIsNone(info.state)
 
 
 class DiscoverContainersTests(unittest.IsolatedAsyncioTestCase):

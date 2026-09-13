@@ -11,9 +11,12 @@ import { SchedulerConfig } from '../components/settings/SchedulerConfig'
 import { PortainerIntegration } from '../components/settings/PortainerIntegration'
 import { AgentIntegration } from '../components/settings/AgentIntegration'
 import { TrivyConfig } from '../components/settings/TrivyConfig'
+import { HealthConfig } from '../components/settings/HealthConfig'
+import { HooksConfig } from '../components/settings/HooksConfig'
+import { PruneConfig } from '../components/settings/PruneConfig'
 import { SettingsActions } from '../components/settings/SettingsActions'
 import { hasPermission, NoAccess } from '../components/RequireAuth'
-import type { AgentConfig, DockwatchSettings } from '../types'
+import type { AgentConfig, DockwatchSettings, HookSettings } from '../types'
 
 function parseCsv(v: string): string[] {
   return v
@@ -24,6 +27,20 @@ function parseCsv(v: string): string[] {
 
 function formatCsv(arr: string[]): string {
   return arr.join(', ')
+}
+
+function cleanHooks(hooks: Record<string, HookSettings>): Record<string, HookSettings> {
+  const clean: Record<string, HookSettings> = {}
+  for (const [name, hook] of Object.entries(hooks)) {
+    clean[name] = {
+      pre_update: hook.pre_update.filter((s) => s.trim()),
+      post_update: hook.post_update.filter((s) => s.trim()),
+      pre_stop: hook.pre_stop.filter((s) => s.trim()),
+      pre_rollback: hook.pre_rollback.filter((s) => s.trim()),
+      post_rollback: hook.post_rollback.filter((s) => s.trim()),
+    }
+  }
+  return clean
 }
 
 export function SettingsPage() {
@@ -77,6 +94,25 @@ function SettingsPageInner() {
     trivy_timeout_seconds: 300,
     trivy_skip_db_update: false,
     trivy_cache_ttl_minutes: 60,
+    health_enabled: false,
+    health_interval_seconds: 60,
+    health_auto_restart: false,
+    health_restart_unhealthy_only: true,
+    health_unhealthy_after_samples: 2,
+    health_max_restarts_per_hour: 3,
+    health_cooldown_seconds: 300,
+    health_notify_transitions: true,
+    hooks: {} as Record<string, HookSettings>,
+    hook_timeout_seconds: 60,
+    hook_user: '',
+    hook_workdir: '',
+    prune_enabled: false,
+    prune_interval_hours: 24,
+    prune_run_on_startup: false,
+    prune_mode: 'dangling',
+    prune_keep_recent_per_repository: 3,
+    prune_notify: false,
+    health_restart: [] as string[],
   })
 
   // Hydrate the form from the server only once; later refetches (e.g. on
@@ -115,8 +151,33 @@ function SettingsPageInner() {
         trivy_timeout_seconds: data.trivy?.timeout_seconds ?? 300,
         trivy_skip_db_update: data.trivy?.skip_db_update ?? false,
         trivy_cache_ttl_minutes: data.trivy?.cache_ttl_minutes ?? 60,
+        health_enabled: data.health?.enabled ?? false,
+        health_interval_seconds: data.health?.interval_seconds ?? 60,
+        health_auto_restart: data.health?.auto_restart ?? false,
+        health_restart_unhealthy_only: data.health?.restart_unhealthy_only ?? true,
+        health_unhealthy_after_samples: data.health?.unhealthy_after_samples ?? 2,
+        health_max_restarts_per_hour: data.health?.max_restarts_per_hour ?? 3,
+        health_cooldown_seconds: data.health?.cooldown_seconds ?? 300,
+        health_notify_transitions: data.health?.notify_transitions ?? true,
+        hooks: data.hooks ?? {},
+        hook_timeout_seconds: data.hook_defaults?.timeout_seconds ?? 60,
+        hook_user: data.hook_defaults?.user ?? '',
+        hook_workdir: data.hook_defaults?.workdir ?? '',
+        prune_enabled: data.prune?.enabled ?? false,
+        prune_interval_hours: data.prune?.interval_hours ?? 24,
+        prune_run_on_startup: data.prune?.run_on_startup ?? false,
+        prune_mode: data.prune?.mode ?? 'dangling',
+        prune_keep_recent_per_repository: data.prune?.keep_recent_per_repository ?? 3,
+        prune_notify: data.prune?.notify ?? false,
+        health_restart: data.health_restart ?? [],
       })
-      if (data.portainer?.enabled || data.trivy?.enabled) {
+      if (
+        data.portainer?.enabled ||
+        data.trivy?.enabled ||
+        data.health?.enabled ||
+        data.prune?.enabled ||
+        Object.keys(data.hooks ?? {}).length > 0
+      ) {
         setAdvancedOpen(true)
       }
     }
@@ -130,6 +191,13 @@ function SettingsPageInner() {
     'trivy_timeout_seconds',
     'trivy_cache_ttl_minutes',
     'portainer_deploy_timeout',
+    'health_interval_seconds',
+    'health_unhealthy_after_samples',
+    'health_max_restarts_per_hour',
+    'health_cooldown_seconds',
+    'hook_timeout_seconds',
+    'prune_interval_hours',
+    'prune_keep_recent_per_repository',
   ])
 
   const handleChange = (field: string, value: string) => {
@@ -169,11 +237,21 @@ function SettingsPageInner() {
     }))
   }
 
+  const handleToggleHealthRestart = (name: string) => {
+    setForm((prev) => ({
+      ...prev,
+      health_restart: prev.health_restart.includes(name)
+        ? prev.health_restart.filter((n) => n !== name)
+        : [...prev.health_restart, name],
+    }))
+  }
+
   const handleSave = async () => {
     setSaveMessage(null)
     const payload: Partial<DockwatchSettings> = {
       ignored: form.ignored,
       auto_update: form.auto_update,
+      health_restart: form.health_restart,
       notify_only: parseCsv(form.notify_only),
       include_tags: parseCsv(form.include_tags),
       exclude_tags: parseCsv(form.exclude_tags),
@@ -204,6 +282,30 @@ function SettingsPageInner() {
           skip_db_update: form.trivy_skip_db_update,
           cache_ttl_minutes: form.trivy_cache_ttl_minutes,
         },
+        health: {
+          enabled: form.health_enabled,
+          interval_seconds: form.health_interval_seconds,
+          auto_restart: form.health_auto_restart,
+          restart_unhealthy_only: form.health_restart_unhealthy_only,
+          unhealthy_after_samples: form.health_unhealthy_after_samples,
+          max_restarts_per_hour: form.health_max_restarts_per_hour,
+          cooldown_seconds: form.health_cooldown_seconds,
+          notify_transitions: form.health_notify_transitions,
+        },
+        hooks: cleanHooks(form.hooks),
+        hook_defaults: {
+          timeout_seconds: form.hook_timeout_seconds,
+          user: form.hook_user,
+          workdir: form.hook_workdir,
+        },
+        prune: {
+          enabled: form.prune_enabled,
+          interval_hours: form.prune_interval_hours,
+          run_on_startup: form.prune_run_on_startup,
+          mode: form.prune_mode,
+          keep_recent_per_repository: form.prune_keep_recent_per_repository,
+          notify: form.prune_notify,
+        },
       }
     try {
       await saveMutation.mutateAsync(payload)
@@ -231,10 +333,12 @@ function SettingsPageInner() {
         <MonitoringScope
           ignored={form.ignored}
           autoUpdate={form.auto_update}
+          healthRestart={form.health_restart}
           containerNames={containerNames}
           notifyOnly={form.notify_only}
           onToggleIgnored={handleToggleIgnored}
           onToggleAutoUpdate={handleToggleAutoUpdate}
+          onToggleHealthRestart={handleToggleHealthRestart}
           onChange={handleChange}
         />
 
@@ -282,7 +386,7 @@ function SettingsPageInner() {
             className="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-primary)]"
           >
             {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            Advanced (Portainer, Trivy)
+            Advanced (Portainer, Trivy, Health, Hooks, Prune)
           </button>
 
           {advancedOpen && (
@@ -305,6 +409,40 @@ function SettingsPageInner() {
                 timeoutSeconds={form.trivy_timeout_seconds}
                 skipDbUpdate={form.trivy_skip_db_update}
                 cacheTtlMinutes={form.trivy_cache_ttl_minutes}
+                onChange={handleChange}
+                onToggle={handleToggle}
+              />
+
+              <HealthConfig
+                enabled={form.health_enabled}
+                intervalSeconds={form.health_interval_seconds}
+                autoRestart={form.health_auto_restart}
+                restartUnhealthyOnly={form.health_restart_unhealthy_only}
+                unhealthyAfterSamples={form.health_unhealthy_after_samples}
+                maxRestartsPerHour={form.health_max_restarts_per_hour}
+                cooldownSeconds={form.health_cooldown_seconds}
+                notifyTransitions={form.health_notify_transitions}
+                onChange={handleChange}
+                onToggle={handleToggle}
+              />
+
+              <HooksConfig
+                hooks={form.hooks}
+                containerNames={containerNames}
+                timeoutSeconds={form.hook_timeout_seconds}
+                user={form.hook_user}
+                workdir={form.hook_workdir}
+                onChange={(hooks) => setForm((prev) => ({ ...prev, hooks }))}
+                onChangeDefaults={handleChange}
+              />
+
+              <PruneConfig
+                enabled={form.prune_enabled}
+                intervalHours={form.prune_interval_hours}
+                runOnStartup={form.prune_run_on_startup}
+                mode={form.prune_mode}
+                keepRecentPerRepository={form.prune_keep_recent_per_repository}
+                notify={form.prune_notify}
                 onChange={handleChange}
                 onToggle={handleToggle}
               />

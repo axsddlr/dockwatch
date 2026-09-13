@@ -20,6 +20,8 @@ VALID_PERMISSIONS = frozenset({
     "scan_containers",
     "manage_settings",
     "manage_users",
+    "restart_containers",
+    "prune_images",
 })
 
 
@@ -80,6 +82,22 @@ class UpdateHistoryRecord:
     created_at: str
 
 
+@dataclass(slots=True)
+class HealthStateRecord:
+    container_key: str
+    container_name: str
+    source: str
+    environment_id: str | None = None
+    state: str | None = None
+    health_status: str | None = None
+    consecutive_unhealthy: int = 0
+    last_changed_at: str | None = None
+    last_restart_at: str | None = None
+    restarts_in_window: int = 0
+    window_started_at: str | None = None
+    last_notified_key: str | None = None
+
+
 UPDATE_HISTORY_MAX_PER_CONTAINER = 10
 
 
@@ -138,22 +156,22 @@ class ManifestStore:
         return None
 
     def _migrate_container_flags_check(self, connection: sqlite3.Connection) -> None:
-        """Widen container_flags.kind's CHECK constraint to allow 'auto_update'
-        on databases created before that kind existed. SQLite can't ALTER a
-        CHECK constraint in place, so rebuild the table when the old one is
-        detected.
+        """Widen container_flags.kind's CHECK constraint to include the newest
+        kind ('health_restart') on databases created before it existed. SQLite
+        can't ALTER a CHECK constraint in place, so rebuild the table when the
+        newest kind is missing.
         """
         row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'container_flags'"
         ).fetchone()
-        if row is None or row[0] is None or "'auto_update'" in row[0]:
+        if row is None or row[0] is None or "'health_restart'" in row[0]:
             return
         connection.execute("ALTER TABLE container_flags RENAME TO container_flags_old")
         connection.execute(
             """
             CREATE TABLE container_flags (
                 name TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update')),
+                kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update', 'health_restart')),
                 added_at TEXT NOT NULL,
                 PRIMARY KEY (name, kind)
             )
@@ -191,7 +209,50 @@ class ManifestStore:
             CREATE TABLE update_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 container_name TEXT NOT NULL,
-                action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
+                action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected', 'health_restart', 'hook', 'prune_images')),
+                source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
+                environment_id TEXT,
+                old_tag TEXT,
+                new_tag TEXT,
+                old_digest TEXT,
+                new_digest TEXT,
+                status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+                error TEXT,
+                user_id INTEGER,
+                username TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO update_history ("
+            "id, container_name, action, source, environment_id, old_tag, new_tag, "
+            "old_digest, new_digest, status, error, user_id, username, created_at"
+            ") SELECT "
+            "id, container_name, action, source, environment_id, old_tag, new_tag, "
+            "old_digest, new_digest, status, error, user_id, username, created_at "
+            "FROM update_history_old"
+        )
+        connection.execute("DROP TABLE update_history_old")
+
+    def _migrate_update_history_actions(self, connection: sqlite3.Connection) -> None:
+        """Widen update_history.action's CHECK constraint to include the
+        health_restart, hook, and prune_images actions on databases created
+        before those features existed. SQLite can't ALTER a CHECK constraint
+        in place, so rebuild the table when the newest action is missing.
+        """
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'update_history'"
+        ).fetchone()
+        if row is None or row[0] is None or "'prune_images'" in row[0]:
+            return
+        connection.execute("ALTER TABLE update_history RENAME TO update_history_old")
+        connection.execute(
+            """
+            CREATE TABLE update_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                container_name TEXT NOT NULL,
+                action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected', 'health_restart', 'hook', 'prune_images')),
                 source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
                 environment_id TEXT,
                 old_tag TEXT,
@@ -275,7 +336,7 @@ class ManifestStore:
                 """
                 CREATE TABLE IF NOT EXISTS container_flags (
                     name TEXT NOT NULL,
-                    kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update')),
+                    kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update', 'health_restart')),
                     added_at TEXT NOT NULL,
                     PRIMARY KEY (name, kind)
                 )
@@ -323,7 +384,7 @@ class ManifestStore:
                 CREATE TABLE IF NOT EXISTS update_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     container_name TEXT NOT NULL,
-                    action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
+                    action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected', 'health_restart', 'hook', 'prune_images')),
                     source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
                     environment_id TEXT,
                     old_tag TEXT,
@@ -339,6 +400,25 @@ class ManifestStore:
                 """
             )
             self._migrate_update_history_agent_source(connection)
+            self._migrate_update_history_actions(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS health_state (
+                    container_key TEXT PRIMARY KEY,
+                    container_name TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    environment_id TEXT,
+                    state TEXT,
+                    health_status TEXT,
+                    consecutive_unhealthy INTEGER NOT NULL DEFAULT 0,
+                    last_changed_at TEXT,
+                    last_restart_at TEXT,
+                    restarts_in_window INTEGER NOT NULL DEFAULT 0,
+                    window_started_at TEXT,
+                    last_notified_key TEXT
+                )
+                """
+            )
             existing_admin = connection.execute(
                 "SELECT permissions FROM roles WHERE name = 'admin'"
             ).fetchone()
@@ -565,6 +645,12 @@ class ManifestStore:
     def set_auto_update(self, names: list[str]) -> None:
         self._set_flags("auto_update", names)
 
+    def get_health_restart(self) -> list[str]:
+        return self._get_flags("health_restart")
+
+    def set_health_restart(self, names: list[str]) -> None:
+        self._set_flags("health_restart", names)
+
     def add_flag(self, name: str, kind: str) -> bool:
         name = name.strip()
         observed_at = datetime.now(timezone.utc).isoformat()
@@ -589,6 +675,86 @@ class ManifestStore:
             cursor = connection.execute(
                 "DELETE FROM container_flags WHERE name = ? AND kind = ?",
                 (name, kind),
+            )
+            return cursor.rowcount > 0
+
+    # --- Health state methods ---
+
+    def get_health_state(self, container_key: str) -> HealthStateRecord | None:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                """
+                SELECT container_key, container_name, source, environment_id, state,
+                    health_status, consecutive_unhealthy, last_changed_at, last_restart_at,
+                    restarts_in_window, window_started_at, last_notified_key
+                FROM health_state
+                WHERE container_key = ?
+                """,
+                (container_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return HealthStateRecord(*row)
+
+    def upsert_health_state(self, record: HealthStateRecord) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                INSERT INTO health_state (
+                    container_key, container_name, source, environment_id, state,
+                    health_status, consecutive_unhealthy, last_changed_at, last_restart_at,
+                    restarts_in_window, window_started_at, last_notified_key
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(container_key) DO UPDATE SET
+                    container_name = excluded.container_name,
+                    source = excluded.source,
+                    environment_id = excluded.environment_id,
+                    state = excluded.state,
+                    health_status = excluded.health_status,
+                    consecutive_unhealthy = excluded.consecutive_unhealthy,
+                    last_changed_at = excluded.last_changed_at,
+                    last_restart_at = excluded.last_restart_at,
+                    restarts_in_window = excluded.restarts_in_window,
+                    window_started_at = excluded.window_started_at,
+                    last_notified_key = excluded.last_notified_key
+                """,
+                (
+                    record.container_key,
+                    record.container_name,
+                    record.source,
+                    record.environment_id,
+                    record.state,
+                    record.health_status,
+                    record.consecutive_unhealthy,
+                    record.last_changed_at,
+                    record.last_restart_at,
+                    record.restarts_in_window,
+                    record.window_started_at,
+                    record.last_notified_key,
+                ),
+            )
+
+    def list_health_states(self) -> list[HealthStateRecord]:
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                """
+                SELECT container_key, container_name, source, environment_id, state,
+                    health_status, consecutive_unhealthy, last_changed_at, last_restart_at,
+                    restarts_in_window, window_started_at, last_notified_key
+                FROM health_state
+                ORDER BY container_key
+                """
+            ).fetchall()
+        return [HealthStateRecord(*row) for row in rows]
+
+    def clear_health_state(self, container_key: str) -> bool:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "DELETE FROM health_state WHERE container_key = ?",
+                (container_key,),
             )
             return cursor.rowcount > 0
 

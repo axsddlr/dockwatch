@@ -1,10 +1,12 @@
 import { useMutation } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
-import { RefreshCw, Monitor, Server, Layers, Network } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { RefreshCw, Monitor, Server, Layers, Network, Trash2 } from 'lucide-react'
 import { api } from '../../api/client'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useEnvironments } from '../../hooks/useEnvironments'
 import { useSettings } from '../../hooks/useSettings'
+import { hasPermission } from '../RequireAuth'
+import { PruneDialog } from './PruneDialog'
 
 export function Toolbar() {
   const source = useDashboardStore((s) => s.selectedSource)
@@ -22,6 +24,7 @@ export function Toolbar() {
   const { data: settings } = useSettings()
   const portainerEnabled = settings?.portainer?.enabled ?? false
   const agentsConfigured = (settings?.agents?.length ?? 0) > 0
+  const pruneEnabled = settings?.prune?.enabled ?? false
 
   useEffect(() => {
     if (source === 'portainer' && !portainerEnabled) {
@@ -33,6 +36,7 @@ export function Toolbar() {
   }, [source, portainerEnabled, agentsConfigured, setSource])
 
   const initialCheckRef = useRef(false)
+  const [showPrune, setShowPrune] = useState(false)
 
   const checkMutation = useMutation({
     mutationFn: () => api.containers.check(source, environment ?? undefined),
@@ -136,6 +140,19 @@ export function Toolbar() {
           ))}
         </select>
       )}
+
+      {hasPermission('prune_images') && pruneEnabled && (
+        <button
+          onClick={() => setShowPrune(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+          title="Prune dangling or unused images"
+        >
+          <Trash2 size={14} />
+          Prune images
+        </button>
+      )}
+
+      <PruneDialog open={showPrune} onClose={() => setShowPrune(false)} />
     </div>
   )
 }

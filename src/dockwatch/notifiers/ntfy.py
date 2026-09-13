@@ -4,9 +4,30 @@ from __future__ import annotations
 
 import httpx
 
-from .base import BaseNotifier
+from .base import BaseNotifier, NotificationEvent, render_event_text
 from ..links import build_registry_url
 from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
+
+# ntfy priorities: 3 = default, 4 = high, 5 = urgent.
+SEVERITY_PRIORITIES: dict[str, str] = {"info": "3", "warning": "4", "error": "5"}
+DEFAULT_PRIORITY = SEVERITY_PRIORITIES["info"]
+
+EVENT_KIND_TAGS: dict[str, str] = {
+    "health": "whale,heartbeat",
+    "prune": "whale,broom",
+    "hook": "whale,warning",
+}
+DEFAULT_TAGS = "whale"
+
+
+def event_priority(severity: str) -> str:
+    """Deterministically map an event severity to an ntfy priority header."""
+    return SEVERITY_PRIORITIES.get(severity, DEFAULT_PRIORITY)
+
+
+def event_tags(kind: str) -> str:
+    """Deterministically derive the ntfy tags header from an event kind."""
+    return EVENT_KIND_TAGS.get(kind, DEFAULT_TAGS)
 
 
 class NtfyNotifier(BaseNotifier):
@@ -59,6 +80,20 @@ class NtfyNotifier(BaseNotifier):
                     "X-Title": title,
                     "X-Priority": "3",
                     "X-Tags": "whale,arrow_up",
+                    "Content-Type": "text/plain; charset=utf-8",
+                },
+            )
+            response.raise_for_status()
+
+    async def send_event(self, event: NotificationEvent) -> None:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                self.url,
+                content=render_event_text(event).encode(),
+                headers={
+                    "X-Title": event.title,
+                    "X-Priority": event_priority(event.severity),
+                    "X-Tags": event_tags(event.kind),
                     "Content-Type": "text/plain; charset=utf-8",
                 },
             )

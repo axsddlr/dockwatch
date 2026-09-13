@@ -19,10 +19,7 @@ from ...sources import discover_containers
 from ...updater import (
     build_rollback_plan,
     build_update_plan,
-    execute_agent_rollback,
-    execute_agent_update,
-    execute_portainer_compose_update,
-    execute_update,
+    execute_plan,
 )
 from ..deps import get_config, get_results_cache, get_results_lock, get_store
 from ..rate_limit import rate_limit
@@ -170,16 +167,6 @@ def _find_configured_agent(config, name: str | None):
     return None
 
 
-async def _execute_plan(plan, config) -> Any:
-    if plan.mode == "portainer-compose":
-        return await execute_portainer_compose_update(plan, config)
-    if plan.mode == "agent-update":
-        return await execute_agent_update(plan, config)
-    if plan.mode == "agent-rollback":
-        return await execute_agent_rollback(plan, config)
-    return await asyncio.to_thread(execute_update, plan, config)
-
-
 @router.post("/containers/{name}/update", dependencies=[_mutate_limit])
 async def update_container(
     name: str,
@@ -191,7 +178,7 @@ async def update_container(
     if not plan.allowed:
         raise HTTPException(status_code=422, detail=plan.reason or "Update is blocked.")
 
-    execution = await _execute_plan(plan, config)
+    execution = await execute_plan(plan, config)
     payload = {
         "name": name,
         "success": execution.success,
@@ -228,7 +215,7 @@ async def rollback_container(
     if not plan.allowed:
         raise HTTPException(status_code=422, detail=plan.reason or "Rollback is blocked.")
 
-    execution = await _execute_plan(plan, config)
+    execution = await execute_plan(plan, config)
     payload = {
         "name": name,
         "success": execution.success,
@@ -252,7 +239,7 @@ async def rollback_container(
 @router.post("/containers/{name}/restart", dependencies=[_mutate_limit])
 async def restart_container(
     name: str,
-    current_user: AuthenticatedUser = Depends(require_permission("update_containers")),
+    current_user: AuthenticatedUser = Depends(require_permission("restart_containers")),
 ) -> Any:
     match = _find_result(name)
     info = match.container_info
@@ -278,8 +265,24 @@ async def restart_container(
         payload = {"name": name, "success": True, "message": f"Restarted '{name}' via agent '{info.environment_id}'."}
         await manager.broadcast("container_updated", payload)
         return {"ok": True, "plan": payload}
+    if info.source == "local":
+        try:
+            await asyncio.to_thread(docker_client.restart_container, name)
+        except DockerException as exc:
+            _log_action(
+                name, "restart", "local",
+                success=False, error=str(exc), current_user=current_user,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        _log_action(
+            name, "restart", "local",
+            success=True, error=None, current_user=current_user,
+        )
+        payload = {"name": name, "success": True, "message": f"Restarted '{name}'."}
+        await manager.broadcast("container_updated", payload)
+        return {"ok": True, "plan": payload}
     if info.source != "portainer":
-        raise HTTPException(status_code=422, detail="Restart is only supported for Portainer-managed or agent containers.")
+        raise HTTPException(status_code=422, detail=f"Restart is not supported for source '{info.source}'.")
     if not info.environment_id:
         raise HTTPException(status_code=422, detail=f"'{name}' has no associated Portainer environment.")
 
@@ -462,6 +465,22 @@ def disable_auto_update(name: str) -> Any:
     if not removed:
         raise HTTPException(status_code=404, detail=f"'{name}' does not have auto-update enabled.")
     return {"ok": True, "auto_update": store.get_auto_update()}
+
+
+@router.post("/containers/{name}/health-restart", dependencies=[Depends(require_permission("restart_containers")), _mutate_limit])
+def enable_health_restart(name: str) -> Any:
+    store = get_store()
+    store.add_flag(name, "health_restart")
+    return {"ok": True, "health_restart": store.get_health_restart()}
+
+
+@router.delete("/containers/{name}/health-restart", dependencies=[Depends(require_permission("restart_containers"))])
+def disable_health_restart(name: str) -> Any:
+    store = get_store()
+    removed = store.remove_flag(name, "health_restart")
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"'{name}' does not have health-restart enabled.")
+    return {"ok": True, "health_restart": store.get_health_restart()}
 
 
 @router.get("/containers/{name}/logs", dependencies=[Depends(require_permission("view_containers"))])

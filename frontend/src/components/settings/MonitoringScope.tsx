@@ -104,18 +104,22 @@ function ContainerChecklist({
 export function MonitoringScope({
   ignored,
   autoUpdate,
+  healthRestart,
   containerNames,
   notifyOnly,
   onToggleIgnored,
   onToggleAutoUpdate,
+  onToggleHealthRestart,
   onChange,
 }: {
   ignored: string[]
   autoUpdate: string[]
+  healthRestart: string[]
   containerNames: string[]
   notifyOnly: string
   onToggleIgnored: (name: string) => void
   onToggleAutoUpdate: (name: string) => void
+  onToggleHealthRestart: (name: string) => void
   onChange: (field: string, value: string) => void
 }) {
   return (
@@ -138,6 +142,14 @@ export function MonitoringScope({
           checked={autoUpdate}
           onToggle={onToggleAutoUpdate}
           helpText="Checked containers update automatically, without a click, whenever a scheduled check finds them outdated. Off by default — everything else still requires manual approval."
+        />
+      </Field>
+      <Field label="Auto-restart on health failure">
+        <ContainerChecklist
+          containerNames={containerNames}
+          checked={healthRestart}
+          onToggle={onToggleHealthRestart}
+          helpText="Checked containers are eligible for automatic restart when health monitoring flags them unhealthy (or exited). Requires health monitoring to be enabled with auto-restart turned on under Advanced."
         />
       </Field>
       <Field label="Notify-only containers (comma-separated)">

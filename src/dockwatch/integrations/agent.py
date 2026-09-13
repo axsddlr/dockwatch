@@ -14,19 +14,30 @@ import httpx
 _AGENT_PREFIX = "/api/agent/v1"
 _T = TypeVar("_T")
 
-# A single retry after a short backoff for connection-level failures only
-# (refused/reset/timed-out connections) -- not for 4xx/5xx application
-# errors, which are never transient. Absorbs one flaky moment (agent host
-# briefly unreachable, slow TCP handshake) instead of failing an entire
-# scheduled check cycle over it.
+# A single retry after a short backoff for transient connection-level failures
+# (refused/reset/timed-out) -- not for 4xx/5xx application errors, which are
+# never transient. Absorbs one flaky moment (agent host briefly unreachable,
+# slow TCP handshake) instead of failing an entire scheduled check cycle over
+# it.
+#
+# ``ReadTimeout`` is deliberately absent from ``_EXEC_RETRYABLE``: a read
+# timeout can fire *after* the server has fully executed a command and is
+# merely slow to deliver the response, so retrying it would re-run a
+# non-idempotent command (an at-most-once violation). Exec therefore retries
+# only connect-phase failures, which guarantee the request was never delivered.
 _RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout)
+_EXEC_RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout)
 _RETRY_BACKOFF_SECONDS = 1.0
 
 
-async def _with_retry(call: Callable[[], Awaitable[_T]]) -> _T:
+async def _with_retry(
+    call: Callable[[], Awaitable[_T]],
+    *,
+    retryable: tuple[type[Exception], ...] = _RETRYABLE,
+) -> _T:
     try:
         return await call()
-    except _RETRYABLE:
+    except retryable:
         await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
         return await call()
 
@@ -120,6 +131,42 @@ class AgentClient:
         except httpx.HTTPError as exc:
             raise AgentError(f"agent restart failed for container {container_id}: {exc}") from exc
 
+    async def exec_container(
+        self,
+        container_id: str,
+        *,
+        command: str,
+        timeout_seconds: int = 60,
+        user: str | None = None,
+        workdir: str | None = None,
+    ) -> dict:
+        # The agent enforces the exec deadline server-side, so the client must
+        # wait at least `timeout_seconds` (plus a small buffer for connect and
+        # response overhead) or a legitimately long hook would be cut off by our
+        # own read timeout. A read timeout surfaces as AgentError rather than
+        # being retried (see _EXEC_RETRYABLE).
+        exec_timeout = max(self.timeout, timeout_seconds + 5.0)
+
+        async def _call() -> httpx.Response:
+            async with httpx.AsyncClient(timeout=exec_timeout) as client:
+                return await client.post(
+                    f"{self.base_url}{_AGENT_PREFIX}/containers/{container_id}/exec",
+                    headers=self._headers,
+                    json={
+                        "command": command,
+                        "timeout_seconds": timeout_seconds,
+                        "user": user,
+                        "workdir": workdir,
+                    },
+                )
+
+        try:
+            response = await _with_retry(_call, retryable=_EXEC_RETRYABLE)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AgentError(f"agent exec failed for container {container_id}: {exc}") from exc
+        return self._json_dict(response, "exec response")
+
     async def delete_container(self, container_id: str, *, force: bool = False) -> None:
         async def _call() -> httpx.Response:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -149,6 +196,26 @@ class AgentClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise AgentError(f"agent image delete failed for {image_id}: {exc}") from exc
+
+    async def prune_images(self, *, mode: str = "dangling", keep_recent: int = 3) -> dict:
+        # Prune is safe to retry on a read timeout: unlike exec it recomputes its
+        # retention-guarded plan fresh on every call, so an image already removed
+        # by a timed-out first attempt simply no longer appears as a candidate —
+        # it can never be removed twice. The default _RETRYABLE therefore applies.
+        async def _call() -> httpx.Response:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                return await client.post(
+                    f"{self.base_url}{_AGENT_PREFIX}/images/prune",
+                    headers=self._headers,
+                    json={"mode": mode, "keep_recent": keep_recent},
+                )
+
+        try:
+            response = await _with_retry(_call)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AgentError(f"agent image prune failed: {exc}") from exc
+        return self._json_dict(response, "prune response")
 
     async def get_logs(self, container_id: str, *, tail: int = 200) -> str:
         async def _call() -> httpx.Response:

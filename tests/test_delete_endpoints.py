@@ -135,22 +135,53 @@ def test_restart_container_portainer_success(monkeypatch, tmp_path):
     mock_portainer_restart.assert_called_once_with(5, "container-restart-me")
 
 
-def test_restart_container_non_portainer_rejected(monkeypatch, tmp_path):
-    """POST /containers/{name}/restart on non-portainer source returns 422."""
+def test_restart_container_local_success(monkeypatch, tmp_path):
+    """POST /containers/{name}/restart on local source calls docker_client.restart_container."""
     _seed_user(monkeypatch, tmp_path)
     client = _make_client(monkeypatch, tmp_path)
     _login(client)
+
+    mock_restart = MagicMock()
+    monkeypatch.setattr("dockwatch.api.routes.containers.docker_client.restart_container", mock_restart)
 
     from dockwatch.api import deps as deps_module
 
     test_result = _make_test_result("local-restart", source="local")
     deps_module._results_cache = [test_result]
 
+    mock_broadcast = AsyncMock()
+    monkeypatch.setattr("dockwatch.api.routes.containers.manager.broadcast", mock_broadcast)
+
     response = client.post("/api/containers/local-restart/restart")
 
-    assert response.status_code == 422
+    assert response.status_code == 200
     data = response.json()
-    assert "only supported for Portainer" in data["detail"]
+    assert data["ok"] is True
+    mock_restart.assert_called_once_with("local-restart")
+
+
+def test_restart_requires_restart_containers_permission(monkeypatch, tmp_path):
+    """POST /containers/{name}/restart returns 403 for a user with update_containers but not restart_containers."""
+    _seed_user(monkeypatch, tmp_path)
+    from dockwatch.config import hash_password
+    from dockwatch.db import ManifestStore
+
+    store = ManifestStore()
+    if store.get_role("updater") is None:
+        store.create_role("updater", ["update_containers"])
+    store.create_user("updater_user", hash_password("correct-password"), "updater")
+
+    client = _make_client(monkeypatch, tmp_path)
+    _login(client, username="updater_user", password="correct-password")
+
+    from dockwatch.api import deps as deps_module
+
+    test_result = _make_test_result("restart-me", source="local")
+    deps_module._results_cache = [test_result]
+
+    response = client.post("/api/containers/restart-me/restart")
+
+    assert response.status_code == 403
 
 
 def test_restart_container_portainer_disabled(monkeypatch, tmp_path):

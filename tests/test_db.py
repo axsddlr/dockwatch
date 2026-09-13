@@ -384,5 +384,218 @@ class TestOnboardingSeen:
         assert store.get_user_by_username("alice").onboarding_seen == 0
 
 
+class TestUpdateHistoryActionMigration:
+    def test_update_history_action_check_migrates_to_include_new_actions(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "test.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            """
+            CREATE TABLE update_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                container_name TEXT NOT NULL,
+                action TEXT NOT NULL CHECK (action IN ('update', 'rollback', 'restart', 'delete_container', 'delete_image', 'digest_drift_detected')),
+                source TEXT NOT NULL CHECK (source IN ('local', 'portainer', 'agent')),
+                environment_id TEXT,
+                old_tag TEXT,
+                new_tag TEXT,
+                old_digest TEXT,
+                new_digest TEXT,
+                status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+                error TEXT,
+                user_id INTEGER,
+                username TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO update_history (container_name, action, source, status, created_at) "
+            "VALUES ('web', 'update', 'local', 'success', '2026-01-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        store = ManifestStore(path=path)
+
+        store.record_update_event(
+            container_name="web", action="health_restart", source="local", status="success",
+        )
+        store.record_update_event(
+            container_name="web", action="hook", source="local", status="success",
+        )
+        store.record_update_event(
+            container_name="web", action="prune_images", source="local", status="success",
+        )
+
+        actions = {r.action for r in store.list_update_history(container_name="web")}
+        assert {"health_restart", "hook", "prune_images"} <= actions
+
+
+class TestContainerFlagsHealthRestartMigration:
+    def test_container_flags_check_migrates_to_include_health_restart(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "test.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            """
+            CREATE TABLE container_flags (
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('pinned', 'ignored', 'auto_update')),
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (name, kind)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO container_flags (name, kind, added_at) VALUES ('nginx', 'pinned', '2026-01-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        store = ManifestStore(path=path)
+        assert store.get_pinned() == ["nginx"]
+        assert store.add_flag("nginx", "health_restart") is True
+        assert store.get_health_restart() == ["nginx"]
+
+
+class TestHealthState:
+    def test_health_state_upsert_and_round_trip(self, tmp_path):
+        from dockwatch.db import HealthStateRecord
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.upsert_health_state(
+            HealthStateRecord(
+                container_key="local||web",
+                container_name="web",
+                source="local",
+                environment_id=None,
+                state="unhealthy",
+                health_status="unhealthy",
+                consecutive_unhealthy=3,
+                last_changed_at="2026-01-01T00:00:00+00:00",
+                last_restart_at=None,
+                restarts_in_window=1,
+                window_started_at="2026-01-01T00:00:00+00:00",
+                last_notified_key=None,
+            )
+        )
+
+        record = store.get_health_state("local||web")
+        assert record is not None
+        assert record.container_key == "local||web"
+        assert record.container_name == "web"
+        assert record.source == "local"
+        assert record.state == "unhealthy"
+        assert record.consecutive_unhealthy == 3
+
+        store.upsert_health_state(
+            HealthStateRecord(
+                container_key="local||web",
+                container_name="web",
+                source="local",
+                environment_id=None,
+                state="healthy",
+                health_status="healthy",
+                consecutive_unhealthy=0,
+                last_changed_at="2026-01-02T00:00:00+00:00",
+                last_restart_at="2026-01-02T00:00:00+00:00",
+                restarts_in_window=1,
+                window_started_at="2026-01-01T00:00:00+00:00",
+                last_notified_key="healthy:unhealthy",
+            )
+        )
+
+        record = store.get_health_state("local||web")
+        assert record is not None
+        assert record.state == "healthy"
+        assert record.health_status == "healthy"
+        assert record.consecutive_unhealthy == 0
+        assert record.last_restart_at == "2026-01-02T00:00:00+00:00"
+        assert record.restarts_in_window == 1
+        assert record.last_notified_key == "healthy:unhealthy"
+
+        states = store.list_health_states()
+        assert len(states) == 1
+        assert states[0].container_key == "local||web"
+        assert states[0].state == "healthy"
+
+    def test_clear_health_state(self, tmp_path):
+        from dockwatch.db import HealthStateRecord
+
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.upsert_health_state(
+            HealthStateRecord(container_key="local||web", container_name="web", source="local")
+        )
+        assert store.get_health_state("local||web") is not None
+        assert store.clear_health_state("local||web") is True
+        assert store.get_health_state("local||web") is None
+        assert store.clear_health_state("local||web") is False
+        assert store.list_health_states() == []
+
+    def test_get_health_state_missing_returns_none(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        assert store.get_health_state("missing") is None
+
+
+class TestHealthRestartFlags:
+    def test_health_restart_flag_independent_of_other_flags(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("nginx", "pinned")
+        store.set_health_restart(["web", "db"])
+        assert sorted(store.get_health_restart()) == ["db", "web"]
+        assert store.get_pinned() == ["nginx"]
+
+    def test_set_health_restart_empty_clears(self, tmp_path):
+        store = ManifestStore(path=tmp_path / "test.db")
+        store.add_flag("web", "health_restart")
+        store.set_health_restart([])
+        assert store.get_health_restart() == []
+
+
+class TestPermissionsWiden:
+    def test_admin_gains_new_permissions_on_upgrade_viewer_does_not(self, tmp_path):
+        import json
+        import sqlite3
+
+        path = tmp_path / "test.db"
+        conn = sqlite3.connect(path)
+        conn.execute(
+            """
+            CREATE TABLE roles (
+                name TEXT PRIMARY KEY,
+                permissions TEXT NOT NULL,
+                is_builtin INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO roles (name, permissions, is_builtin) VALUES ('admin', ?, 1)",
+            (json.dumps([
+                "view_containers", "update_containers", "delete_containers",
+                "scan_containers", "manage_settings", "manage_users",
+            ]),),
+        )
+        conn.execute(
+            "INSERT INTO roles (name, permissions, is_builtin) VALUES ('viewer', ?, 1)",
+            (json.dumps(["view_containers"]),),
+        )
+        conn.commit()
+        conn.close()
+
+        store = ManifestStore(path=path)
+
+        admin = store.get_role("admin")
+        viewer = store.get_role("viewer")
+        assert admin is not None
+        assert viewer is not None
+        assert "restart_containers" in admin.permissions
+        assert "prune_images" in admin.permissions
+        assert "restart_containers" not in viewer.permissions
+        assert "prune_images" not in viewer.permissions
+
+
 if __name__ == "__main__":
     unittest.main()

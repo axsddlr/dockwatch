@@ -18,7 +18,37 @@ _WINDOWS_DRIVE_PATH = re.compile(r"^([A-Za-z]):\\(.*)$")
 
 CONFIG_PATH = Path.home() / ".config" / "dockwatch" / "config.toml"
 DEFAULT_NOTIFY_ON = ["update"]
-VALID_NOTIFY_EVENTS = {"new", "update"}
+VALID_NOTIFY_EVENTS = {"new", "update", "health", "prune", "hook"}
+VALID_PRUNE_MODES = {"dangling", "unused"}
+
+# Shared ceiling on a single hook command's client-side deadline. The agent's
+# exec endpoint bounds its timeout with this same constant (see agent/server.py),
+# so a hook timeout must never exceed it — otherwise agent-managed containers
+# would reject the configured value with a 422 that local containers accept.
+MAX_HOOK_TIMEOUT_SECONDS = 300
+
+_HOOKS_ENABLE_ENV = "DOCKWATCH_ENABLE_HOOKS"
+
+
+def hooks_enabled() -> bool:
+    """Whether lifecycle hooks are enabled (opt-in via DOCKWATCH_ENABLE_HOOKS).
+
+    Shared by the settings route (which gates hook *configuration*) and the
+    hooks engine (which gates hook *execution*), so the rule is defined in
+    exactly one place rather than duplicated into two divergent copies.
+    """
+    return os.environ.get(_HOOKS_ENABLE_ENV, "").strip().lower() == "true"
+
+
+def _clamp_hook_timeout(value: int) -> int:
+    """Clamp a hook timeout to ``[1, MAX_HOOK_TIMEOUT_SECONDS]``.
+
+    The agent exec endpoint bounds a single command's deadline at
+    :data:`MAX_HOOK_TIMEOUT_SECONDS`; clamping here keeps the config-side value
+    within that ceiling so a configured timeout works identically for local and
+    agent-managed containers.
+    """
+    return max(1, min(MAX_HOOK_TIMEOUT_SECONDS, value))
 
 
 @dataclass(slots=True)
@@ -70,6 +100,44 @@ class TrivyConfig:
 
 
 @dataclass(slots=True)
+class HealthConfig:
+    enabled: bool = False
+    interval_seconds: int = 60
+    auto_restart: bool = False
+    restart_unhealthy_only: bool = True
+    unhealthy_after_samples: int = 2
+    max_restarts_per_hour: int = 3
+    cooldown_seconds: int = 300
+    notify_transitions: bool = True
+
+
+@dataclass(slots=True)
+class HookConfig:
+    pre_update: list[str] = field(default_factory=list)
+    post_update: list[str] = field(default_factory=list)
+    pre_stop: list[str] = field(default_factory=list)
+    pre_rollback: list[str] = field(default_factory=list)
+    post_rollback: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class HookDefaultsConfig:
+    timeout_seconds: int = 60
+    user: str = ""
+    workdir: str = ""
+
+
+@dataclass(slots=True)
+class PruneConfig:
+    enabled: bool = False
+    interval_hours: int = 24
+    run_on_startup: bool = False
+    mode: str = "dangling"
+    keep_recent_per_repository: int = 3
+    notify: bool = False
+
+
+@dataclass(slots=True)
 class DockwatchConfig:
     notify_only: list[str] = field(default_factory=list)
     include_tags: list[str] = field(default_factory=list)
@@ -89,6 +157,10 @@ class DockwatchConfig:
     compose_projects: dict[str, ComposeProjectConfig] = field(default_factory=dict)
     trivy: TrivyConfig = field(default_factory=TrivyConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
+    hooks: dict[str, HookConfig] = field(default_factory=dict)
+    hook_defaults: HookDefaultsConfig = field(default_factory=HookDefaultsConfig)
+    prune: PruneConfig = field(default_factory=PruneConfig)
 
 
 def migrate_pinned_ignored_to_db(path: Path, store: ManifestStore) -> None:
@@ -243,6 +315,44 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"skip_db_update = {_bool_toml(config.trivy.skip_db_update)}\n"
         f"cache_ttl_minutes = {config.trivy.cache_ttl_minutes}\n"
     )
+    health_section = (
+        "\n[health]\n"
+        f"enabled = {_bool_toml(config.health.enabled)}\n"
+        f"interval_seconds = {config.health.interval_seconds}\n"
+        f"auto_restart = {_bool_toml(config.health.auto_restart)}\n"
+        f"restart_unhealthy_only = {_bool_toml(config.health.restart_unhealthy_only)}\n"
+        f"unhealthy_after_samples = {config.health.unhealthy_after_samples}\n"
+        f"max_restarts_per_hour = {config.health.max_restarts_per_hour}\n"
+        f"cooldown_seconds = {config.health.cooldown_seconds}\n"
+        f"notify_transitions = {_bool_toml(config.health.notify_transitions)}\n"
+    )
+    hooks_section = ""
+    if config.hooks:
+        hooks_section = "\n[hooks]\n"
+        for container, hook_cfg in config.hooks.items():
+            hooks_section += (
+                f"\n[hooks.{_toml_string(container)}]\n"
+                f"pre_update = {_toml_array(hook_cfg.pre_update)}\n"
+                f"post_update = {_toml_array(hook_cfg.post_update)}\n"
+                f"pre_stop = {_toml_array(hook_cfg.pre_stop)}\n"
+                f"pre_rollback = {_toml_array(hook_cfg.pre_rollback)}\n"
+                f"post_rollback = {_toml_array(hook_cfg.post_rollback)}\n"
+            )
+    hook_defaults_section = (
+        "\n[hook_defaults]\n"
+        f"timeout_seconds = {config.hook_defaults.timeout_seconds}\n"
+        f"user = {_toml_string(config.hook_defaults.user)}\n"
+        f"workdir = {_toml_string(config.hook_defaults.workdir)}\n"
+    )
+    prune_section = (
+        "\n[prune]\n"
+        f"enabled = {_bool_toml(config.prune.enabled)}\n"
+        f"interval_hours = {config.prune.interval_hours}\n"
+        f"run_on_startup = {_bool_toml(config.prune.run_on_startup)}\n"
+        f"mode = {_toml_string(config.prune.mode)}\n"
+        f"keep_recent_per_repository = {config.prune.keep_recent_per_repository}\n"
+        f"notify = {_bool_toml(config.prune.notify)}\n"
+    )
     compose_projects = ""
     if config.compose_projects:
         compose_projects = "\n[compose_projects]\n"
@@ -259,7 +369,7 @@ def _to_toml(config: DockwatchConfig) -> str:
         f"password_hash = {_toml_string(config.auth.password_hash)}\n"
         f"secret_key = {_toml_string(config.auth.secret_key)}\n"
     )
-    return base + notifications + portainer + agents + trivy_section + compose_projects + auth
+    return base + notifications + portainer + agents + trivy_section + health_section + hooks_section + hook_defaults_section + prune_section + compose_projects + auth
 
 
 def _parse_agents(data: object) -> list[AgentConfig]:
@@ -405,6 +515,75 @@ def _parse_trivy_config(data: object) -> TrivyConfig:
     )
 
 
+def _normalize_prune_mode(mode: object) -> str:
+    value = str(mode)
+    return value if value in VALID_PRUNE_MODES else "dangling"
+
+
+def _parse_health_config(data: object) -> HealthConfig:
+    if not isinstance(data, dict):
+        return HealthConfig()
+    return HealthConfig(
+        enabled=parse_bool(data.get("enabled"), False),
+        interval_seconds=parse_int(data.get("interval_seconds"), 60, minimum=10),
+        auto_restart=parse_bool(data.get("auto_restart"), False),
+        restart_unhealthy_only=parse_bool(data.get("restart_unhealthy_only"), True),
+        unhealthy_after_samples=parse_int(data.get("unhealthy_after_samples"), 2, minimum=1),
+        max_restarts_per_hour=parse_int(data.get("max_restarts_per_hour"), 3, minimum=0),
+        cooldown_seconds=parse_int(data.get("cooldown_seconds"), 300, minimum=0),
+        notify_transitions=parse_bool(data.get("notify_transitions"), True),
+    )
+
+
+def _parse_hook_config(data: object) -> HookConfig:
+    if not isinstance(data, dict):
+        return HookConfig()
+    return HookConfig(
+        pre_update=parse_list(data.get("pre_update")),
+        post_update=parse_list(data.get("post_update")),
+        pre_stop=parse_list(data.get("pre_stop")),
+        pre_rollback=parse_list(data.get("pre_rollback")),
+        post_rollback=parse_list(data.get("post_rollback")),
+    )
+
+
+def _parse_hooks(data: object) -> dict[str, HookConfig]:
+    if not isinstance(data, dict):
+        return {}
+    hooks: dict[str, HookConfig] = {}
+    for name, raw_cfg in data.items():
+        if not isinstance(raw_cfg, dict):
+            continue
+        key = str(name).strip()
+        if not key:
+            continue
+        hooks[key] = _parse_hook_config(raw_cfg)
+    return hooks
+
+
+def _parse_hook_defaults(data: object) -> HookDefaultsConfig:
+    if not isinstance(data, dict):
+        return HookDefaultsConfig()
+    return HookDefaultsConfig(
+        timeout_seconds=_clamp_hook_timeout(parse_int(data.get("timeout_seconds"), 60, minimum=1)),
+        user=str(data.get("user", "")).strip(),
+        workdir=str(data.get("workdir", "")).strip(),
+    )
+
+
+def _parse_prune_config(data: object) -> PruneConfig:
+    if not isinstance(data, dict):
+        return PruneConfig()
+    return PruneConfig(
+        enabled=parse_bool(data.get("enabled"), False),
+        interval_hours=parse_int(data.get("interval_hours"), 24, minimum=1),
+        run_on_startup=parse_bool(data.get("run_on_startup"), False),
+        mode=_normalize_prune_mode(data.get("mode", "dangling")),
+        keep_recent_per_repository=parse_int(data.get("keep_recent_per_repository"), 3, minimum=0),
+        notify=parse_bool(data.get("notify"), False),
+    )
+
+
 def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized = DockwatchConfig(
@@ -460,6 +639,40 @@ def save_config(config: DockwatchConfig, path: Path = CONFIG_PATH) -> None:
             username=config.auth.username.strip(),
             password_hash=config.auth.password_hash.strip(),
             secret_key=config.auth.secret_key.strip(),
+        ),
+        health=HealthConfig(
+            enabled=bool(config.health.enabled),
+            interval_seconds=max(10, int(config.health.interval_seconds)),
+            auto_restart=bool(config.health.auto_restart),
+            restart_unhealthy_only=bool(config.health.restart_unhealthy_only),
+            unhealthy_after_samples=max(1, int(config.health.unhealthy_after_samples)),
+            max_restarts_per_hour=max(0, int(config.health.max_restarts_per_hour)),
+            cooldown_seconds=max(0, int(config.health.cooldown_seconds)),
+            notify_transitions=bool(config.health.notify_transitions),
+        ),
+        hooks={
+            key: HookConfig(
+                pre_update=unique_ordered(value.pre_update),
+                post_update=unique_ordered(value.post_update),
+                pre_stop=unique_ordered(value.pre_stop),
+                pre_rollback=unique_ordered(value.pre_rollback),
+                post_rollback=unique_ordered(value.post_rollback),
+            )
+            for key, value in config.hooks.items()
+            if key.strip()
+        },
+        hook_defaults=HookDefaultsConfig(
+            timeout_seconds=_clamp_hook_timeout(int(config.hook_defaults.timeout_seconds)),
+            user=config.hook_defaults.user.strip(),
+            workdir=config.hook_defaults.workdir.strip(),
+        ),
+        prune=PruneConfig(
+            enabled=bool(config.prune.enabled),
+            interval_hours=max(1, int(config.prune.interval_hours)),
+            run_on_startup=bool(config.prune.run_on_startup),
+            mode=_normalize_prune_mode(config.prune.mode),
+            keep_recent_per_repository=max(0, int(config.prune.keep_recent_per_repository)),
+            notify=bool(config.prune.notify),
         ),
     )
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -521,6 +734,10 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
     trivy_raw = data.get("trivy", {}) if isinstance(data, dict) else {}
     auth_raw = data.get("auth", {}) if isinstance(data, dict) else {}
     agents_raw = data.get("agents", []) if isinstance(data, dict) else []
+    health_raw = data.get("health", {}) if isinstance(data, dict) else {}
+    hooks_raw = data.get("hooks", {}) if isinstance(data, dict) else {}
+    hook_defaults_raw = data.get("hook_defaults", {}) if isinstance(data, dict) else {}
+    prune_raw = data.get("prune", {}) if isinstance(data, dict) else {}
     config = DockwatchConfig(
         notify_only=parse_list(data.get("notify_only")),
         include_tags=parse_list(data.get("include_tags")),
@@ -550,5 +767,9 @@ def load_config(path: Path = CONFIG_PATH) -> DockwatchConfig:
             password_hash=str(auth_raw.get("password_hash", "")) if isinstance(auth_raw, dict) else "",
             secret_key=str(auth_raw.get("secret_key", "")) if isinstance(auth_raw, dict) else "",
         ),
+        health=_parse_health_config(health_raw),
+        hooks=_parse_hooks(hooks_raw),
+        hook_defaults=_parse_hook_defaults(hook_defaults_raw),
+        prune=_parse_prune_config(prune_raw),
     )
     return ensure_auth_secret(config, path)

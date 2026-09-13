@@ -8,19 +8,23 @@ reuse the same plain-recreate machinery the central uses for its own socket.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
+import os
 import time
 from collections import defaultdict
 from typing import Annotated
 
 import docker
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .. import __version__
+from .. import __version__, docker_client
+from ..config import MAX_HOOK_TIMEOUT_SECONDS, VALID_PRUNE_MODES, DockwatchConfig
 from ..docker_client import DockerConnectionError, get_docker_client, get_running_containers, parse_image_ref
 from ..models import ContainerInfo
+from ..prune import execute_prune, plan_prune
 from ..updater import UpdateExecutionError, UpdatePlan, _execute_plain_update
 from .protocol import MIN_AGENT_TOKEN_LENGTH, serialize_container_info
 
@@ -29,9 +33,34 @@ _logger = logging.getLogger(__name__)
 _AUTH_FAIL_LIMIT = 10
 _AUTH_FAIL_WINDOW_SECONDS = 60.0
 
+_EXEC_ENABLE_ENV = "DOCKWATCH_AGENT_ENABLE_EXEC"
+
+
+def _exec_enabled() -> bool:
+    """Whether the exec endpoint is enabled (opt-in, defense in depth).
+
+    The agent is already token-authenticated, but exec is an arbitrary-command
+    remote execution primitive, so it stays opt-in behind this environment
+    variable independent of the token gate.
+    """
+    return os.environ.get(_EXEC_ENABLE_ENV, "").strip().lower() == "true"
+
 
 class ActionBody(BaseModel):
     image_ref: str
+    operation: str = "update"
+
+
+class ExecBody(BaseModel):
+    command: str
+    timeout_seconds: int = Field(default=60, ge=1, le=MAX_HOOK_TIMEOUT_SECONDS)
+    user: str | None = None
+    workdir: str | None = None
+
+
+class PruneBody(BaseModel):
+    mode: str = "dangling"
+    keep_recent: int = Field(default=3, ge=0)
 
 
 def create_agent_app(token: str) -> FastAPI:
@@ -128,13 +157,13 @@ def create_agent_app(token: str) -> FastAPI:
 
     @router.post("/containers/{container_id}/update")
     def update_container(container_id: str, body: ActionBody) -> dict:
-        return _run_recreate(container_id, body.image_ref)
+        return _run_recreate(container_id, body.image_ref, operation="update")
 
     @router.post("/containers/{container_id}/rollback")
     def rollback_container(container_id: str, body: ActionBody) -> dict:
-        return _run_recreate(container_id, body.image_ref)
+        return _run_recreate(container_id, body.image_ref, operation="rollback")
 
-    def _run_recreate(container_id: str, image_ref: str) -> dict:
+    def _run_recreate(container_id: str, image_ref: str, *, operation: str = "update") -> dict:
         target = image_ref.strip()
         if not target:
             raise HTTPException(status_code=422, detail="image_ref must not be empty")
@@ -158,8 +187,13 @@ def create_agent_app(token: str) -> FastAPI:
             image_ref=target,
             deployed_display=info.current_tag or "-",
             remote_display=target,
+            operation=operation,
         )
         try:
+            # No hook_runner is passed here: for an agent-managed container the
+            # central already ran the hooks via AgentClient.exec_container. If the
+            # agent re-ran label-based hooks here (it can see labels even though
+            # it has no config file), they would fire a second time.
             result = _execute_plain_update(plan)
         except UpdateExecutionError as exc:
             _logger.error("agent: update of '%s' failed: %s", container_id, exc)
@@ -169,6 +203,7 @@ def create_agent_app(token: str) -> FastAPI:
             "message": result.message,
             "details": result.details,
             "rollback_message": result.rollback_message,
+            "operation": operation,
         }
 
     @router.post("/containers/{container_id}/restart")
@@ -185,6 +220,39 @@ def create_agent_app(token: str) -> FastAPI:
         finally:
             client.close()
         return {"ok": True}
+
+    @router.post("/containers/{container_id}/exec")
+    def exec_container(container_id: str, body: ExecBody) -> dict:
+        if not _exec_enabled():
+            raise HTTPException(
+                status_code=422,
+                detail="exec is disabled (set DOCKWATCH_AGENT_ENABLE_EXEC=true)",
+            )
+        command = body.command.strip()
+        if not command:
+            raise HTTPException(status_code=422, detail="command must not be empty")
+        client = _open_client()
+        try:
+            _info, _container = _require_container(client, container_id)
+            result = docker_client.exec_in_container(
+                container_id,
+                command,
+                timeout_seconds=body.timeout_seconds,
+                user=body.user,
+                workdir=body.workdir,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            _logger.error("agent: exec in '%s' failed: %s", container_id, exc)
+            raise HTTPException(status_code=502, detail="exec failed") from exc
+        finally:
+            client.close()
+        return {
+            "exit_code": result.exit_code,
+            "output": result.output,
+            "truncated": result.truncated,
+        }
 
     @router.delete("/containers/{container_id}")
     def delete_container(container_id: str, force: bool = Query(default=False)) -> dict:
@@ -214,6 +282,42 @@ def create_agent_app(token: str) -> FastAPI:
         finally:
             client.close()
         return {"ok": True}
+
+    @router.post("/images/prune")
+    async def prune_images(body: PruneBody) -> dict:
+        if body.mode not in VALID_PRUNE_MODES:
+            raise HTTPException(status_code=422, detail=f"mode must be one of {sorted(VALID_PRUNE_MODES)}")
+        try:
+            images = await asyncio.to_thread(docker_client.list_images)
+            in_use = await asyncio.to_thread(docker_client.in_use_image_ids)
+        except Exception as exc:  # noqa: BLE001
+            _logger.error("agent: image prune listing failed: %s", exc)
+            raise HTTPException(status_code=502, detail="docker connection failed") from exc
+
+        preview = plan_prune(images, in_use, mode=body.mode, keep_recent=body.keep_recent)
+        # The agent is stateless: no config file and no notifiers, so it passes a
+        # bare config (prune.notify defaults False) and no audit store. It runs the
+        # exact same retention-guarded algorithm the central uses for its own socket.
+        config = DockwatchConfig()
+        try:
+            result = await execute_prune(preview, config=config, store=None, source="local")
+        except Exception as exc:  # noqa: BLE001
+            _logger.error("agent: image prune failed: %s", exc)
+            raise HTTPException(status_code=502, detail="image prune failed") from exc
+
+        # Never return raw Docker daemon exception text over the network: log it
+        # here and hand back a generic per-image reason, mirroring the sibling
+        # delete/restart/exec endpoints' 502 detail.
+        failed: list[tuple[str, str]] = []
+        for image_id, error in result.failed:
+            _logger.error("agent: prune removal of '%s' failed: %s", image_id, error)
+            failed.append((image_id, "removal failed"))
+        return {
+            "ok": True,
+            "removed": result.removed,
+            "failed": failed,
+            "reclaimed_bytes": result.reclaimed_bytes,
+        }
 
     @router.get("/containers/{container_id}/logs")
     def container_logs(container_id: str, tail: int = Query(default=200, ge=1, le=2000)) -> dict:

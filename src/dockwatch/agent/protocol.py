@@ -42,6 +42,9 @@ def serialize_container_info(info: ContainerInfo) -> dict:
         "update_delay_days_override": info.update_delay_days_override,
         "compose_project": info.compose_project,
         "compose_service": info.compose_service,
+        "state": info.state,
+        "health_status": info.health_status,
+        "health_restart_override": info.health_restart_override,
     }
 
 
@@ -72,6 +75,9 @@ def deserialize_container_info(payload: dict) -> ContainerInfo:
         update_delay_days_override=_opt_int(payload.get("update_delay_days_override")),
         compose_project=_opt_str(payload.get("compose_project")),
         compose_service=_opt_str(payload.get("compose_service")),
+        state=_opt_str(payload.get("state")),
+        health_status=_opt_str(payload.get("health_status")),
+        health_restart_override=_opt_bool(payload.get("health_restart_override")),
     )
 
 

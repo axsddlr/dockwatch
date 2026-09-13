@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...config import load_config, save_config
+from ...config import hooks_enabled, load_config, save_config
 from ...integrations import AgentClient, AgentError, PortainerClient, PortainerError
 from ...models import ContainerInfo, RegistryType, UpdateResult
 from ...notifiers import send_configured_notifications
@@ -27,6 +27,46 @@ _mutate_limit = Depends(rate_limit(10, 60))
 # PUT handlers run in FastAPI's threadpool; serialize the config
 # read-modify-write cycle so concurrent saves cannot drop each other's changes.
 _settings_write_lock = threading.Lock()
+
+
+_HOOK_PHASES = ("pre_update", "post_update", "pre_stop", "pre_rollback", "post_rollback")
+
+
+def _normalize_hooks(hooks: Any) -> Any:
+    """Return ``hooks`` with blank commands filtered out of every phase list.
+
+    The dashboard's ``cleanHooks`` rewrites stored empty-string commands to
+    ``[]`` before saving; comparing blank-containing stored hooks against the
+    blank-filtered payload would otherwise register a spurious change and trip
+    the hooks gate. Filtering blanks from both sides makes the comparison robust
+    to that transform regardless of which side carries the blanks.
+    """
+    if not isinstance(hooks, dict):
+        return hooks
+    normalized: dict[str, Any] = {}
+    for name, raw_cfg in hooks.items():
+        if not isinstance(raw_cfg, dict):
+            normalized[name] = raw_cfg
+            continue
+        phases: dict[str, Any] = {}
+        for key, value in raw_cfg.items():
+            if key in _HOOK_PHASES and isinstance(value, list):
+                phases[key] = [item for item in value if str(item).strip()]
+            else:
+                phases[key] = value
+        normalized[name] = phases
+    return normalized
+
+
+def _hooks_changed(body: dict[str, Any], current: dict[str, Any]) -> bool:
+    """True when the incoming hooks/hook_defaults differ from what is stored."""
+    incoming_hooks = _normalize_hooks(body.get("hooks"))
+    incoming_defaults = body.get("hook_defaults")
+    if incoming_hooks is not None and incoming_hooks != _normalize_hooks(current.get("hooks")):
+        return True
+    if incoming_defaults is not None and incoming_defaults != current.get("hook_defaults"):
+        return True
+    return False
 
 
 def _is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -118,6 +158,18 @@ def put_settings(body: dict[str, Any]) -> Any:
     with _settings_write_lock:
         existing = load_config()
         store = get_store()
+        current = serialize_settings(existing, store)
+        # Hooks master gate: hook execution is inert unless the operator opts
+        # in via DOCKWATCH_ENABLE_HOOKS=true. Only reject when the hook config
+        # actually changes, so echoed-back hooks never break unrelated saves.
+        # This must run BEFORE deserialize_settings, which mutates the store
+        # (pinned/ignored/auto_update), so a rejected request has no side
+        # effects at all.
+        if not hooks_enabled() and _hooks_changed(body, current):
+            raise HTTPException(
+                status_code=422,
+                detail="Hooks are disabled. Set DOCKWATCH_ENABLE_HOOKS=true to configure hooks.",
+            )
         try:
             updated = deserialize_settings(body, existing, store)
         except (TypeError, ValueError) as exc:

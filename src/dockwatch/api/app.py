@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
 from .deps import get_results_cache, get_results_lock, get_store
-from .routes import auth, containers, environments, settings, trivy, users
+from .routes import auth, containers, environments, health, prune, settings, trivy, users
 from .security import require_auth, require_permission
 from .ws import router as ws_router
 from .. import __version__
@@ -130,7 +130,23 @@ async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
             except Exception:
                 logger.exception("scheduled backup failed")
 
+    async def _scheduled_health() -> None:
+        from ..health import HealthMonitor
+
+        monitor = HealthMonitor(config=config, store=store, broadcast=manager.broadcast)
+        await monitor.serve_forever()
+
+    async def _scheduled_prune() -> None:
+        from ..prune import PruneScheduler
+
+        scheduler = PruneScheduler(config=config, store=store, broadcast=manager.broadcast)
+        await scheduler.serve_forever()
+
     tasks = [asyncio.create_task(_scheduled_check()), asyncio.create_task(_scheduled_backup())]
+    if config.health.enabled:
+        tasks.append(asyncio.create_task(_scheduled_health()))
+    if config.prune.enabled:
+        tasks.append(asyncio.create_task(_scheduled_prune()))
     yield
     for task in tasks:
         task.cancel()
@@ -145,7 +161,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="dockwatch", version=__version__, lifespan=_lifespan)
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
+    async def health_status() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/api/version", dependencies=[Depends(require_auth)])
@@ -157,6 +173,8 @@ def create_app() -> FastAPI:
     app.include_router(settings.router, prefix="/api")
     app.include_router(environments.router, prefix="/api")
     app.include_router(trivy.router, prefix="/api")
+    app.include_router(health.router, prefix="/api")
+    app.include_router(prune.router, prefix="/api")
     app.include_router(users.router, prefix="/api")
     app.include_router(ws_router)
 

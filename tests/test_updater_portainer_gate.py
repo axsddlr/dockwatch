@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from dockwatch.config import DockwatchConfig, PortainerConfig
+from dockwatch.config import DockwatchConfig, HookConfig, PortainerConfig
 from dockwatch.updater import UpdatePlan, execute_portainer_compose_update
 
 
@@ -57,6 +58,48 @@ class ExecutePortainerComposeUpdateTests(unittest.IsolatedAsyncioTestCase):
         args, kwargs = client.update_stack.await_args
         self.assertEqual(args[0], 3)
         self.assertEqual(args[1], 7)
+
+    def _client(self) -> MagicMock:
+        client = MagicMock()
+        client.find_stack_by_name = AsyncMock(return_value={"Id": 3, "EndpointId": 7, "Env": []})
+        client.get_stack_file = AsyncMock(return_value="services:\n  svc:\n    image: repo/svc:1.0\n")
+        client.update_stack = AsyncMock(return_value=None)
+        return client
+
+    async def test_surfaces_hooks_not_supported_and_redeploys(self) -> None:
+        config = DockwatchConfig(
+            portainer=PortainerConfig(url="http://portainer:9000", api_key="key", enabled=True),
+            hooks={"svc": HookConfig(pre_update=["echo hi"])},
+        )
+        client = self._client()
+
+        with patch("dockwatch.updater.PortainerClient", return_value=client), patch(
+            "dockwatch.updater.ManifestStore"
+        ) as store_cls, patch.dict(os.environ, {"DOCKWATCH_ENABLE_HOOKS": "true"}):
+            result = await execute_portainer_compose_update(_plan(), config)
+
+        self.assertTrue(result.success)
+        self.assertTrue(any("hooks are not supported for Portainer-managed containers" in d for d in result.details))
+        client.update_stack.assert_awaited_once()
+        # Skips are never audited, so the store must not receive any rows.
+        store_cls.return_value.record_update_event.assert_not_called()
+
+    async def test_inert_when_hooks_disabled(self) -> None:
+        config = DockwatchConfig(
+            portainer=PortainerConfig(url="http://portainer:9000", api_key="key", enabled=True),
+            hooks={"svc": HookConfig(pre_update=["echo hi"])},
+        )
+        client = self._client()
+
+        with patch("dockwatch.updater.PortainerClient", return_value=client), patch(
+            "dockwatch.updater.ManifestStore"
+        ) as store_cls, patch.dict(os.environ, {"DOCKWATCH_ENABLE_HOOKS": ""}):
+            result = await execute_portainer_compose_update(_plan(), config)
+
+        self.assertTrue(result.success)
+        self.assertFalse(any("hook" in d for d in result.details))
+        client.update_stack.assert_awaited_once()
+        store_cls.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -43,6 +43,9 @@ class ContainerInfo:
     environment_name: str | None = None
     compose_project: str | None = None
     compose_service: str | None = None
+    state: str | None = None
+    health_status: str | None = None
+    health_restart_override: bool | None = None
 
 
 def deployed_version_hint(info: ContainerInfo) -> str | None:

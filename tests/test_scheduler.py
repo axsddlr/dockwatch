@@ -76,20 +76,20 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
-                "dockwatch.scheduler.execute_update",
-                return_value=UpdateExecutionResult(success=True, mode="plain", message="updated"),
+                "dockwatch.scheduler.execute_plan",
+                new=AsyncMock(return_value=UpdateExecutionResult(success=True, mode="plain", message="updated")),
             ) as mock_execute:
                 await runner.run_once()
 
-            mock_execute.assert_called_once()
+            mock_execute.assert_awaited_once()
             history = store.list_update_history("web")
             self.assertEqual(len(history), 1)
             self.assertEqual(history[0].username, "scheduler (auto-update)")
             self.assertEqual(history[0].status, "success")
 
-    async def test_auto_update_routes_portainer_compose_plan_to_portainer_executor(self) -> None:
-        """When build_update_plan returns mode='portainer-compose', the scheduler
-        must call execute_portainer_compose_update, not the local execute_update."""
+    async def test_auto_update_delegates_portainer_plan_to_execute_plan(self) -> None:
+        """The scheduler hands a portainer-compose plan to the shared execute_plan
+        dispatcher instead of branching on mode itself."""
         config = DockwatchConfig(run_on_startup=False)
         with TemporaryDirectory() as tmp_dir:
             store = ManifestStore(Path(tmp_dir) / "manifests.db")
@@ -119,15 +119,50 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
                 "dockwatch.scheduler.build_update_plan", return_value=portainer_plan,
             ), patch(
-                "dockwatch.scheduler.execute_portainer_compose_update",
+                "dockwatch.scheduler.execute_plan",
                 new=AsyncMock(return_value=UpdateExecutionResult(success=True, mode="portainer-compose", message="ok")),
-            ) as mock_portainer_execute, patch(
-                "dockwatch.scheduler.execute_update",
-            ) as mock_local_execute:
+            ) as mock_execute_plan:
                 await runner.run_once()
 
-            mock_portainer_execute.assert_called_once_with(portainer_plan, config)
-            mock_local_execute.assert_not_called()
+            mock_execute_plan.assert_awaited_once_with(portainer_plan, config)
+
+    async def test_auto_update_dispatches_agent_rollback_plan(self) -> None:
+        """An agent-rollback-mode plan is delegated to the shared execute_plan
+        dispatcher (previously it fell through to the local plain-recreate path)."""
+        config = DockwatchConfig(run_on_startup=False)
+        with TemporaryDirectory() as tmp_dir:
+            store = ManifestStore(Path(tmp_dir) / "manifests.db")
+            store.set_auto_update(["web"])
+            result = _outdated_result("web")
+            runner = ScheduledCheckRunner(
+                config=config,
+                store=store,
+                notify=False,
+                container_loader=lambda: [],
+            )
+
+            rollback_plan = MagicMock(
+                mode="agent-rollback",
+                allowed=True,
+                container_name="web",
+                source="agent",
+                current_tag="1.1.0",
+                remote_tag="1.0.0",
+                environment_id="agent-1",
+            )
+
+            with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
+                "dockwatch.scheduler.build_update_plan", return_value=rollback_plan,
+            ), patch(
+                "dockwatch.scheduler.execute_plan",
+                new=AsyncMock(return_value=UpdateExecutionResult(success=True, mode="agent-rollback", message="rolled back")),
+            ) as mock_execute_plan:
+                await runner.run_once()
+
+            mock_execute_plan.assert_awaited_once_with(rollback_plan, config)
+            history = store.list_update_history("web")
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0].status, "success")
 
     async def test_auto_update_skips_container_not_flagged(self) -> None:
         config = DockwatchConfig(run_on_startup=False)
@@ -142,11 +177,11 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
-                "dockwatch.scheduler.execute_update",
+                "dockwatch.scheduler.execute_plan", new=AsyncMock(),
             ) as mock_execute:
                 await runner.run_once()
 
-        mock_execute.assert_not_called()
+        mock_execute.assert_not_awaited()
 
     async def test_auto_update_skips_blocked_plan(self) -> None:
         config = DockwatchConfig(run_on_startup=False)
@@ -163,11 +198,11 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch("dockwatch.scheduler.check_all", new=AsyncMock(return_value=[result])), patch(
-                "dockwatch.scheduler.execute_update",
+                "dockwatch.scheduler.execute_plan", new=AsyncMock(),
             ) as mock_execute:
                 await runner.run_once()
 
-        mock_execute.assert_not_called()
+        mock_execute.assert_not_awaited()
 
     def test_next_delay_stays_within_bounds(self) -> None:
         config = DockwatchConfig(

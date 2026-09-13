@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import unittest
 from pathlib import Path
@@ -11,8 +12,10 @@ from fastapi.testclient import TestClient
 
 from dockwatch.agent.protocol import deserialize_container_info, serialize_container_info
 from dockwatch.agent.server import create_agent_app
-from dockwatch.config import AgentConfig, DockwatchConfig
+from dockwatch.config import AgentConfig, DockwatchConfig, HookConfig
 from dockwatch.db import ManifestStore
+from dockwatch.hooks import HookOutcome, HookPhase, HookResult
+from dockwatch.docker_client import ExecResult
 from dockwatch.integrations.agent import AgentClient, AgentError
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.sources import discover_agents
@@ -82,6 +85,9 @@ class AgentProtocolTests(unittest.TestCase):
             update_delay_days_override=7,
             compose_project="media",
             compose_service="web",
+            state="running",
+            health_status="healthy",
+            health_restart_override=False,
         )
         restored = deserialize_container_info(serialize_container_info(info))
         self.assertEqual(restored.name, "web")
@@ -93,6 +99,9 @@ class AgentProtocolTests(unittest.TestCase):
         self.assertEqual(restored.include_tags_override, ["^1\\."])
         self.assertEqual(restored.update_delay_days_override, 7)
         self.assertEqual(restored.compose_service, "web")
+        self.assertEqual(restored.state, "running")
+        self.assertEqual(restored.health_status, "healthy")
+        self.assertIs(restored.health_restart_override, False)
         # source/environment are central-side; protocol does not carry them
         self.assertEqual(restored.source, "local")
         self.assertIsNone(restored.environment_id)
@@ -100,6 +109,13 @@ class AgentProtocolTests(unittest.TestCase):
     def test_deserialize_tolerates_bad_registry(self) -> None:
         restored = deserialize_container_info({"name": "x", "registry": "bogus"})
         self.assertEqual(restored.registry, RegistryType.UNKNOWN)
+
+    def test_deserialize_defaults_new_fields_when_agent_omits_them(self) -> None:
+        restored = deserialize_container_info({"name": "x"})
+
+        self.assertIsNone(restored.state)
+        self.assertIsNone(restored.health_status)
+        self.assertIsNone(restored.health_restart_override)
 
 
 class AgentClientTests(unittest.IsolatedAsyncioTestCase):
@@ -170,6 +186,76 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
                 await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
         self.assertEqual(len(mock.calls), 1)
 
+    async def test_exec_container_posts_and_returns_payload(self) -> None:
+        mock = MockAsyncClient([MockResponse(200, {"exit_code": 0, "output": "hi", "truncated": False})])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock):
+            payload = await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                "abc123", command="echo hi", timeout_seconds=30, user="app", workdir="/srv"
+            )
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertEqual(payload["output"], "hi")
+        self.assertEqual(mock.calls[0][0], "post")
+        self.assertIn("/containers/abc123/exec", mock.calls[0][1])
+        self.assertEqual(
+            mock.calls[0][2]["json"],
+            {"command": "echo hi", "timeout_seconds": 30, "user": "app", "workdir": "/srv"},
+        )
+
+    async def test_exec_container_wraps_http_error_in_agent_error(self) -> None:
+        with patch(
+            "dockwatch.integrations.agent.httpx.AsyncClient",
+            return_value=MockAsyncClient([MockResponse(502)]),
+        ):
+            with self.assertRaises(AgentError):
+                await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                    "abc123", command="echo hi"
+                )
+
+    async def test_exec_container_does_not_retry_on_read_timeout(self) -> None:
+        # A ReadTimeout can fire after the server has already executed the
+        # command, so retrying it would run a non-idempotent command twice.
+        request = httpx.Request("POST", "https://agent.test")
+        mock = MockAsyncClient([
+            httpx.ReadTimeout("timed out", request=request),
+            MockResponse(200, {"exit_code": 0, "output": "late", "truncated": False}),
+        ])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock), patch(
+            "dockwatch.integrations.agent.asyncio.sleep", new=AsyncMock(),
+        ):
+            with self.assertRaises(AgentError):
+                await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                    "abc123", command="echo hi"
+                )
+        self.assertEqual(len(mock.calls), 1)
+
+    async def test_exec_container_retries_once_on_connect_error(self) -> None:
+        # A connect error guarantees the POST never reached the agent, so it is
+        # safe to retry without risking a double execution.
+        request = httpx.Request("POST", "https://agent.test")
+        mock = MockAsyncClient([
+            httpx.ConnectError("refused", request=request),
+            MockResponse(200, {"exit_code": 0, "output": "ok", "truncated": False}),
+        ])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock), patch(
+            "dockwatch.integrations.agent.asyncio.sleep", new=AsyncMock(),
+        ):
+            payload = await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                "abc123", command="echo hi"
+            )
+        self.assertEqual(len(mock.calls), 2)
+        self.assertEqual(payload["exit_code"], 0)
+
+    async def test_prune_images_posts_mode_and_keep_recent(self) -> None:
+        mock = MockAsyncClient([MockResponse(200, {"ok": True, "removed": ["x"], "failed": [], "reclaimed_bytes": 5})])
+        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock):
+            payload = await AgentClient(base_url="http://agent.test", token="secret").prune_images(
+                mode="unused", keep_recent=1
+            )
+        self.assertEqual(payload["removed"], ["x"])
+        self.assertEqual(mock.calls[0][0], "post")
+        self.assertIn("/images/prune", mock.calls[0][1])
+        self.assertEqual(mock.calls[0][2]["json"], {"mode": "unused", "keep_recent": 1})
+
 
 def _make_result(**kwargs) -> UpdateResult:
     container_kwargs = dict(
@@ -202,6 +288,14 @@ class AgentUpdatePlanTests(unittest.TestCase):
         self.assertEqual(plan.mode, "agent-update")
         self.assertEqual(plan.image_ref, "nginx:1.1.0")
         self.assertEqual(plan.environment_id, "media-pc")
+
+    def test_agent_update_plan_threads_labels(self) -> None:
+        plan = build_update_plan(
+            _make_result(container_overrides={"labels": {"dockwatch.hook.pre_update": "echo label"}}),
+            DockwatchConfig(),
+        )
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.labels, {"dockwatch.hook.pre_update": "echo label"})
 
     def test_agent_update_floating_tag_keeps_ref(self) -> None:
         plan = build_update_plan(
@@ -236,10 +330,34 @@ class AgentUpdatePlanTests(unittest.TestCase):
         self.assertEqual(plan.mode, "agent-rollback")
         self.assertEqual(plan.image_ref, "nginx:1.0.0")
 
+    def test_agent_rollback_plan_threads_labels(self) -> None:
+        plan = build_rollback_plan(
+            _make_result(
+                container_overrides={
+                    "current_tag": "1.1.0",
+                    "image_ref": "nginx:1.1.0",
+                    "labels": {"dockwatch.hook.pre_rollback": "echo rb"},
+                }
+            ),
+            DockwatchConfig(),
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+        )
+        self.assertTrue(plan.allowed)
+        self.assertEqual(plan.labels, {"dockwatch.hook.pre_rollback": "echo rb"})
+
     def test_agent_update_blocked_when_not_outdated(self) -> None:
         plan = build_update_plan(_make_result(is_outdated=False), DockwatchConfig())
         self.assertFalse(plan.allowed)
         self.assertIn("not marked outdated", plan.reason or "")
+
+
+def _skipped_reason(details: list[str], phase_value: str) -> str | None:
+    prefix = f"hook {phase_value}: skipped ("
+    for detail in details:
+        if detail.startswith(prefix) and detail.endswith(")"):
+            return detail[len(prefix):-1]
+    return None
 
 
 class AgentExecutionTests(unittest.IsolatedAsyncioTestCase):
@@ -276,6 +394,166 @@ class AgentExecutionTests(unittest.IsolatedAsyncioTestCase):
             result = await execute_agent_rollback(plan, config)
         self.assertFalse(result.success)
         mock_client.rollback_container.assert_awaited_once_with("abcdef123456", "nginx:1.0.0")
+
+    async def test_execute_agent_update_runs_pre_update_before_call(self) -> None:
+        config = DockwatchConfig(
+            agents=[AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")],
+            hooks={"web": HookConfig(pre_update=["echo pre"])},
+        )
+        plan = build_update_plan(_make_result(), config)
+        events: list[str] = []
+        phases: list[HookPhase] = []
+
+        async def fake_run_phase(phase, info, config, *, store=None, environment_id=None):
+            events.append(f"hook:{phase.value}")
+            phases.append(phase)
+            return HookOutcome([])
+
+        mock_client = MagicMock()
+
+        async def fake_update(container_id, image_ref):
+            events.append("agent:update")
+            return {"ok": True, "message": "updated"}
+
+        mock_client.update_container = AsyncMock(side_effect=fake_update)
+        with patch("dockwatch.updater.ManifestStore"), patch(
+            "dockwatch.updater.run_phase", side_effect=fake_run_phase
+        ), patch("dockwatch.updater.AgentClient", return_value=mock_client), patch.dict(
+            "os.environ", {"DOCKWATCH_ENABLE_HOOKS": "true"}
+        ):
+            result = await execute_agent_update(plan, config)
+
+        self.assertTrue(result.success)
+        self.assertIn(HookPhase.PRE_UPDATE, phases)
+        self.assertLess(events.index("hook:pre_update"), events.index("agent:update"))
+        mock_client.update_container.assert_awaited_once_with("abcdef123456", "nginx:1.1.0")
+
+    async def test_execute_agent_update_fires_label_defined_pre_update_hook(self) -> None:
+        # Regression: a `dockwatch.hook.pre_update` label on an agent-managed
+        # container must resolve through the plan (plan.labels), not silently
+        # disappear, so the hook actually fires and is dispatched to the agent.
+        config = DockwatchConfig(
+            agents=[AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")],
+        )
+        plan = build_update_plan(
+            _make_result(container_overrides={"labels": {"dockwatch.hook.pre_update": "echo label"}}),
+            config,
+        )
+        exec_calls: dict = {}
+
+        class FakeAgentClient:
+            async def exec_container(self, container_id, *, command, timeout_seconds=60, user=None, workdir=None):
+                exec_calls["container_id"] = container_id
+                exec_calls["command"] = command
+                return {"exit_code": 0, "output": "", "truncated": False}
+
+            async def update_container(self, container_id, image_ref):
+                return {"ok": True, "message": "updated"}
+
+        fake = FakeAgentClient()
+        with patch("dockwatch.updater.ManifestStore"), patch(
+            "dockwatch.updater.AgentClient", return_value=fake
+        ), patch("dockwatch.hooks.AgentClient", return_value=fake), patch.dict(
+            "os.environ", {"DOCKWATCH_ENABLE_HOOKS": "true"}
+        ):
+            result = await execute_agent_update(plan, config)
+
+        self.assertTrue(result.success)
+        self.assertEqual(exec_calls.get("container_id"), "abcdef123456")
+        self.assertEqual(exec_calls.get("command"), "echo label")
+
+    async def test_execute_agent_update_blocking_pre_update_aborts_before_call(self) -> None:
+        config = DockwatchConfig(
+            agents=[AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")],
+            hooks={"web": HookConfig(pre_update=["echo pre"])},
+        )
+        plan = build_update_plan(_make_result(), config)
+
+        async def fake_run_phase(phase, info, config, *, store=None, environment_id=None):
+            return HookOutcome([HookResult(phase, "exit 1", 1, "", False, 0, None)])
+
+        mock_client = MagicMock()
+        mock_client.update_container = AsyncMock(return_value={"ok": True, "message": "updated"})
+        with patch("dockwatch.updater.ManifestStore"), patch(
+            "dockwatch.updater.run_phase", side_effect=fake_run_phase
+        ), patch("dockwatch.updater.AgentClient", return_value=mock_client), patch.dict(
+            "os.environ", {"DOCKWATCH_ENABLE_HOOKS": "true"}
+        ):
+            result = await execute_agent_update(plan, config)
+
+        self.assertFalse(result.success)
+        self.assertIn("pre_update", result.message)
+        mock_client.update_container.assert_not_awaited()
+
+    async def test_execute_agent_update_post_update_after_success_is_report_only(self) -> None:
+        config = DockwatchConfig(
+            agents=[AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")],
+            hooks={"web": HookConfig(post_update=["echo post"])},
+        )
+        plan = build_update_plan(_make_result(), config)
+        events: list[str] = []
+
+        async def fake_run_phase(phase, info, config, *, store=None, environment_id=None):
+            events.append(f"hook:{phase.value}")
+            if phase == HookPhase.POST_UPDATE:
+                return HookOutcome([HookResult(phase, "exit 1", 1, "boom", False, 0, None)])
+            return HookOutcome([])
+
+        mock_client = MagicMock()
+
+        async def fake_update(container_id, image_ref):
+            events.append("agent:update")
+            return {"ok": True, "message": "updated"}
+
+        mock_client.update_container = AsyncMock(side_effect=fake_update)
+        with patch("dockwatch.updater.ManifestStore"), patch(
+            "dockwatch.updater.run_phase", side_effect=fake_run_phase
+        ), patch("dockwatch.updater.AgentClient", return_value=mock_client), patch.dict(
+            "os.environ", {"DOCKWATCH_ENABLE_HOOKS": "true"}
+        ):
+            result = await execute_agent_update(plan, config)
+
+        self.assertTrue(result.success)
+        self.assertLess(events.index("agent:update"), events.index("hook:post_update"))
+
+    async def test_execute_agent_rollback_runs_post_rollback_and_skips_pre_phases(self) -> None:
+        config = DockwatchConfig(
+            agents=[AgentConfig(name="media-pc", url="http://media-pc:8081", token="tok")],
+            hooks={"web": HookConfig(pre_stop=["echo stop"], pre_rollback=["echo rb"], post_rollback=["echo prb"])},
+        )
+        plan = build_rollback_plan(
+            _make_result(container_overrides={"current_tag": "1.1.0", "image_ref": "nginx:1.1.0"}),
+            config,
+            old_tag="1.0.0",
+            new_tag="1.1.0",
+        )
+        events: list[str] = []
+        phases: list[HookPhase] = []
+
+        async def fake_run_phase(phase, info, config, *, store=None, environment_id=None):
+            events.append(f"hook:{phase.value}")
+            phases.append(phase)
+            return HookOutcome([])
+
+        mock_client = MagicMock()
+
+        async def fake_rollback(container_id, image_ref):
+            events.append("agent:rollback")
+            return {"ok": True, "message": "rolled back"}
+
+        mock_client.rollback_container = AsyncMock(side_effect=fake_rollback)
+        with patch("dockwatch.updater.ManifestStore"), patch(
+            "dockwatch.updater.run_phase", side_effect=fake_run_phase
+        ), patch("dockwatch.updater.AgentClient", return_value=mock_client), patch.dict(
+            "os.environ", {"DOCKWATCH_ENABLE_HOOKS": "true"}
+        ):
+            result = await execute_agent_rollback(plan, config)
+
+        self.assertTrue(result.success)
+        self.assertIn(HookPhase.POST_ROLLBACK, phases)
+        self.assertLess(events.index("agent:rollback"), events.index("hook:post_rollback"))
+        self.assertTrue(_skipped_reason(result.details, "pre_stop"))
+        self.assertTrue(_skipped_reason(result.details, "pre_rollback"))
 
 
 class AgentDiscoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -439,6 +717,42 @@ class AgentServerTests(unittest.TestCase):
         plan = exec_mock.call_args.args[0]
         self.assertEqual(plan.image_ref, "nginx:1.2.0")
 
+    def test_update_sets_operation_update_and_passes_no_runner(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)), patch(
+            "dockwatch.agent.server._execute_plain_update",
+            return_value=UpdateExecutionResult(True, "plain", "updated"),
+        ) as exec_mock:
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/update",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"image_ref": "nginx:1.2.0"},
+            )
+        self.assertEqual(response.status_code, 200)
+        plan = exec_mock.call_args.args[0]
+        self.assertEqual(plan.operation, "update")
+        self.assertNotIn("hook_runner", exec_mock.call_args.kwargs)
+        self.assertEqual(response.json()["operation"], "update")
+
+    def test_rollback_sets_operation_rollback_and_passes_no_runner(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch("dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)), patch(
+            "dockwatch.agent.server._execute_plain_update",
+            return_value=UpdateExecutionResult(True, "plain", "rolled back"),
+        ) as exec_mock:
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/rollback",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"image_ref": "nginx:1.0.0"},
+            )
+        self.assertEqual(response.status_code, 200)
+        plan = exec_mock.call_args.args[0]
+        self.assertEqual(plan.operation, "rollback")
+        self.assertNotIn("hook_runner", exec_mock.call_args.kwargs)
+        self.assertEqual(response.json()["operation"], "rollback")
+
     def test_update_rejects_compose_managed(self) -> None:
         client = self._app()
         container = self._fake_container(
@@ -473,6 +787,158 @@ class AgentServerTests(unittest.TestCase):
         self.assertEqual(delete.status_code, 200)
         self.assertEqual(logs.status_code, 200)
         self.assertIn("line1", logs.json()["logs"])
+
+    def test_exec_returns_422_when_gate_off(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "false"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)
+        ) as get_client_mock:
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/exec",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"command": "echo hi"},
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("DOCKWATCH_AGENT_ENABLE_EXEC", response.json()["detail"])
+        get_client_mock.assert_not_called()
+
+    def test_exec_returns_422_on_empty_command(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "true"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)
+        ):
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/exec",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"command": "   "},
+            )
+        self.assertEqual(response.status_code, 422)
+
+    def test_exec_success_shape(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "true"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)
+        ), patch(
+            "dockwatch.agent.server.docker_client.exec_in_container",
+            return_value=ExecResult(exit_code=0, output="hello", truncated=False),
+        ) as exec_mock:
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/exec",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"command": "echo hello", "timeout_seconds": 30, "user": "app", "workdir": "/srv"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"exit_code": 0, "output": "hello", "truncated": False})
+        self.assertEqual(exec_mock.call_args.args, ("abcdef123456", "echo hello"))
+        self.assertEqual(exec_mock.call_args.kwargs["timeout_seconds"], 30)
+        self.assertEqual(exec_mock.call_args.kwargs["user"], "app")
+        self.assertEqual(exec_mock.call_args.kwargs["workdir"], "/srv")
+
+    def test_exec_docker_failure_returns_generic_502(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+
+        def boom(*args, **kwargs):
+            import docker
+
+            raise docker.errors.DockerException("secret daemon error: connection refused")
+
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "true"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)
+        ), patch("dockwatch.agent.server.docker_client.exec_in_container", side_effect=boom):
+            response = client.post(
+                "/api/agent/v1/containers/abcdef123456/exec",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"command": "echo hi"},
+            )
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("secret daemon error", response.text)
+
+    def test_exec_404_for_unknown_container(self) -> None:
+        client = self._app()
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "true"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(None)
+        ):
+            response = client.post(
+                "/api/agent/v1/containers/deadbeef1234/exec",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"command": "echo hi"},
+            )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], "container 'deadbeef1234' not found")
+
+    def test_exec_rejects_out_of_range_timeout(self) -> None:
+        client = self._app()
+        container = self._fake_container()
+        with patch.dict(os.environ, {"DOCKWATCH_AGENT_ENABLE_EXEC": "true"}), patch(
+            "dockwatch.agent.server.get_docker_client", return_value=self._fake_client(container)
+        ) as get_client_mock:
+            for bad in (0, -5, 999999):
+                response = client.post(
+                    "/api/agent/v1/containers/abcdef123456/exec",
+                    headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                    json={"command": "echo hi", "timeout_seconds": bad},
+                )
+                self.assertEqual(response.status_code, 422, f"timeout_seconds={bad}")
+        get_client_mock.assert_not_called()
+
+    def test_prune_images_shape(self) -> None:
+        from dockwatch.docker_client import ImageInfo
+
+        client = self._app()
+        dangling = ImageInfo(image_id="sha256:abc", repo_tags=[], created=100, size_bytes=50)
+        with patch("dockwatch.docker_client.list_images", return_value=[dangling]), patch(
+            "dockwatch.docker_client.in_use_image_ids", return_value=set()
+        ), patch("dockwatch.docker_client.remove_image") as remove_mock:
+            response = client.post(
+                "/api/agent/v1/images/prune",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"mode": "dangling", "keep_recent": 0},
+            )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["removed"], ["sha256:abc"])
+        self.assertEqual(body["failed"], [])
+        self.assertEqual(body["reclaimed_bytes"], 50)
+        remove_mock.assert_called_once_with("sha256:abc")
+
+    def test_prune_images_requires_token(self) -> None:
+        client = self._app()
+        self.assertEqual(client.post("/api/agent/v1/images/prune", json={}).status_code, 401)
+
+    def test_prune_images_failure_returns_generic_and_logs_raw(self) -> None:
+        from dockwatch.docker_client import ImageInfo
+
+        client = self._app()
+        dangling = ImageInfo(image_id="sha256:abc", repo_tags=[], created=100, size_bytes=50)
+
+        def boom(image_id: str) -> None:
+            import docker
+
+            raise docker.errors.APIError("conflict: unable to delete abc (image is being used)")
+
+        with patch("dockwatch.docker_client.list_images", return_value=[dangling]), patch(
+            "dockwatch.docker_client.in_use_image_ids", return_value=set()
+        ), patch("dockwatch.docker_client.remove_image", side_effect=boom), patch(
+            "dockwatch.agent.server._logger.error"
+        ) as log_error:
+            response = client.post(
+                "/api/agent/v1/images/prune",
+                headers={"Authorization": "Bearer s3cret-test-token-16chars"},
+                json={"mode": "dangling", "keep_recent": 0},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["removed"], [])
+        self.assertEqual(body["failed"], [["sha256:abc", "removal failed"]])
+        self.assertNotIn("conflict: unable to delete", response.text)
+        logged = [str(call.args) for call in log_error.call_args_list]
+        self.assertTrue(any("conflict: unable to delete" in entry for entry in logged))
 
 
 class UpdateHistoryMigrationTests(unittest.TestCase):

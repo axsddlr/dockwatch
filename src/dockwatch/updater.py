@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
@@ -12,10 +14,19 @@ import docker
 from docker.errors import DockerException
 from docker.models.containers import Container
 
-from .config import AgentConfig, ComposeProjectConfig, DockwatchConfig, resolve_compose_file, resolve_host_path
+from .config import (
+    AgentConfig,
+    ComposeProjectConfig,
+    DockwatchConfig,
+    hooks_enabled,
+    resolve_compose_file,
+    resolve_host_path,
+)
+from .db import ManifestStore
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError, get_docker_client
+from .hooks import HookOutcome, HookPhase, HookResult, run_phase, run_phase_sync, skipped_phase
 from .integrations import AgentClient, AgentError, PortainerClient, PortainerError
-from .models import ContainerInfo, UpdateResult, deployed_display_result, remote_display
+from .models import ContainerInfo, RegistryType, UpdateResult, deployed_display_result, remote_display
 
 # Upper bound for docker compose pull/up; prevents a hung compose command
 # from blocking the update path forever.
@@ -40,12 +51,14 @@ class UpdatePlan:
     image_ref: str
     deployed_display: str
     remote_display: str
+    operation: str = "update"
     reason: str | None = None
     compose_project: str | None = None
     compose_service: str | None = None
     current_tag: str | None = None
     remote_tag: str | None = None
     environment_id: str | None = None
+    labels: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -63,12 +76,15 @@ def _is_compose_managed(result: UpdateResult) -> bool:
     return bool(info.compose_project and info.compose_service)
 
 
-def _blocked_plan(result: UpdateResult, reason: str, *, mode: str = "blocked") -> UpdatePlan:
+def _blocked_plan(
+    result: UpdateResult, reason: str, *, mode: str = "blocked", operation: str = "update",
+) -> UpdatePlan:
     return UpdatePlan(
         container_name=result.container_info.name,
         container_id=result.container_info.container_id,
         source=result.container_info.source,
         mode=mode,
+        operation=operation,
         allowed=False,
         image_ref=result.container_info.image_ref,
         deployed_display=deployed_display_result(result),
@@ -119,6 +135,7 @@ def _build_portainer_update_plan(result: UpdateResult) -> UpdatePlan:
         current_tag=info.current_tag,
         remote_tag=plan_remote_tag,
         environment_id=info.environment_id,
+        labels=info.labels,
     )
 
 
@@ -187,6 +204,7 @@ def _build_agent_update_plan(result: UpdateResult) -> UpdatePlan:
         deployed_display=deployed_display_result(result),
         remote_display=remote_display(result),
         environment_id=info.environment_id,
+        labels=info.labels,
     )
 
 
@@ -197,18 +215,21 @@ def _build_agent_rollback_plan(result: UpdateResult, *, old_tag: str, new_tag: s
             result,
             f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
             mode="agent-rollback",
+            operation="rollback",
         )
     if _is_compose_managed(result):
         return _blocked_plan(
             result,
             "compose-managed containers cannot be rolled back through an agent (v1)",
             mode="agent-rollback",
+            operation="rollback",
         )
     return UpdatePlan(
         container_name=info.name,
         container_id=info.container_id,
         source=info.source,
         mode="agent-rollback",
+        operation="rollback",
         allowed=True,
         image_ref=_replace_ref_tag(info.image_ref, old_tag),
         deployed_display=deployed_display_result(result),
@@ -216,6 +237,7 @@ def _build_agent_rollback_plan(result: UpdateResult, *, old_tag: str, new_tag: s
         current_tag=new_tag,
         remote_tag=old_tag,
         environment_id=info.environment_id,
+        labels=info.labels,
     )
 
 
@@ -284,6 +306,7 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
             compose_service=info.compose_service,
             current_tag=info.current_tag,
             remote_tag=plan_remote_tag,
+            labels=info.labels,
         )
 
     return UpdatePlan(
@@ -295,6 +318,7 @@ def build_update_plan(result: UpdateResult, config: DockwatchConfig) -> UpdatePl
         image_ref=info.image_ref,
         deployed_display=deployed_display_result(result),
         remote_display=remote_display(result),
+        labels=info.labels,
     )
 
 
@@ -307,12 +331,14 @@ def _build_portainer_rollback_plan(
             result,
             f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
             mode="portainer-compose",
+            operation="rollback",
         )
     return UpdatePlan(
         container_name=info.name,
         container_id=info.container_id,
         source=info.source,
         mode="portainer-compose",
+        operation="rollback",
         allowed=True,
         image_ref=info.image_ref,
         deployed_display=deployed_display_result(result),
@@ -322,6 +348,7 @@ def _build_portainer_rollback_plan(
         current_tag=new_tag,
         remote_tag=old_tag,
         environment_id=info.environment_id,
+        labels=info.labels,
     )
 
 
@@ -334,14 +361,19 @@ def _build_local_compose_rollback_plan(
     if compose_cfg is None:
         return _blocked_plan(
             result, f"compose project '{project}' is missing from config.compose_projects", mode="compose",
+            operation="rollback",
         )
     if not compose_cfg.workdir.strip():
-        return _blocked_plan(result, f"compose project '{project}' has no configured workdir", mode="compose")
+        return _blocked_plan(
+            result, f"compose project '{project}' has no configured workdir", mode="compose",
+            operation="rollback",
+        )
     if info.current_tag != new_tag:
         return _blocked_plan(
             result,
             f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
             mode="compose",
+            operation="rollback",
         )
 
     return UpdatePlan(
@@ -349,6 +381,7 @@ def _build_local_compose_rollback_plan(
         container_id=info.container_id,
         source=info.source,
         mode="compose",
+        operation="rollback",
         allowed=True,
         image_ref=info.image_ref,
         deployed_display=deployed_display_result(result),
@@ -357,6 +390,7 @@ def _build_local_compose_rollback_plan(
         compose_service=info.compose_service,
         current_tag=new_tag,
         remote_tag=old_tag,
+        labels=info.labels,
     )
 
 
@@ -368,6 +402,7 @@ def _build_plain_rollback_plan(
         return _blocked_plan(
             result,
             f"deployed tag is '{info.current_tag}', expected '{new_tag}' from history; refresh before rolling back",
+            operation="rollback",
         )
     repo = info.image_ref.rsplit(":", 1)[0]
     return UpdatePlan(
@@ -375,12 +410,14 @@ def _build_plain_rollback_plan(
         container_id=info.container_id,
         source=info.source,
         mode="plain",
+        operation="rollback",
         allowed=True,
         image_ref=f"{repo}:{old_tag}",
         deployed_display=deployed_display_result(result),
         remote_display=old_tag,
         current_tag=new_tag,
         remote_tag=old_tag,
+        labels=info.labels,
     )
 
 
@@ -394,16 +431,22 @@ def build_rollback_plan(
     info = result.container_info
     if info.source == "portainer":
         if not _is_compose_managed(result):
-            return _blocked_plan(result, "rollback is only supported for compose-managed containers")
+            return _blocked_plan(
+                result, "rollback is only supported for compose-managed containers", operation="rollback",
+            )
         return _build_portainer_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
     if info.source == "agent":
         return _build_agent_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
     if info.source != "local":
-        return _blocked_plan(result, "read-only source; only local Docker and Portainer stack rollbacks are supported")
+        return _blocked_plan(
+            result,
+            "read-only source; only local Docker and Portainer stack rollbacks are supported",
+            operation="rollback",
+        )
     if _is_compose_managed(result):
         return _build_local_compose_rollback_plan(result, config, old_tag=old_tag, new_tag=new_tag)
     if not info.image_ref:
-        return _blocked_plan(result, "container image reference is missing")
+        return _blocked_plan(result, "container image reference is missing", operation="rollback")
     return _build_plain_rollback_plan(result, old_tag=old_tag, new_tag=new_tag)
 
 
@@ -518,6 +561,7 @@ def _create_replacement_container(container: Container, client: docker.DockerCli
         user=config.get("User") or None,
         volumes=volumes or None,
         working_dir=config.get("WorkingDir") or None,
+        **({"healthcheck": healthcheck} if (healthcheck := config.get("Healthcheck")) is not None else {}),
     )
     new_container = client.containers.get(created["Id"])
     for network_name, aliases in extra_networks:
@@ -527,32 +571,156 @@ def _create_replacement_container(container: Container, client: docker.DockerCli
     return new_container
 
 
+HookRunner = Callable[[HookPhase, ContainerInfo], HookOutcome]
+
+AsyncHookRunner = Callable[[HookPhase, ContainerInfo], Awaitable[HookOutcome]]
+
+# Skip reasons for agent-managed containers, where the agent's single
+# pull+stop+create call owns the recreate.  The central can only reach the
+# coarse "before the call" / "after the call" points, so the remaining phases
+# have no window and are recorded as explicit skips (never blocking) so the
+# audit trail shows they could not run rather than silently omitting them.
+_AGENT_PRE_STOP_SKIP_REASON = (
+    "the agent's recreate owns the container stop; no pre-stop window on the central"
+)
+_AGENT_PRE_ROLLBACK_SKIP_REASON = (
+    "the agent's recreate owns the rollback; the central cannot reach the failed "
+    "replacement on the remote host"
+)
+_AGENT_POST_ROLLBACK_SKIP_REASON = (
+    "the agent's recreate owns the rollback; no post-rollback window on the central"
+)
+
+
+def _hook_info(plan: UpdatePlan) -> ContainerInfo:
+    """Minimal ContainerInfo for hook resolution, sourced from the plan."""
+    return ContainerInfo(
+        name=plan.container_name,
+        container_id=plan.container_id,
+        image_ref=plan.image_ref or "",
+        registry=RegistryType.UNKNOWN,
+        namespace="library",
+        image_name="unknown",
+        current_tag="latest",
+        labels=dict(plan.labels),
+        source=plan.source,
+        environment_id=plan.environment_id,
+    )
+
+
+def _make_hook_runner(plan: UpdatePlan, config: DockwatchConfig) -> HookRunner:
+    """Build the synchronous hook runner used by the local update executors.
+
+    Constructs a ``ManifestStore`` directly (matching the codebase's
+    ``ManifestStore()`` usage elsewhere rather than threading a store through)
+    so every hook attempt is DB-audited with ``action="hook"``.
+    """
+    store = ManifestStore()
+
+    def hook_runner(phase: HookPhase, info: ContainerInfo) -> HookOutcome:
+        return run_phase_sync(
+            phase, info, config,
+            store=store,
+            environment_id=info.environment_id or plan.environment_id,
+        )
+    return hook_runner
+
+
+def _make_async_hook_runner(plan: UpdatePlan, config: DockwatchConfig) -> AsyncHookRunner:
+    """Build the async hook runner used by the agent and Portainer executors.
+
+    Same audit contract as :func:`_make_hook_runner`, but for containers whose
+    executors run inside the central's event loop, so it must use the async
+    :func:`run_phase` (not ``run_phase_sync``, which drives its own loop and
+    would fail under a running loop).
+    """
+    store = ManifestStore()
+
+    async def hook_runner(phase: HookPhase, info: ContainerInfo) -> HookOutcome:
+        return await run_phase(
+            phase, info, config,
+            store=store,
+            environment_id=info.environment_id or plan.environment_id,
+        )
+    return hook_runner
+
+
+def _hook_failure_text(result: HookResult) -> str:
+    if result.exit_code is None:
+        return result.output or "execution error"
+    text = f"exit {result.exit_code}"
+    if result.output:
+        text += f": {result.output}"
+    return text
+
+
+def _format_hook_result(result: HookResult) -> str:
+    if result.skipped_reason:
+        return f"hook {result.phase.value}: skipped ({result.skipped_reason})"
+    if result.exit_code == 0:
+        return f"hook {result.phase.value}: ok"
+    return f"hook {result.phase.value}: failed ({_hook_failure_text(result)})"
+
+
+def _format_hook_outcome(outcome: HookOutcome) -> list[str]:
+    return [_format_hook_result(result) for result in outcome.results]
+
+
+def _hook_abort_message(phase: HookPhase, outcome: HookOutcome) -> str:
+    failed = next((result for result in outcome.results if result.failed), None)
+    if failed is not None:
+        return f"{phase.value} hook failed: {_hook_failure_text(failed)}"
+    return f"{phase.value} hook failed"
+
+
 def _rollback_plain_update(
     *,
     original: Container,
     original_was_running: bool,
     original_name: str,
     replacement: Container | None,
+    hook_runner: HookRunner | None = None,
+    info: ContainerInfo | None = None,
+    details: list[str] | None = None,
+    config: DockwatchConfig | None = None,
 ) -> str:
-    details: list[str] = []
+    details = details if details is not None else []
+    rollback_details: list[str] = []
     replacement_still_holds_name = False
     if replacement is not None:
+        if hook_runner is not None and info is not None:
+            replacement_running = False
+            try:
+                replacement.reload()
+                replacement_running = bool((replacement.attrs.get("State", {}) or {}).get("Running"))
+            except DockerException:
+                replacement_running = False
+            if replacement_running:
+                details.extend(_format_hook_outcome(hook_runner(HookPhase.PRE_ROLLBACK, info)))
+            elif config is not None:
+                details.extend(_format_hook_outcome(
+                    skipped_phase(HookPhase.PRE_ROLLBACK, info, config, reason="failed replacement container is not running")
+                ))
         try:
             replacement.remove(force=True)
-            details.append("removed failed replacement")
+            rollback_details.append("removed failed replacement")
         except DockerException as exc:
             replacement_still_holds_name = True
-            details.append(
+            rollback_details.append(
                 f"CRITICAL: failed to remove replacement container, it still occupies "
                 f"the name '{original_name}' and the original is stranded under a backup "
                 f"name until this is resolved manually: {exc}"
             )
+    elif hook_runner is not None and info is not None and config is not None:
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_ROLLBACK, info, config, reason="no replacement container was created")
+        ))
     try:
         original.reload()
     except DockerException:
         pass
     if replacement_still_holds_name:
-        details.append(
+        rollback_details.append(
             f"skipped restoring original container name '{original_name}' "
             "because the replacement still holds it"
         )
@@ -560,25 +728,35 @@ def _rollback_plain_update(
         try:
             original.rename(original_name)
         except DockerException as exc:
-            details.append(f"failed to restore original name: {exc}")
+            rollback_details.append(f"failed to restore original name: {exc}")
     if original_was_running:
         try:
             original.start()
-            details.append("restarted original container")
+            rollback_details.append("restarted original container")
         except DockerException as exc:
-            details.append(f"failed to restart original container: {exc}")
-    return "; ".join(details) or "rollback attempted"
+            rollback_details.append(f"failed to restart original container: {exc}")
+    if hook_runner is not None and info is not None:
+        details.extend(_format_hook_outcome(hook_runner(HookPhase.POST_ROLLBACK, info)))
+    return "; ".join(rollback_details) or "rollback attempted"
 
 
-def _execute_plain_update(plan: UpdatePlan) -> UpdateExecutionResult:
+def _execute_plain_update(
+    plan: UpdatePlan, *, hook_runner: HookRunner | None = None, config: DockwatchConfig | None = None,
+) -> UpdateExecutionResult:
     client = _docker_client()
     try:
-        return _execute_plain_update_with_client(plan, client)
+        return _execute_plain_update_with_client(plan, client, hook_runner=hook_runner, config=config)
     finally:
         client.close()
 
 
-def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerClient) -> UpdateExecutionResult:
+def _execute_plain_update_with_client(
+    plan: UpdatePlan,
+    client: docker.DockerClient,
+    *,
+    hook_runner: HookRunner | None = None,
+    config: DockwatchConfig | None = None,
+) -> UpdateExecutionResult:
     try:
         container = client.containers.get(plan.container_name)
     except DockerException:
@@ -602,11 +780,14 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
     was_running = bool(state.get("Running"))
     backup_name = f"{plan.container_name}-dockwatch-backup"
     replacement: Container | None = None
+    info = _hook_info(plan) if hook_runner is not None else None
+    details: list[str] = []
 
     try:
         client.images.pull(plan.image_ref)
     except DockerException as exc:
         return UpdateExecutionResult(False, "plain", f"image pull failed: {exc}")
+    details.append(f"pulled {plan.image_ref}")
 
     # Clear a stale leftover from a previous failed attempt: a container that
     # still owns the backup name but is not the one being updated. Without
@@ -623,11 +804,27 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
             backup_name, plan.container_name, exc,
         )
 
+    if hook_runner is not None:
+        pre_update = hook_runner(HookPhase.PRE_UPDATE, info)
+        details.extend(_format_hook_outcome(pre_update))
+        if pre_update.blocking_failure:
+            return UpdateExecutionResult(
+                False, "plain", _hook_abort_message(HookPhase.PRE_UPDATE, pre_update), details=details,
+            )
+
     try:
+        if was_running and hook_runner is not None:
+            pre_stop = hook_runner(HookPhase.PRE_STOP, info)
+            details.extend(_format_hook_outcome(pre_stop))
+            if pre_stop.blocking_failure:
+                return UpdateExecutionResult(
+                    False, "plain", _hook_abort_message(HookPhase.PRE_STOP, pre_stop), details=details,
+                )
         if was_running:
             container.stop(timeout=10)
         container.rename(backup_name)
         replacement = _create_replacement_container(container, client, plan.image_ref, plan.container_name)
+        details.append("created replacement container")
         if was_running:
             replacement.start()
             replacement.reload()
@@ -635,11 +832,13 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
             if not bool(new_state.get("Running")):
                 raise UpdateExecutionError("replacement container did not reach running state")
         container.remove(force=True)
+        if hook_runner is not None:
+            details.extend(_format_hook_outcome(hook_runner(HookPhase.POST_UPDATE, info)))
         return UpdateExecutionResult(
             True,
             "plain",
             f"updated '{plan.container_name}' via recreate",
-            details=[f"pulled {plan.image_ref}", "created replacement container"],
+            details=details,
         )
     except (DockerException, UpdateExecutionError) as exc:
         rollback = _rollback_plain_update(
@@ -647,11 +846,16 @@ def _execute_plain_update_with_client(plan: UpdatePlan, client: docker.DockerCli
             original_was_running=was_running,
             original_name=plan.container_name,
             replacement=replacement,
+            hook_runner=hook_runner,
+            info=info,
+            details=details,
+            config=config,
         )
         return UpdateExecutionResult(
             False,
             "plain",
             f"update failed: {exc}",
+            details=details,
             rollback_message=rollback,
         )
 
@@ -751,7 +955,9 @@ def _rewrite_compose_image_tag(
     return f"could not find 'image: {old_image}' for service '{plan.compose_service}' in compose files"
 
 
-def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
+def _execute_compose_update(
+    plan: UpdatePlan, config: DockwatchConfig, *, hook_runner: HookRunner | None = None,
+) -> UpdateExecutionResult:
     if not plan.compose_project or not plan.compose_service:
         return UpdateExecutionResult(False, "compose", "compose project metadata is incomplete")
     project = config.compose_projects.get(plan.compose_project)
@@ -762,10 +968,23 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
     if not workdir.is_dir():
         return UpdateExecutionResult(False, "compose", f"compose workdir is not a directory or does not exist: {workdir}")
 
+    info = _hook_info(plan) if hook_runner is not None else None
+    details: list[str] = []
+    if hook_runner is not None:
+        pre_update = hook_runner(HookPhase.PRE_UPDATE, info)
+        details.extend(_format_hook_outcome(pre_update))
+        if pre_update.blocking_failure:
+            return UpdateExecutionResult(
+                False, "compose", _hook_abort_message(HookPhase.PRE_UPDATE, pre_update), details=details,
+            )
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_STOP, info, config, reason="compose owns the container stop")
+        ))
+
     if plan.remote_tag:
         rewrite_error = _rewrite_compose_image_tag(project, workdir, plan)
         if rewrite_error:
-            return UpdateExecutionResult(False, "compose", rewrite_error)
+            return UpdateExecutionResult(False, "compose", rewrite_error, details=details)
 
     pull_cmd = _compose_command(project, "pull", plan.compose_service)
     up_cmd = _compose_command(project, "up", "-d", plan.compose_service)
@@ -776,36 +995,48 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
             timeout=COMPOSE_COMMAND_TIMEOUT_SECONDS,
         )
         if pull.returncode != 0:
+            details.append(pull.stderr.strip() or pull.stdout.strip())
             return UpdateExecutionResult(
                 False,
                 "compose",
                 f"compose pull failed for '{plan.compose_service}'",
-                details=[pull.stderr.strip() or pull.stdout.strip()],
+                details=details,
             )
         up = subprocess.run(
             up_cmd, cwd=workdir, capture_output=True, text=True, check=False,
             timeout=COMPOSE_COMMAND_TIMEOUT_SECONDS,
         )
         if up.returncode != 0:
+            details.append(up.stderr.strip() or up.stdout.strip())
             return UpdateExecutionResult(
                 False,
                 "compose",
                 f"compose up failed for '{plan.compose_service}'",
-                details=[up.stderr.strip() or up.stdout.strip()],
+                details=details,
             )
     except subprocess.TimeoutExpired as exc:
         return UpdateExecutionResult(
             False,
             "compose",
             f"docker compose command timed out after {exc.timeout:.0f}s",
+            details=details,
         )
     except OSError as exc:
-        return UpdateExecutionResult(False, "compose", f"failed to run docker compose: {exc}")
+        return UpdateExecutionResult(
+            False, "compose", f"failed to run docker compose: {exc}", details=details,
+        )
 
-    details = []
     if plan.remote_tag:
         details.append(f"rewrote compose image tag: {plan.current_tag} -> {plan.remote_tag}")
     details.extend(["docker compose pull completed", "docker compose up -d completed"])
+    if hook_runner is not None:
+        details.extend(_format_hook_outcome(hook_runner(HookPhase.POST_UPDATE, info)))
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_ROLLBACK, info, config, reason="compose updates have no rollback path")
+        ))
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.POST_ROLLBACK, info, config, reason="compose updates have no rollback path")
+        ))
     return UpdateExecutionResult(
         True,
         "compose",
@@ -817,9 +1048,10 @@ def _execute_compose_update(plan: UpdatePlan, config: DockwatchConfig) -> Update
 def execute_update(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
     if not plan.allowed:
         return UpdateExecutionResult(False, plan.mode, plan.reason or "update is blocked")
+    hook_runner = _make_hook_runner(plan, config) if hooks_enabled() else None
     if plan.mode == "compose":
-        return _execute_compose_update(plan, config)
-    return _execute_plain_update(plan)
+        return _execute_compose_update(plan, config, hook_runner=hook_runner)
+    return _execute_plain_update(plan, hook_runner=hook_runner, config=config)
 
 
 def _find_agent(config: DockwatchConfig, plan: UpdatePlan) -> AgentConfig | None:
@@ -836,12 +1068,42 @@ async def execute_agent_update(plan: UpdatePlan, config: DockwatchConfig) -> Upd
     agent = _find_agent(config, plan)
     if agent is None:
         return UpdateExecutionResult(False, plan.mode, f"agent '{plan.environment_id}' is not configured")
+
+    hook_runner = _make_async_hook_runner(plan, config) if hooks_enabled() else None
+    info = _hook_info(plan) if hook_runner is not None else None
+    details: list[str] = []
+
+    if hook_runner is not None and info is not None:
+        pre_update = await hook_runner(HookPhase.PRE_UPDATE, info)
+        details.extend(_format_hook_outcome(pre_update))
+        if pre_update.blocking_failure:
+            return UpdateExecutionResult(
+                False, plan.mode, _hook_abort_message(HookPhase.PRE_UPDATE, pre_update), details=details,
+            )
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_STOP, info, config, reason=_AGENT_PRE_STOP_SKIP_REASON)
+        ))
+
     try:
         client = AgentClient(base_url=agent.url, token=agent.token)
         payload = await client.update_container(plan.container_id, plan.image_ref)
     except AgentError as exc:
-        return UpdateExecutionResult(False, plan.mode, f"agent update failed: {exc}")
-    return _agent_result(payload, plan.mode)
+        return UpdateExecutionResult(False, plan.mode, f"agent update failed: {exc}", details=details)
+
+    result = _agent_result(payload, plan.mode)
+    if hook_runner is not None and info is not None:
+        agent_details = result.details
+        post_details: list[str] = []
+        if result.success:
+            post_details.extend(_format_hook_outcome(await hook_runner(HookPhase.POST_UPDATE, info)))
+            post_details.extend(_format_hook_outcome(
+                skipped_phase(HookPhase.PRE_ROLLBACK, info, config, reason=_AGENT_PRE_ROLLBACK_SKIP_REASON)
+            ))
+            post_details.extend(_format_hook_outcome(
+                skipped_phase(HookPhase.POST_ROLLBACK, info, config, reason=_AGENT_POST_ROLLBACK_SKIP_REASON)
+            ))
+        result.details = details + agent_details + post_details
+    return result
 
 
 async def execute_agent_rollback(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
@@ -850,12 +1112,33 @@ async def execute_agent_rollback(plan: UpdatePlan, config: DockwatchConfig) -> U
     agent = _find_agent(config, plan)
     if agent is None:
         return UpdateExecutionResult(False, plan.mode, f"agent '{plan.environment_id}' is not configured")
+
+    hook_runner = _make_async_hook_runner(plan, config) if hooks_enabled() else None
+    info = _hook_info(plan) if hook_runner is not None else None
+    details: list[str] = []
+
+    if hook_runner is not None and info is not None:
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_ROLLBACK, info, config, reason=_AGENT_PRE_ROLLBACK_SKIP_REASON)
+        ))
+        details.extend(_format_hook_outcome(
+            skipped_phase(HookPhase.PRE_STOP, info, config, reason=_AGENT_PRE_STOP_SKIP_REASON)
+        ))
+
     try:
         client = AgentClient(base_url=agent.url, token=agent.token)
         payload = await client.rollback_container(plan.container_id, plan.image_ref)
     except AgentError as exc:
-        return UpdateExecutionResult(False, plan.mode, f"agent rollback failed: {exc}")
-    return _agent_result(payload, plan.mode)
+        return UpdateExecutionResult(False, plan.mode, f"agent rollback failed: {exc}", details=details)
+
+    result = _agent_result(payload, plan.mode)
+    if hook_runner is not None and info is not None:
+        agent_details = result.details
+        post_details: list[str] = []
+        if result.success:
+            post_details.extend(_format_hook_outcome(await hook_runner(HookPhase.POST_ROLLBACK, info)))
+        result.details = details + agent_details + post_details
+    return result
 
 
 def _agent_result(payload: dict, mode: str) -> UpdateExecutionResult:
@@ -880,6 +1163,16 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
     if not plan.compose_project or not plan.compose_service:
         return UpdateExecutionResult(False, plan.mode, "Portainer stack metadata is incomplete")
 
+    hook_runner = _make_async_hook_runner(plan, config) if hooks_enabled() else None
+    info = _hook_info(plan) if hook_runner is not None else None
+    details: list[str] = []
+    if hook_runner is not None and info is not None:
+        # Portainer-managed containers cannot run hooks inside the container.
+        # The engine records each phase as a non-blocking skip so the operator
+        # sees why no hook ran; none of these can abort the redeploy.
+        details.extend(_format_hook_outcome(await hook_runner(HookPhase.PRE_UPDATE, info)))
+        details.extend(_format_hook_outcome(await hook_runner(HookPhase.PRE_STOP, info)))
+
     client = PortainerClient(
         base_url=config.portainer.url,
         api_key=config.portainer.api_key,
@@ -889,7 +1182,7 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
         stack = await client.find_stack_by_name(plan.compose_project)
         if stack is None:
             return UpdateExecutionResult(
-                False, plan.mode, f"no Portainer stack found named '{plan.compose_project}'",
+                False, plan.mode, f"no Portainer stack found named '{plan.compose_project}'", details=details,
             )
         stack_id = stack["Id"]
         # The stack's EndpointId is the authoritative environment id.  A
@@ -903,6 +1196,7 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
                 return UpdateExecutionResult(
                     False, plan.mode,
                     f"no Portainer environment found for stack '{plan.compose_project}'",
+                    details=details,
                 )
             environment_id = str(raw_endpoint)
         text = await client.get_stack_file(stack_id)
@@ -917,6 +1211,7 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
                 return UpdateExecutionResult(
                     False, plan.mode,
                     f"could not find 'image: {old_image}' for service '{plan.compose_service}' in stack file",
+                    details=details,
                 )
             new_text = rewritten
 
@@ -924,12 +1219,34 @@ async def execute_portainer_compose_update(plan: UpdatePlan, config: DockwatchCo
             stack_id, int(environment_id), stack_file_content=new_text, env=stack.get("Env"),
         )
     except PortainerError as exc:
-        return UpdateExecutionResult(False, plan.mode, f"Portainer stack update failed: {exc}")
+        return UpdateExecutionResult(
+            False, plan.mode, f"Portainer stack update failed: {exc}", details=details,
+        )
 
-    details = []
     if plan.remote_tag:
         details.append(f"rewrote stack image tag: {plan.current_tag} -> {plan.remote_tag}")
     details.append("Portainer stack redeployed with pullImage=true")
+    if hook_runner is not None and info is not None:
+        details.extend(_format_hook_outcome(await hook_runner(HookPhase.POST_UPDATE, info)))
+        details.extend(_format_hook_outcome(await hook_runner(HookPhase.PRE_ROLLBACK, info)))
+        details.extend(_format_hook_outcome(await hook_runner(HookPhase.POST_ROLLBACK, info)))
     return UpdateExecutionResult(
         True, plan.mode, f"updated Portainer stack service '{plan.compose_service}'", details=details,
     )
+
+
+async def execute_plan(plan: UpdatePlan, config: DockwatchConfig) -> UpdateExecutionResult:
+    """Dispatch a plan to the executor for its mode.
+
+    Single shared dispatch table used by both the API routes and the
+    scheduler, so the branch logic cannot drift. A plan whose `allowed` is
+    False is handled by each executor (they return a failed result carrying
+    the reason) rather than raising.
+    """
+    if plan.mode == "portainer-compose":
+        return await execute_portainer_compose_update(plan, config)
+    if plan.mode == "agent-update":
+        return await execute_agent_update(plan, config)
+    if plan.mode == "agent-rollback":
+        return await execute_agent_rollback(plan, config)
+    return await asyncio.to_thread(execute_update, plan, config)

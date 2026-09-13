@@ -21,6 +21,9 @@ export interface ContainerInfo {
   environment_name: string | null
   compose_project: string | null
   compose_service: string | null
+  state: string | null
+  health_status: string | null
+  health_restart_override: boolean | null
 }
 
 export interface VersionDiff {
@@ -112,7 +115,78 @@ export interface DockwatchSettings {
     skip_db_update: boolean
     cache_ttl_minutes: number
   }
+  health?: HealthSettings
+  hooks?: Record<string, HookSettings>
+  hook_defaults?: HookDefaultsSettings
+  prune?: PruneSettings
+  health_restart?: string[]
   compose_projects?: Record<string, ComposeProjectConfig>
+}
+
+export interface HealthSettings {
+  enabled: boolean
+  interval_seconds: number
+  auto_restart: boolean
+  restart_unhealthy_only: boolean
+  unhealthy_after_samples: number
+  max_restarts_per_hour: number
+  cooldown_seconds: number
+  notify_transitions: boolean
+}
+
+export interface HookSettings {
+  pre_update: string[]
+  post_update: string[]
+  pre_stop: string[]
+  pre_rollback: string[]
+  post_rollback: string[]
+}
+
+export interface HookDefaultsSettings {
+  timeout_seconds: number
+  user: string
+  workdir: string
+}
+
+export interface PruneSettings {
+  enabled: boolean
+  interval_hours: number
+  run_on_startup: boolean
+  mode: string
+  keep_recent_per_repository: number
+  notify: boolean
+}
+
+export interface HealthStateRecord {
+  container_key: string
+  container_name: string
+  source: string
+  environment_id: string | null
+  state: string | null
+  health_status: string | null
+  consecutive_unhealthy: number
+  last_changed_at: string | null
+  last_restart_at: string | null
+  restarts_in_window: number
+  window_started_at: string | null
+  last_notified_key: string | null
+}
+
+export interface PruneCandidate {
+  image_id: string
+  repo_tags: string[]
+  repo: string
+  created: number
+  size_bytes: number
+  reason: string
+}
+
+export interface PrunePreview {
+  mode: string
+  keep_recent: number
+  estimated_bytes: number
+  candidates: PruneCandidate[]
+  retained: PruneCandidate[]
 }
 
 export interface AgentConfig {
@@ -151,7 +225,7 @@ export interface RoleRecord {
 
 export interface UpdateHistoryEntry {
   id: number
-  action: 'update' | 'rollback' | 'restart' | 'digest_drift_detected'
+  action: 'update' | 'rollback' | 'restart' | 'digest_drift_detected' | 'health_restart' | 'hook' | 'prune_images'
   source: 'local' | 'portainer'
   environment_id: string | null
   old_tag: string | null

@@ -3,9 +3,44 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from dockwatch.config import DockwatchConfig
+from dockwatch.config import DockwatchConfig, _parse_notify_events
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
-from dockwatch.notifiers import build_notifiers, send_configured_notifications
+from dockwatch.notifiers import build_notifiers, send_configured_events, send_configured_notifications
+from dockwatch.notifiers.base import BaseNotifier, NotificationEvent, render_event_text
+from dockwatch.notifiers.discord import DiscordNotifier
+from dockwatch.notifiers.ntfy import NtfyNotifier
+from dockwatch.notifiers.webhook import WebhookNotifier
+
+
+class _CaptureResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+
+class _CaptureClient:
+    """Records every POST so tests can assert on the real wire payload."""
+
+    def __init__(self, captured: list[dict]) -> None:
+        self._captured = captured
+
+    async def __aenter__(self) -> _CaptureClient:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        return False
+
+    async def post(  # noqa: ANN001
+        self,
+        url: str,
+        json=None,
+        content=None,
+        headers=None,
+        **kwargs,
+    ) -> _CaptureResponse:
+        self._captured.append(
+            {"url": url, "json": json, "content": content, "headers": headers, "kwargs": kwargs}
+        )
+        return _CaptureResponse()
 
 
 class NotifierTests(unittest.IsolatedAsyncioTestCase):
@@ -307,6 +342,210 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(calls["count"], 3)
+
+
+    def _sample_event(self, *, severity: str = "warning", kind: str = "health") -> NotificationEvent:
+        return NotificationEvent(
+            kind=kind,
+            title="web restarted",
+            message="container web restarted after failing health check",
+            fields={"container": "web", "restarts": "2"},
+            severity=severity,
+        )
+
+    async def test_webhook_event_payload(self) -> None:
+        captured: list[dict] = []
+        event = self._sample_event(severity="error")
+
+        with patch("dockwatch.notifiers.webhook.httpx.AsyncClient", return_value=_CaptureClient(captured)):
+            await WebhookNotifier("https://example.test/webhook").send_event(event)
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["url"], "https://example.test/webhook")
+        self.assertEqual(
+            captured[0]["json"],
+            {
+                "event": {
+                    "kind": "health",
+                    "title": "web restarted",
+                    "message": "container web restarted after failing health check",
+                    "severity": "error",
+                    "fields": {"container": "web", "restarts": "2"},
+                }
+            },
+        )
+
+    async def test_ntfy_event_body_headers_and_tags(self) -> None:
+        captured: list[dict] = []
+        event = self._sample_event(severity="error", kind="prune")
+
+        with patch("dockwatch.notifiers.ntfy.httpx.AsyncClient", return_value=_CaptureClient(captured)):
+            await NtfyNotifier("https://ntfy.test/topic").send_event(event)
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["url"], "https://ntfy.test/topic")
+        self.assertEqual(
+            captured[0]["headers"],
+            {
+                "X-Title": "web restarted",
+                "X-Priority": "5",
+                "X-Tags": "whale,broom",
+                "Content-Type": "text/plain; charset=utf-8",
+            },
+        )
+        self.assertEqual(
+            captured[0]["content"],
+            (
+                b"web restarted\n\n"
+                b"container web restarted after failing health check\n"
+                b"container: web\n"
+                b"restarts: 2"
+            ),
+        )
+
+    async def test_ntfy_event_priority_maps_from_severity(self) -> None:
+        expected = {"info": "3", "warning": "4", "error": "5"}
+        for severity, priority in expected.items():
+            with self.subTest(severity=severity):
+                captured: list[dict] = []
+                with patch(
+                    "dockwatch.notifiers.ntfy.httpx.AsyncClient", return_value=_CaptureClient(captured)
+                ):
+                    await NtfyNotifier("https://ntfy.test/topic").send_event(
+                        self._sample_event(severity=severity)
+                    )
+                self.assertEqual(captured[0]["headers"]["X-Priority"], priority)
+
+    async def test_ntfy_event_tags_fall_back_for_unknown_kind(self) -> None:
+        captured: list[dict] = []
+
+        with patch("dockwatch.notifiers.ntfy.httpx.AsyncClient", return_value=_CaptureClient(captured)):
+            await NtfyNotifier("https://ntfy.test/topic").send_event(self._sample_event(kind="mystery"))
+
+        self.assertEqual(captured[0]["headers"]["X-Tags"], "whale")
+
+    async def test_discord_event_posts_single_embed(self) -> None:
+        captured: list[dict] = []
+        event = self._sample_event(severity="warning")
+
+        with patch("dockwatch.notifiers.discord.httpx.AsyncClient", return_value=_CaptureClient(captured)):
+            await DiscordNotifier("https://discord.test/hook").send_event(event)
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["url"], "https://discord.test/hook")
+        payload = captured[0]["json"]
+        self.assertEqual(sorted(payload), ["embeds"])
+        self.assertEqual(len(payload["embeds"]), 1)
+        embed = payload["embeds"][0]
+        self.assertEqual(embed["title"], "web restarted")
+        self.assertEqual(embed["description"], "container web restarted after failing health check")
+        self.assertEqual(embed["color"], 16753920)
+        self.assertEqual(
+            embed["fields"],
+            [
+                {"name": "container", "value": "web", "inline": False},
+                {"name": "restarts", "value": "2", "inline": False},
+            ],
+        )
+
+    async def test_discord_event_color_maps_from_severity(self) -> None:
+        expected = {"info": 3447003, "warning": 16753920, "error": 15158332}
+        for severity, color in expected.items():
+            with self.subTest(severity=severity):
+                captured: list[dict] = []
+                with patch(
+                    "dockwatch.notifiers.discord.httpx.AsyncClient", return_value=_CaptureClient(captured)
+                ):
+                    await DiscordNotifier("https://discord.test/hook").send_event(
+                        self._sample_event(severity=severity)
+                    )
+                self.assertEqual(captured[0]["json"]["embeds"][0]["color"], color)
+
+    async def test_default_send_event_renders_and_does_not_raise(self) -> None:
+        class MinimalNotifier(BaseNotifier):
+            async def send(self, results: list[UpdateResult]) -> None:
+                return None
+
+        event = self._sample_event()
+
+        with self.assertLogs("dockwatch.notifiers.base", level="INFO") as logs:
+            await MinimalNotifier().send_event(event)
+
+        self.assertIn(render_event_text(event), "\n".join(logs.output))
+
+    async def test_render_event_text_lays_out_title_message_and_fields(self) -> None:
+        self.assertEqual(
+            render_event_text(self._sample_event()),
+            (
+                "web restarted\n\n"
+                "container web restarted after failing health check\n"
+                "container: web\n"
+                "restarts: 2"
+            ),
+        )
+
+    async def test_send_configured_events_returns_empty_without_notifiers(self) -> None:
+        self.assertEqual(await send_configured_events([self._sample_event()], DockwatchConfig()), [])
+
+    async def test_send_configured_events_returns_empty_without_events(self) -> None:
+        config = DockwatchConfig(webhook_url="https://example.test/webhook")
+
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send_event") as send_event_mock:
+            errors = await send_configured_events([], config)
+
+        self.assertEqual(errors, [])
+        send_event_mock.assert_not_called()
+
+    async def test_send_configured_events_aggregates_errors_and_delivers_to_others(self) -> None:
+        config = DockwatchConfig(
+            webhook_url="https://example.test/webhook",
+            discord_webhook="https://discord.test/hook",
+        )
+        delivered: list[NotificationEvent] = []
+
+        async def fail_send_event(self, _event):  # noqa: ANN001
+            raise RuntimeError("failed")
+
+        async def capture_send_event(self, event):  # noqa: ANN001
+            delivered.append(event)
+
+        with patch("dockwatch.notifiers.webhook.WebhookNotifier.send_event", fail_send_event), patch(
+            "dockwatch.notifiers.discord.DiscordNotifier.send_event", capture_send_event
+        ):
+            errors = await send_configured_events([self._sample_event()], config)
+
+        self.assertEqual(errors, ["webhook: failed"])
+        self.assertEqual([event.kind for event in delivered], ["health"])
+
+    async def test_parse_notify_events_accepts_generic_event_kinds(self) -> None:
+        self.assertEqual(
+            _parse_notify_events(["health", "prune", "hook"]),
+            ["health", "prune", "hook"],
+        )
+        self.assertEqual(_parse_notify_events(["update", "bogus"]), ["update"])
+        self.assertEqual(_parse_notify_events(["HEALTH"]), ["health"])
+        self.assertEqual(_parse_notify_events(["nonsense"]), ["update"])
+
+    async def test_update_notification_payload_is_unchanged(self) -> None:
+        captured: list[dict] = []
+
+        with patch("dockwatch.notifiers.webhook.httpx.AsyncClient", return_value=_CaptureClient(captured)):
+            await WebhookNotifier("https://example.test/webhook").send(self._sample_results())
+
+        payload = captured[0]["json"]
+        self.assertEqual(sorted(payload), ["results", "summary"])
+        self.assertEqual(payload["summary"], {"outdated": 1, "up_to_date": 0, "unknown": 0})
+        entry = payload["results"][0]
+        self.assertEqual(entry["name"], "web")
+        self.assertEqual(entry["current"], "1.0.0")
+        self.assertEqual(entry["latest"], "1.1.0")
+        self.assertEqual(entry["deployed_display"], "1.0.0")
+        self.assertEqual(entry["remote_display"], "1.1.0")
+        self.assertEqual(entry["registry_url"], "https://hub.docker.com/_/nginx")
+        self.assertEqual(entry["event"], "update")
+        self.assertEqual(entry["status"], None)
+        self.assertEqual(entry["comparison_basis"], "version")
+        self.assertFalse(entry["digest_drift"])
 
 
 if __name__ == "__main__":

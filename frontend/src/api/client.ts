@@ -1,4 +1,4 @@
-import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig, UserRecord, RoleRecord, SessionUser, UpdateHistoryEntry } from '../types'
+import type { UpdateResult, DockwatchSettings, PortainerEnvironment, TrivyScanResult, ComposeDetectResult, ComposeProjectConfig, UserRecord, RoleRecord, SessionUser, UpdateHistoryEntry, HealthStateRecord, PrunePreview } from '../types'
 
 class ApiError extends Error {
   status: number
@@ -46,6 +46,10 @@ export const api = {
       request<{ ok: boolean; auto_update: string[] }>(`/api/containers/${encodeURIComponent(name)}/auto-update`, { method: 'POST' }),
     disableAutoUpdate: (name: string) =>
       request<{ ok: boolean; auto_update: string[] }>(`/api/containers/${encodeURIComponent(name)}/auto-update`, { method: 'DELETE' }),
+    enableHealthRestart: (name: string) =>
+      request<{ ok: boolean; health_restart: string[] }>(`/api/containers/${encodeURIComponent(name)}/health-restart`, { method: 'POST' }),
+    disableHealthRestart: (name: string) =>
+      request<{ ok: boolean; health_restart: string[] }>(`/api/containers/${encodeURIComponent(name)}/health-restart`, { method: 'DELETE' }),
     scan: (name: string) =>
       request<{ ok: boolean; cached?: boolean; result: TrivyScanResult }>(`/api/containers/${encodeURIComponent(name)}/scan`, { method: 'POST' }),
     getScan: (name: string) =>
@@ -106,6 +110,18 @@ export const api = {
   environments: {
     list: () =>
       request<{ environments: PortainerEnvironment[]; error?: string }>('/api/environments'),
+  },
+  health: {
+    list: () => request<HealthStateRecord[]>('/api/health/containers'),
+    check: () => request<{ ok: boolean; states: HealthStateRecord[] }>('/api/health/check', { method: 'POST' }),
+  },
+  prune: {
+    preview: () => request<{ ok: boolean; preview: PrunePreview }>('/api/prune/preview'),
+    run: (body?: { mode?: string; keep_recent?: number }) =>
+      request<{ ok: boolean; removed: string[]; failed: [string, string][]; reclaimed_bytes: number }>(
+        '/api/prune/images',
+        { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) },
+      ),
   },
   auth: {
     login: (username: string, password: string) =>

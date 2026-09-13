@@ -49,6 +49,9 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - [Portainer Integration](#portainer-integration)
 - [Monitor Multiple Docker PCs (Agents)](#monitor-multiple-docker-pcs-agents)
 - [Vulnerability Scanning (Trivy)](#vulnerability-scanning-trivy)
+- [Health Monitoring](#health-monitoring)
+- [Lifecycle Hooks](#lifecycle-hooks)
+- [Image Pruning](#image-pruning)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Contributing](#contributing)
@@ -68,6 +71,9 @@ Automatic updates are opt-in per container. Nothing updates unless you tell it t
 - Vulnerability scanning via bundled Trivy, cached by image ID
 - Webhook / Discord / ntfy notifications, opt-in per event type
 - Agents: run the agent on other Docker PCs and manage every host's containers from one instance
+- Container health monitoring with opt-in per-container auto-restart and transition notifications
+- Lifecycle hooks (`pre/post update`, `pre_stop`, `pre/post rollback`) run inside the target container
+- Opt-in image pruning with a per-repository retention guard
 - CLI for scripts and cron jobs, same engine as the dashboard
 - Two admin password-recovery paths if you're locked out: `dockwatch config set-password` or the CLI-issued-token `/recover` web flow
 
@@ -195,6 +201,9 @@ dockwatch ignore     <container>
 dockwatch unignore   <container>
 dockwatch serve      [--host 0.0.0.0] [--port 8080]
 dockwatch daemon     [--notify/--no-notify]
+dockwatch health     [--json] [--restart-unhealthy] [--dry-run]
+dockwatch prune      [--dry-run] [--mode dangling|unused] [--keep N] [--json] [--yes]
+dockwatch agent      [--host 0.0.0.0] [--port 8081] [--token TOKEN]
 dockwatch version
 dockwatch config list
 dockwatch config set-password   [--username NAME] [--password PASS] [--create]
@@ -297,20 +306,22 @@ Relevant `.env` variables (container deploy only):
 | `DOCKWATCH_ALLOW_REGISTRATION` | Allow self-service `/register` after the first account exists |
 | `DOCKWATCH_SECURE_COOKIE` | Force the session cookie's `Secure` flag `true`/`false`. Unset by default: dockwatch auto-detects HTTPS (via request scheme or `X-Forwarded-Proto`) and marks the cookie `Secure` only when it sees it. Set explicitly to `true` if you're behind a reverse proxy that doesn't forward that header reliably; set to `false` to force plain HTTP even if HTTPS is detected |
 | `DOCKWATCH_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs (e.g. `172.18.0.0/16`) of reverse proxies trusted to set `X-Forwarded-For`. Unset uses the raw TCP peer IP for rate limiting/lockout (safe default) |
+| `DOCKWATCH_ENABLE_HOOKS` | Set `true` to enable lifecycle-hook execution (and hook configuration). Off by default; hooks are inert unless this is set on the **central** instance |
+| `DOCKWATCH_AGENT_ENABLE_EXEC` | Set `true` on an **agent** to allow the central instance to run lifecycle hooks inside its containers via the exec endpoint. Off by default |
 | `DOCKWATCH_DISABLE_AUTH` | Set `true` to disable login entirely on both API and GUI — every request is treated as an authenticated admin. **Security warning:** this removes all access control (no login, no session, no permission checks) and unauthenticated WebSocket access to live container events. Anyone who can reach the host/port gets full admin control (start/stop/delete containers, edit settings, manage users) with no audit trail. Only use on localhost-only or fully isolated dev networks — never on an internet-facing or shared-network deployment |
 
 ## Authentication & RBAC
 
-Multi-user with permission-based access control: six fixed permissions (`view_containers`, `update_containers`, `delete_containers`, `scan_containers`, `manage_settings`, `manage_users`), combinable into custom roles.
+Multi-user with permission-based access control: eight fixed permissions (`view_containers`, `update_containers`, `restart_containers`, `delete_containers`, `scan_containers`, `prune_images`, `manage_settings`, `manage_users`), combinable into custom roles.
 
 | Built-in role | Permissions |
 | --- | --- |
-| `admin` | all six |
+| `admin` | all eight |
 | `viewer` | `view_containers` only |
 
 Create additional roles with any subset of permissions from the Users page (requires `manage_users`).
 
-**Trust boundary**: `manage_settings`, `update_containers`, and `delete_containers` are effectively admin-equivalent, not safely delegable to a semi-trusted user. All three can reach the host's Docker daemon indirectly. Only grant these to people you'd trust with direct `docker.sock` access.
+**Trust boundary**: `manage_settings`, `update_containers`, `restart_containers`, `delete_containers`, and `prune_images` are effectively admin-equivalent, not safely delegable to a semi-trusted user. All five can reach the host's Docker daemon indirectly. Only grant these to people you'd trust with direct `docker.sock` access.
 
 Sessions are signed cookies, 14-day expiry, no server-side session store.
 
@@ -330,6 +341,9 @@ dockwatch.notify=false
 dockwatch.include_tags=^2\.
 dockwatch.exclude_tags=-rc$
 dockwatch.update_delay_days=7
+dockwatch.health=false                  # opt out of auto-restart entirely
+dockwatch.health.auto_restart=true      # opt in to auto-restart
+dockwatch.hook.pre_update=<command>     # per-phase lifecycle hook (wins over [hooks.<name>])
 ```
 
 Notification URLs are SSRF-guarded when saved from the dashboard: only `http(s)` schemes are accepted, and private/loopback/link-local/reserved addresses (literal or via DNS) are rejected, including cloud metadata endpoints.
@@ -395,6 +409,39 @@ Separate from update checks: inspects the *content* of the image currently runni
 dockwatch scan --container nginx
 dockwatch scan --json   # full CVE details: ID, package, installed/fixed version, severity
 ```
+
+## Health Monitoring
+
+dockwatch periodically samples every discovered container's health state (`running`, `exited`, plus Docker's healthcheck status when the container defines one) and can auto-restart unhealthy containers, notifying on state transitions.
+
+- **Off by default** — `health.enabled = true` in `config.toml` (or Settings → Advanced → Health).
+- **Auto-restart is opt-in per container**, not global. A container restarts only when the global `health.auto_restart` toggle is on **and** the container is opted in via the `dockwatch.health.auto_restart=true` label or the "Auto-restart" checklist in Monitoring Scope. A `dockwatch.health=false` label opts a container out entirely and beats both.
+- Restart decisions are throttled by `unhealthy_after_samples` (consecutive unhealthy samples before acting), `max_restarts_per_hour`, and `cooldown_seconds`, so a crash-looping container is not restarted on every tick.
+- `restart_unhealthy_only = true` (default) restarts only unhealthy containers; `false` also restarts exited containers.
+- `dockwatch health` runs a one-shot check (also reachable from the dashboard's "Run health check" button). Add `--restart-unhealthy` to also restart, and `--dry-run` to only report.
+- Every restart attempt is audited; state transitions notify when `notify_transitions` is on.
+
+## Lifecycle Hooks
+
+Run shell commands *inside* a container at five lifecycle points: `pre_update`, `post_update`, `pre_stop`, `pre_rollback`, and `post_rollback`. `pre_*` phases are blocking — a non-zero exit, execution error, or timeout aborts the operation and leaves the container as-is; `post_*` phases are report-only.
+
+- **Opt-in and gated**: set `DOCKWATCH_ENABLE_HOOKS=true` on the **central** instance to enable hook execution. Configure per-container commands in `config.toml` (`[hooks.<container>]`, one line per command) or via the `dockwatch.hook.<phase>` label, which wins per phase.
+- **Agent-managed containers**: hooks run **only on the central instance** — the central orchestrates them via the agent's exec endpoint, so the agent itself never re-runs them. The agent must set `DOCKWATCH_AGENT_ENABLE_EXEC=true` for exec to be available.
+- **Portainer-managed containers** do not support hooks; the update path reports a non-blocking "hooks are not supported" note.
+- Defaults (`timeout_seconds`, `user`, `workdir`) live in `[hook_defaults]`. `timeout_seconds` is clamped to 1–300 seconds.
+- **A timed-out hook may still be running** — Docker exposes no way to cancel an in-flight exec, so the timeout only stops *dockwatch's* read of the output; the in-container process keeps running until it exits on its own.
+- Every hook attempt is audited (`hook` action in the container's history).
+
+## Image Pruning
+
+Opt-in image pruning removes unused images under a per-repository retention guard. It never uses `docker images prune` (which cannot honour the guard) and never force-removes an image.
+
+- **Off by default** — `prune.enabled = true` in `config.toml` (or Settings → Advanced → Prune).
+- **Dangling-only by default** — `mode = "dangling"` removes only untagged images; `mode = "unused"` also removes tagged-but-unreferenced images.
+- **Retention guard** — `keep_recent_per_repository = 3` keeps the newest N images per repository (union across every repository an image is tagged into); `0` disables the guard.
+- Images in use by any container (running or stopped) are never candidates.
+- `dockwatch prune` previews local candidates and, on confirm, prunes the local daemon **and every enabled agent host** — agent-hosted images are not enumerated locally; each agent runs the same retention-guarded sweep against its own daemon. `--dry-run` is non-mutating.
+- Requires the `prune_images` permission; every removal is audited and a summary notification is sent when `notify = true`.
 
 ## Troubleshooting
 

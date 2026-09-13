@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 
-from .base import BaseNotifier
+from .base import BaseNotifier, NotificationEvent
 from .discord import DiscordNotifier
 from .ntfy import NtfyNotifier
 from .webhook import WebhookNotifier
@@ -46,17 +47,25 @@ def filter_notification_results(results: list[UpdateResult], config: DockwatchCo
     return [result for result in results if _matches_container_filter(result) and _matches_event_filter(result)]
 
 
-async def _send_with_retry(notifier: BaseNotifier, results: list[UpdateResult]) -> None:
+async def _retry(operation: Callable[[], Awaitable[None]]) -> None:
     delay = 0.25
     for attempt in range(1, 4):
         try:
-            await notifier.send(results)
+            await operation()
             return
         except Exception:  # noqa: BLE001
             if attempt >= 3:
                 raise
             await asyncio.sleep(delay)
             delay *= 2
+
+
+async def _send_with_retry(notifier: BaseNotifier, results: list[UpdateResult]) -> None:
+    await _retry(lambda: notifier.send(results))
+
+
+async def _send_event_with_retry(notifier: BaseNotifier, event: NotificationEvent) -> None:
+    await _retry(lambda: notifier.send_event(event))
 
 
 async def send_configured_notifications(
@@ -73,6 +82,28 @@ async def send_configured_notifications(
     for notifier in build_notifiers(config):
         try:
             await _send_with_retry(notifier, filtered)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{notifier.name}: {exc}")
+    return errors
+
+
+async def send_configured_events(
+    events: list[NotificationEvent],
+    config: DockwatchConfig,
+) -> list[str]:
+    """Deliver generic notification events through every configured notifier.
+
+    Mirrors ``send_configured_notifications``: a notifier failure is collected as
+    a ``"<name>: <error>"`` string and never propagates to the caller.
+    """
+    if not events:
+        return []
+
+    errors: list[str] = []
+    for notifier in build_notifiers(config):
+        try:
+            for event in events:
+                await _send_event_with_retry(notifier, event)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{notifier.name}: {exc}")
     return errors

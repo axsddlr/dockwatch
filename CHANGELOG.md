@@ -2,14 +2,15 @@
 
 All notable changes to dockwatch are documented here, grouped by release and then by date so it's easy to see what shipped in a given week.
 
-## [0.13.0] - 2026-09-12
+## [0.13.0] - 2026-09-13
 
-### 2026-09-12
+### 2026-09-13
 
 #### Added
 - **Container health monitoring with opt-in auto-restart** — a health loop samples every discovered container's state and Docker healthcheck status, persists a rolling per-container record, and can auto-restart unhealthy (or exited) containers under an `unhealthy_after_samples` / `max_restarts_per_hour` / `cooldown_seconds` policy. Auto-restart is opt-in per container via the `dockwatch.health.auto_restart=true` label or the Monitoring Scope checklist (a `dockwatch.health=false` label opts out entirely). State transitions notify when `notify_transitions` is on; every restart attempt is audited. Off by default.
 - **Lifecycle hooks** — run shell commands inside a container at five points (`pre_update`, `post_update`, `pre_stop`, `pre_rollback`, `post_rollback`). `pre_*` phases are blocking (a non-zero exit, error, or timeout aborts the operation); `post_*` phases are report-only. Configured per container in `[hooks.<container>]` or via the `dockwatch.hook.<phase>` label, gated by `DOCKWATCH_ENABLE_HOOKS=true`. Agent-managed containers run hooks on the central instance (the agent needs `DOCKWATCH_AGENT_ENABLE_EXEC=true`); every attempt is audited.
 - **Opt-in image pruning with a retention guard** — removes dangling (default) or unused images, never via `docker images prune` and never force-removing, keeping the newest `keep_recent_per_repository` images per repository. Prunes the local daemon and every enabled agent host in one sweep, with a `dockwatch prune --dry-run` preview and a `prune_images` permission. Off by default.
+- **Light/dark theme toggle** — a Sun/Moon button in the dashboard header switches between the existing dark palette and a new light palette. The choice persists in `localStorage` and is applied before first render, so there is no flash of the wrong theme.
 
 #### Changed
 - RBAC now has **eight** fixed permissions: added `restart_containers` (restart + health-restart routes) and `prune_images` (prune routes), both synced into the existing `admin` role on startup.

@@ -9,7 +9,7 @@ from .docker_client import (
 from .models import ContainerInfo, RegistryType, UpdateResult
 from .registry import check_all, check_container, check_dockerhub, check_ghcr
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 __all__ = [
     "ContainerInfo",

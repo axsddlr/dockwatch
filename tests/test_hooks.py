@@ -5,7 +5,12 @@ import asyncio
 import pytest
 from docker.errors import DockerException
 
-from dockwatch.config import AgentConfig, DockwatchConfig, HookConfig, HookDefaultsConfig
+from dockwatch.config import (
+    AgentConfig,
+    DockwatchConfig,
+    HookConfig,
+    HookDefaultsConfig,
+)
 from dockwatch.db import ManifestStore
 from dockwatch.docker_client import ExecResult
 from dockwatch.hooks import (

@@ -86,7 +86,7 @@ async def prune_images(body: PruneBody | None = None) -> Any:
             store=store,
             broadcast=manager.broadcast,
         )
-    except Exception as exc:  # noqa: BLE001 -- a listing failure surfaces as a 502
+    except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {

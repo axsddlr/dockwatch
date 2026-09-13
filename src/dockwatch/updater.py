@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 import logging
-from pathlib import Path
 import re
 import subprocess
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import docker
 from docker.errors import DockerException
@@ -24,9 +24,22 @@ from .config import (
 )
 from .db import ManifestStore
 from .docker_client import DIGEST_PINNED_TAG, DockerConnectionError, get_docker_client
-from .hooks import HookOutcome, HookPhase, HookResult, run_phase, run_phase_sync, skipped_phase
+from .hooks import (
+    HookOutcome,
+    HookPhase,
+    HookResult,
+    run_phase,
+    run_phase_sync,
+    skipped_phase,
+)
 from .integrations import AgentClient, AgentError, PortainerClient, PortainerError
-from .models import ContainerInfo, RegistryType, UpdateResult, deployed_display_result, remote_display
+from .models import (
+    ContainerInfo,
+    RegistryType,
+    UpdateResult,
+    deployed_display_result,
+    remote_display,
+)
 
 # Upper bound for docker compose pull/up; prevents a hung compose command
 # from blocking the update path forever.

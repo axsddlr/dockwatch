@@ -17,7 +17,7 @@ import inspect
 import random
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from docker.errors import DockerException
 
@@ -81,7 +81,7 @@ def _to_naive_utc(dt: datetime) -> datetime:
     """Normalize a datetime to naive UTC so durations never mix tz offsets."""
     if dt.tzinfo is None:
         return dt
-    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.astimezone(UTC).replace(tzinfo=None)
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -265,9 +265,7 @@ def _should_notify_transition(
         return False
     if (previous.state, previous.health_status) == (sample.state, sample.health_status):
         return False
-    if previous.last_notified_key == _transition_key(sample.state, sample.health_status):
-        return False
-    return True
+    return previous.last_notified_key != _transition_key(sample.state, sample.health_status)
 
 
 def _to_sample(info: ContainerInfo) -> HealthSample:
@@ -277,7 +275,7 @@ def _to_sample(info: ContainerInfo) -> HealthSample:
         environment_id=info.environment_id,
         state=info.state,
         health_status=info.health_status,
-        observed_at=datetime.now(timezone.utc).isoformat(),
+        observed_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -366,7 +364,7 @@ class HealthMonitor:
             if inspect.isawaitable(infos):
                 infos = await infos
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             health_restart_names = set(self.store.get_health_restart())
 
             transition_events: list[NotificationEvent] = []

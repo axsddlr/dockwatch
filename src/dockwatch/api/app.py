@@ -4,18 +4,33 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 
+from .. import __version__
+from ..config import (
+    CONFIG_PATH,
+    load_config,
+    migrate_auth_config_to_users,
+    migrate_pinned_ignored_to_db,
+)
 from .deps import get_results_cache, get_results_lock, get_store
-from .routes import auth, containers, environments, health, prune, settings, trivy, users
+from .routes import (
+    auth,
+    containers,
+    environments,
+    health,
+    prune,
+    settings,
+    trivy,
+    users,
+)
 from .security import require_auth, require_permission
 from .ws import router as ws_router
-from .. import __version__
-from ..config import CONFIG_PATH, migrate_auth_config_to_users, migrate_pinned_ignored_to_db, load_config
 
 
 def _find_frontend_dist() -> Path:
@@ -63,15 +78,16 @@ def _prune_old_backups(logger) -> None:
 
 
 @asynccontextmanager
-async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
+async def _lifespan(app: FastAPI):
     import asyncio
     import logging
     import random
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from ..registry import check_all, record_digest_drift_events
     from ..sources import discover_containers
-    from .serializers import serialize_update_results
     from .routes.containers import _merge_check_results
+    from .serializers import serialize_update_results
     from .ws import manager
 
     logger = logging.getLogger("dockwatch")
@@ -110,7 +126,8 @@ async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
                     try:
                         await manager.broadcast("check_complete", {"results": serialized})
                     except Exception:
-                        pass
+                        # A dead socket must not stop the scheduler loop.
+                        logger.debug("check_complete broadcast failed", exc_info=True)
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -120,7 +137,7 @@ async def _lifespan(app: FastAPI):  # noqa: ANN202, ARG001
         while True:
             try:
                 await asyncio.sleep(_BACKUP_INTERVAL_SECONDS)
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
                 dest = _BACKUP_DIR / f"manifests-{stamp}.db"
                 await asyncio.to_thread(store.backup_to, dest)
                 _prune_old_backups(logger)
@@ -196,7 +213,7 @@ def create_app() -> FastAPI:
             app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
-        async def frontend(full_path: str):  # noqa: ANN202
+        async def frontend(full_path: str):
             if _is_reserved_backend_path(full_path):
                 raise HTTPException(status_code=404)
             if Path(full_path).suffix:

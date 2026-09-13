@@ -26,15 +26,15 @@ from dockwatch.updater import (
 
 
 def _result(**kwargs) -> UpdateResult:
-    container_kwargs = dict(
-        name="web",
-        container_id="abcdef123456",
-        image_ref="nginx:1.0.0",
-        registry=RegistryType.DOCKERHUB,
-        namespace="library",
-        image_name="nginx",
-        current_tag="1.0.0",
-    )
+    container_kwargs = {
+        "name": "web",
+        "container_id": "abcdef123456",
+        "image_ref": "nginx:1.0.0",
+        "registry": RegistryType.DOCKERHUB,
+        "namespace": "library",
+        "image_name": "nginx",
+        "current_tag": "1.0.0",
+    }
     container_kwargs.update(kwargs.pop("container_overrides", {}))
     container = ContainerInfo(**container_kwargs)
     return UpdateResult(
@@ -686,16 +686,16 @@ class _FakeClient:
 
 
 def _plain_plan(**kwargs) -> UpdatePlan:
-    fields = dict(
-        container_name="web",
-        container_id="abcdef123456",
-        source="local",
-        mode="plain",
-        allowed=True,
-        image_ref="nginx:1.0.0",
-        deployed_display="1.0.0",
-        remote_display="1.1.0",
-    )
+    fields = {
+        "container_name": "web",
+        "container_id": "abcdef123456",
+        "source": "local",
+        "mode": "plain",
+        "allowed": True,
+        "image_ref": "nginx:1.0.0",
+        "deployed_display": "1.0.0",
+        "remote_display": "1.1.0",
+    }
     fields.update(kwargs)
     return UpdatePlan(**fields)
 

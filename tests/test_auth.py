@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC
 
 
 def _config_path(tmp_path):
@@ -35,7 +36,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password
+    from dockwatch.config import hash_password, load_config, save_config
 
     config = load_config(_config_path(tmp_path))
     config.auth.username = username
@@ -52,7 +53,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
 
 def _reset_deps_store():
     from dockwatch.api import deps as deps_module
-    from dockwatch.db import ManifestStore, STATE_DB_PATH
+    from dockwatch.db import STATE_DB_PATH, ManifestStore
     deps_module._store = ManifestStore(path=STATE_DB_PATH)
 
 
@@ -61,6 +62,7 @@ def _make_client(monkeypatch, tmp_path):
     _patch_db_path(monkeypatch, tmp_path)
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
     from dockwatch.api.routes import auth as auth_module
 
@@ -143,9 +145,9 @@ def test_protected_route_rejects_expired_cookie(monkeypatch, tmp_path) -> None:
     _seed_user(monkeypatch, tmp_path)
     client = _make_client(monkeypatch, tmp_path)
 
-    from dockwatch.db import ManifestStore
+    from dockwatch.api.security import _COOKIE_NAME, _serializer
     from dockwatch.config import load_config
-    from dockwatch.api.security import _serializer, _COOKIE_NAME
+    from dockwatch.db import ManifestStore
 
     config = load_config(_config_path(tmp_path))
     store = ManifestStore()
@@ -242,6 +244,7 @@ def test_first_registration_becomes_admin(monkeypatch, tmp_path) -> None:
     _reset_deps_store()
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
     from dockwatch.api.routes import auth as auth_module
 
@@ -269,6 +272,7 @@ def test_fresh_install_register_then_use_app(monkeypatch, tmp_path) -> None:
     _reset_deps_store()
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
     from dockwatch.api.routes import auth as auth_module
 
@@ -313,6 +317,7 @@ def test_registration_enabled_endpoint_first_user(monkeypatch, tmp_path) -> None
     _reset_deps_store()
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
 
     client = TestClient(app_module.create_app())
@@ -632,7 +637,12 @@ def test_auth_migration_creates_user_from_config(monkeypatch, tmp_path) -> None:
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password, migrate_auth_config_to_users
+    from dockwatch.config import (
+        hash_password,
+        load_config,
+        migrate_auth_config_to_users,
+        save_config,
+    )
     from dockwatch.db import ManifestStore
 
     config = load_config(_config_path(tmp_path))
@@ -658,9 +668,11 @@ def test_recover_admin_cli_targets_earliest_admin(monkeypatch, tmp_path) -> None
     _patch_db_path(monkeypatch, tmp_path)
 
     import hashlib
+
+    from typer.testing import CliRunner
+
     from dockwatch.config import hash_password
     from dockwatch.db import ManifestStore
-    from typer.testing import CliRunner
     from dockwatch.main import app
 
     store = ManifestStore()
@@ -685,8 +697,9 @@ def test_recover_admin_cli_fails_without_admin(monkeypatch, tmp_path) -> None:
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.db import ManifestStore
     from typer.testing import CliRunner
+
+    from dockwatch.db import ManifestStore
     from dockwatch.main import app
 
     ManifestStore()  # ensure db initialized, no users
@@ -700,12 +713,12 @@ def test_recover_admin_cli_fails_without_admin(monkeypatch, tmp_path) -> None:
 def _issue_recovery_token(store, user_id, *, expired=False, used=False):
     import hashlib
     import secrets
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     delta = timedelta(minutes=-1) if expired else timedelta(minutes=15)
-    expires_at = (datetime.now(timezone.utc) + delta).isoformat()
+    expires_at = (datetime.now(UTC) + delta).isoformat()
     token_id = store.create_recovery_token(user_id, token_hash, expires_at)
     if used:
         store.mark_recovery_token_used(token_id)
@@ -823,7 +836,12 @@ def test_auth_migration_is_idempotent(monkeypatch, tmp_path) -> None:
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password, migrate_auth_config_to_users
+    from dockwatch.config import (
+        hash_password,
+        load_config,
+        migrate_auth_config_to_users,
+        save_config,
+    )
     from dockwatch.db import ManifestStore
 
     config = load_config(_config_path(tmp_path))

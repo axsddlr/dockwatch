@@ -223,9 +223,11 @@ class DeleteTests(unittest.TestCase):
 
         fake_client = FakeDockerClient()
         fake_client.container_get_raises = DockerException("container not found")
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                delete_container("nonexistent")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_container("nonexistent")
 
         self.assertIn("container not found", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -238,10 +240,12 @@ class DeleteTests(unittest.TestCase):
         container.remove = lambda force=False: (_ for _ in ()).throw(
             DockerException("container in use")
         )
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with patch.object(fake_client, "get", return_value=container):
-                with self.assertRaises(DockerException) as ctx:
-                    delete_container("web")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            patch.object(fake_client, "get", return_value=container),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_container("web")
 
         self.assertIn("container in use", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -251,9 +255,11 @@ class DeleteTests(unittest.TestCase):
 
         fake_client = FakeDockerClient()
         fake_client.image_remove_raises = DockerException("image in use")
-        with patch("dockwatch.docker_client.docker.from_env", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                delete_image("sha256:abc123")
+        with (
+            patch("dockwatch.docker_client.docker.from_env", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            delete_image("sha256:abc123")
 
         self.assertIn("image in use", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -353,7 +359,7 @@ class FakeExecStream:
         # "running" (ExitCode=None) status until the stream is exhausted.
         self.exhausted = False
 
-    def __iter__(self) -> "FakeExecStream":
+    def __iter__(self) -> FakeExecStream:
         return self
 
     def __next__(self) -> bytes:
@@ -501,9 +507,11 @@ class RestartContainerTests(unittest.TestCase):
     def test_restart_container_closes_client_when_container_is_missing(self) -> None:
         fake_client = FakeRestartClient()
         fake_client.get_raises = DockerException("no such container")
-        with patch("dockwatch.docker_client.get_docker_client", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                restart_container("web")
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            restart_container("web")
 
         self.assertIn("no such container", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -511,9 +519,11 @@ class RestartContainerTests(unittest.TestCase):
     def test_restart_container_propagates_restart_failure_and_closes(self) -> None:
         fake_client = FakeRestartClient()
         fake_client.container.restart_raises = DockerException("cannot restart")
-        with patch("dockwatch.docker_client.get_docker_client", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                restart_container("web")
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            restart_container("web")
 
         self.assertIn("cannot restart", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -603,7 +613,7 @@ class ExecInContainerTests(unittest.TestCase):
         api = FakeExecApi()
         # 5000 characters but 10000 UTF-8 bytes: under the code-point reading of
         # the 8 KiB cap, over its byte reading.
-        api.exec_start_returns = "é".encode("utf-8") * 5000
+        api.exec_start_returns = "é".encode() * 5000
 
         result, _ = _exec_call(api)
 
@@ -632,9 +642,11 @@ class ExecInContainerTests(unittest.TestCase):
         self.addCleanup(gate.set)
         client = FakeExecDockerClient(api)
 
-        with patch("dockwatch.docker_client.get_docker_client", return_value=client):
-            with self.assertRaises(DockerException) as ctx:
-                exec_in_container("web", "sleep 999", timeout_seconds=1)
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            exec_in_container("web", "sleep 999", timeout_seconds=1)
 
         self.assertIn("timed out", str(ctx.exception))
         self.assertIn("1s", str(ctx.exception))
@@ -651,9 +663,11 @@ class ExecInContainerTests(unittest.TestCase):
         api.exec_start_error = DockerException("exec failed")
         client = FakeExecDockerClient(api)
 
-        with patch("dockwatch.docker_client.get_docker_client", return_value=client):
-            with self.assertRaises(DockerException) as ctx:
-                exec_in_container("web", "echo hi")
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            exec_in_container("web", "echo hi")
 
         self.assertIn("exec failed", str(ctx.exception))
         self.assertTrue(client.close_called)
@@ -687,9 +701,11 @@ class ExecInContainerTests(unittest.TestCase):
         api.exec_create_error = DockerException("no such container")
         client = FakeExecDockerClient(api)
 
-        with patch("dockwatch.docker_client.get_docker_client", return_value=client):
-            with self.assertRaises(DockerException) as ctx:
-                exec_in_container("web", "echo hi")
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            exec_in_container("web", "echo hi")
 
         self.assertIn("no such container", str(ctx.exception))
         self.assertTrue(client.close_called)
@@ -749,9 +765,11 @@ class ListImagesTests(unittest.TestCase):
     def test_list_images_propagates_docker_exception_and_closes(self) -> None:
         fake_client = FakeImagesClient()
         fake_client.list_raises = DockerException("daemon unavailable")
-        with patch("dockwatch.docker_client.get_docker_client", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                list_images()
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            list_images()
 
         self.assertIn("daemon unavailable", str(ctx.exception))
         self.assertTrue(fake_client.close_called)
@@ -822,9 +840,11 @@ class RemoveImageTests(unittest.TestCase):
     def test_remove_image_propagates_docker_exception_and_closes(self) -> None:
         fake_client = FakeImagesClient()
         fake_client.remove_raises = DockerException("image is in use")
-        with patch("dockwatch.docker_client.get_docker_client", return_value=fake_client):
-            with self.assertRaises(DockerException) as ctx:
-                remove_image("sha256:abc123")
+        with (
+            patch("dockwatch.docker_client.get_docker_client", return_value=fake_client),
+            self.assertRaises(DockerException) as ctx,
+        ):
+            remove_image("sha256:abc123")
 
         self.assertIn("image is in use", str(ctx.exception))
         self.assertTrue(fake_client.close_called)

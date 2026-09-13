@@ -36,7 +36,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password
+    from dockwatch.config import hash_password, load_config, save_config
 
     config = load_config(_config_path(tmp_path))
     config.auth.username = username
@@ -67,7 +67,7 @@ def _seed_role_user(monkeypatch, tmp_path, username, role_name, permissions, pas
 
 def _reset_deps_store():
     from dockwatch.api import deps as deps_module
-    from dockwatch.db import ManifestStore, STATE_DB_PATH
+    from dockwatch.db import STATE_DB_PATH, ManifestStore
 
     deps_module._store = ManifestStore(path=STATE_DB_PATH)
 
@@ -287,7 +287,7 @@ def test_images_threads_mode_and_keep_overrides_to_every_agent(monkeypatch, tmp_
     client = _make_client(monkeypatch, tmp_path)
     _login(client)
 
-    monkeypatch.setattr("dockwatch.docker_client.list_images", lambda: [])
+    monkeypatch.setattr("dockwatch.docker_client.list_images", list)
     monkeypatch.setattr("dockwatch.docker_client.in_use_image_ids", lambda: set())
 
     fake_agent = MagicMock()
@@ -316,7 +316,7 @@ def test_images_more_generous_override_honoured_for_agents(monkeypatch, tmp_path
     client = _make_client(monkeypatch, tmp_path)
     _login(client)
 
-    monkeypatch.setattr("dockwatch.docker_client.list_images", lambda: [])
+    monkeypatch.setattr("dockwatch.docker_client.list_images", list)
     monkeypatch.setattr("dockwatch.docker_client.in_use_image_ids", lambda: set())
 
     fake_agent = MagicMock()
@@ -346,7 +346,6 @@ class PruneSchedulerWiringTests(unittest.IsolatedAsyncioTestCase):
             def __await__(self):
                 if False:
                     yield None
-                return None
 
         def _fake_create_task(coro):
             coro.close()
@@ -389,7 +388,6 @@ class DaemonPruneWiringTests(unittest.IsolatedAsyncioTestCase):
             def __await__(self):
                 if False:
                     yield None
-                return None
 
         def _fake_create_task(coro):
             coro.close()

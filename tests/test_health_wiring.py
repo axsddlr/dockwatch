@@ -37,7 +37,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password
+    from dockwatch.config import hash_password, load_config, save_config
 
     config = load_config(_config_path(tmp_path))
     config.auth.username = username
@@ -68,7 +68,7 @@ def _seed_role_user(monkeypatch, tmp_path, username, role_name, permissions, pas
 
 def _reset_deps_store():
     from dockwatch.api import deps as deps_module
-    from dockwatch.db import ManifestStore, STATE_DB_PATH
+    from dockwatch.db import STATE_DB_PATH, ManifestStore
 
     deps_module._store = ManifestStore(path=STATE_DB_PATH)
 
@@ -172,7 +172,6 @@ class HealthSchedulerWiringTests(unittest.IsolatedAsyncioTestCase):
             def __await__(self):
                 if False:
                     yield None
-                return None
 
         def _fake_create_task(coro):
             coro.close()

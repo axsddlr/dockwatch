@@ -64,9 +64,7 @@ def _hooks_changed(body: dict[str, Any], current: dict[str, Any]) -> bool:
     incoming_defaults = body.get("hook_defaults")
     if incoming_hooks is not None and incoming_hooks != _normalize_hooks(current.get("hooks")):
         return True
-    if incoming_defaults is not None and incoming_defaults != current.get("hook_defaults"):
-        return True
-    return False
+    return bool(incoming_defaults is not None and incoming_defaults != current.get("hook_defaults"))
 
 
 def _is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

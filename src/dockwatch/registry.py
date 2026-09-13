@@ -8,7 +8,7 @@ import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 FLOATING_TAGS = {"latest", "edge", "dev", "nightly"}
 # Multi-arch manifest types listed first so registries return manifest list digests
 # (matching what Docker stores in RepoDigests for multi-arch images)
-MANIFEST_ACCEPT_HEADERS = ", ".join([
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.docker.distribution.manifest.v2+json",
-    "application/vnd.oci.image.manifest.v1+json",
-])
+MANIFEST_ACCEPT_HEADERS = (
+    "application/vnd.docker.distribution.manifest.list.v2+json, "
+    "application/vnd.oci.image.index.v1+json, "
+    "application/vnd.docker.distribution.manifest.v2+json, "
+    "application/vnd.oci.image.manifest.v1+json"
+)
 LINUXSERVER_SUFFIX_RE = re.compile(r"(?i)-ls(\d+)$")
 ARCH_TAG_RE = re.compile(r"(?i)[-_.](arm64|amd64|aarch64|armv?\d*|armhf|x86[-_]64|i386|s390x|ppc64le)$")
 DISTRO_TAG_RE = re.compile(r"^(?:v)?\d+(?:\.\d+)*(?:[-_.]([a-zA-Z].*))?$")
@@ -86,10 +86,10 @@ def _apply_update_delay(
     try:
         first_seen = datetime.fromisoformat(seen_at)
         if first_seen.tzinfo is None:
-            first_seen = first_seen.replace(tzinfo=timezone.utc)
+            first_seen = first_seen.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return result
-    elapsed_days = (datetime.now(timezone.utc) - first_seen).total_seconds() / 86400
+    elapsed_days = (datetime.now(UTC) - first_seen).total_seconds() / 86400
     if elapsed_days >= delay_days:
         return result
     remaining = math.ceil(delay_days - elapsed_days)
@@ -527,7 +527,9 @@ async def _check_repository_tags(
     _MAX_TAGS = 25000
 
     for _page in range(_MAX_PAGES):
-        tags_response = await _request_with_retry(lambda: client.get(next_url, headers=headers))
+        # Bind the page URL as a default argument so the closure keeps this
+        # page's URL even if the lambda is retried after next_url is reassigned.
+        tags_response = await _request_with_retry(lambda url=next_url: client.get(url, headers=headers))
         if tags_response.status_code == 404:
             return _skip_result(info, not_found_reason)
         tags_response.raise_for_status()
@@ -685,7 +687,8 @@ async def _fetch_dockerhub_tags_via_rest(
             f"{_DH_REST_TAGS_URL}/{namespace}/{image_name}/tags"
             f"?page_size={_DH_REST_PAGE_SIZE}&page={page}&ordering=last_updated"
         )
-        response = await _request_with_retry(lambda: client.get(url))
+        # Bind the URL as a default so a retry cannot pick up a later page's URL.
+        response = await _request_with_retry(lambda target=url: client.get(target))
         if response.status_code == 404:
             break
         response.raise_for_status()

@@ -31,7 +31,7 @@ def _patch_paths(monkeypatch, tmp_path):
 
 
 def _seed_admin(monkeypatch, tmp_path):
-    config_path, db_path = _patch_paths(monkeypatch, tmp_path)
+    config_path, _db_path = _patch_paths(monkeypatch, tmp_path)
 
     from dockwatch.config import hash_password, load_config, save_config
 
@@ -58,7 +58,7 @@ def _make_client(monkeypatch, tmp_path):
     from dockwatch.api import app as app_module
     from dockwatch.api import deps as deps_module
     from dockwatch.api.routes import auth as auth_module
-    from dockwatch.db import ManifestStore, STATE_DB_PATH
+    from dockwatch.db import STATE_DB_PATH, ManifestStore
 
     auth_module._failed_attempts.clear()
     deps_module._store = ManifestStore(path=STATE_DB_PATH)

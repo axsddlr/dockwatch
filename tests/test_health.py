@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from dockwatch.config import AgentConfig, DockwatchConfig
@@ -28,7 +28,7 @@ from dockwatch.models import ContainerInfo, RegistryType
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _info(
@@ -105,15 +105,15 @@ def _record(
 
 
 def _policy(**kwargs: object) -> HealthPolicy:
-    defaults: dict[str, object] = dict(
-        enabled=True,
-        auto_restart=True,
-        restart_unhealthy_only=True,
-        unhealthy_after_samples=2,
-        max_restarts_per_hour=3,
-        cooldown_seconds=300,
-        notify_transitions=True,
-    )
+    defaults: dict[str, object] = {
+        "enabled": True,
+        "auto_restart": True,
+        "restart_unhealthy_only": True,
+        "unhealthy_after_samples": 2,
+        "max_restarts_per_hour": 3,
+        "cooldown_seconds": 300,
+        "notify_transitions": True,
+    }
     defaults.update(kwargs)
     return HealthPolicy(**defaults)
 

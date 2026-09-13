@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from docker.errors import DockerException
 
@@ -37,7 +37,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
     _patch_config_path(monkeypatch, tmp_path)
     _patch_db_path(monkeypatch, tmp_path)
 
-    from dockwatch.config import load_config, save_config, hash_password
+    from dockwatch.config import hash_password, load_config, save_config
 
     config = load_config(_config_path(tmp_path))
     config.auth.username = username
@@ -55,7 +55,7 @@ def _seed_user(monkeypatch, tmp_path, username="admin", password="correct-passwo
 
 def _reset_deps_store():
     from dockwatch.api import deps as deps_module
-    from dockwatch.db import ManifestStore, STATE_DB_PATH
+    from dockwatch.db import STATE_DB_PATH, ManifestStore
 
     deps_module._store = ManifestStore(path=STATE_DB_PATH)
 
@@ -65,6 +65,7 @@ def _make_client(monkeypatch, tmp_path):
     _patch_db_path(monkeypatch, tmp_path)
 
     from fastapi.testclient import TestClient
+
     from dockwatch.api import app as app_module
     from dockwatch.api.routes import auth as auth_module
 
@@ -80,7 +81,7 @@ def _login(client, username="admin", password="correct-password"):
 
 def _make_test_result(name: str, source: str = "local", environment_id: str | None = None):
     """Create a mock UpdateResult for testing."""
-    from dockwatch.models import UpdateResult, ContainerInfo, RegistryType
+    from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 
     container_info = ContainerInfo(
         name=name,
@@ -113,7 +114,7 @@ def test_restart_container_portainer_success(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=True)
@@ -196,7 +197,7 @@ def test_restart_container_portainer_disabled(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=False)
@@ -386,7 +387,7 @@ def test_delete_container_portainer_success(monkeypatch, tmp_path):
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
     # Mock the config
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=True)
@@ -427,7 +428,7 @@ def test_delete_container_portainer_with_force(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=True)
@@ -480,7 +481,7 @@ def test_delete_container_portainer_error(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=True)
@@ -510,7 +511,7 @@ def test_delete_container_portainer_logs_action_success(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=True)
@@ -555,7 +556,7 @@ def test_delete_container_portainer_disabled(monkeypatch, tmp_path):
     mock_portainer_init = MagicMock(return_value=mock_portainer_client)
     monkeypatch.setattr("dockwatch.api.routes.containers.PortainerClient", mock_portainer_init)
 
-    from dockwatch.config import load_config, PortainerConfig
+    from dockwatch.config import PortainerConfig, load_config
 
     config = load_config(_config_path(tmp_path))
     config.portainer = PortainerConfig(url="http://portainer:9000", api_key="test-key", enabled=False)

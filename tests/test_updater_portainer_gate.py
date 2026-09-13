@@ -11,21 +11,21 @@ from dockwatch.updater import UpdatePlan, execute_portainer_compose_update
 
 
 def _plan(**overrides) -> UpdatePlan:
-    defaults = dict(
-        container_name="svc",
-        container_id="container-svc",
-        source="portainer",
-        mode="portainer-compose",
-        allowed=True,
-        image_ref="repo/svc:1.0",
-        deployed_display="1.0",
-        remote_display="1.1",
-        compose_project="stack",
-        compose_service="svc",
-        current_tag="1.0",
-        remote_tag="1.1",
-        environment_id="5",
-    )
+    defaults = {
+        "container_name": "svc",
+        "container_id": "container-svc",
+        "source": "portainer",
+        "mode": "portainer-compose",
+        "allowed": True,
+        "image_ref": "repo/svc:1.0",
+        "deployed_display": "1.0",
+        "remote_display": "1.1",
+        "compose_project": "stack",
+        "compose_service": "svc",
+        "current_tag": "1.0",
+        "remote_tag": "1.1",
+        "environment_id": "5",
+    }
     defaults.update(overrides)
     return UpdatePlan(**defaults)
 
@@ -55,7 +55,7 @@ class ExecutePortainerComposeUpdateTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.success)
         client.update_stack.assert_awaited_once()
-        args, kwargs = client.update_stack.await_args
+        args, _kwargs = client.update_stack.await_args
         self.assertEqual(args[0], 3)
         self.assertEqual(args[1], 7)
 

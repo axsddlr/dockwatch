@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import httpx
 
-from .base import BaseNotifier, NotificationEvent, render_event_text
 from ..links import build_registry_url
-from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
+from ..models import (
+    UpdateResult,
+    comparison_summary,
+    deployed_display_result,
+    remote_display,
+)
+from .base import BaseNotifier, NotificationEvent, render_event_text
 
 # ntfy priorities: 3 = default, 4 = high, 5 = urgent.
 SEVERITY_PRIORITIES: dict[str, str] = {"info": "3", "warning": "4", "error": "5"}

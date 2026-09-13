@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
-from dockwatch.api.serializers import deserialize_settings, serialize_settings, serialize_update_result
-from dockwatch.config import MAX_HOOK_TIMEOUT_SECONDS, DockwatchConfig, HealthConfig, HookConfig, HookDefaultsConfig, PruneConfig
+from dockwatch.api.serializers import (
+    deserialize_settings,
+    serialize_settings,
+    serialize_update_result,
+)
+from dockwatch.config import (
+    MAX_HOOK_TIMEOUT_SECONDS,
+    DockwatchConfig,
+    HealthConfig,
+    HookConfig,
+    HookDefaultsConfig,
+    PruneConfig,
+)
 from dockwatch.db import ManifestStore
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 
@@ -113,10 +124,10 @@ class SettingsSerializationTests(unittest.TestCase):
 
 class TestSettingsHooksGate:
     def _setup_client(self, tmp_path, monkeypatch):
-        import dockwatch.config as config_module
-        import dockwatch.db as db_module
         from fastapi.testclient import TestClient
 
+        import dockwatch.config as config_module
+        import dockwatch.db as db_module
         from dockwatch.api import deps as deps_module
         from dockwatch.api import rate_limit
         from dockwatch.api.app import create_app

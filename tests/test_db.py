@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from dockwatch.db import ManifestStore
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from contextlib import closing
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 import json as _json
 import sqlite3
+from contextlib import closing
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 from .models import ContainerInfo, TrivyFinding, TrivyScanResult
 
@@ -452,7 +452,7 @@ class ManifestStore:
         remote_digest: str | None,
         checked_at: str | None = None,
     ) -> str | None:
-        observed_at = checked_at or datetime.now(timezone.utc).isoformat()
+        observed_at = checked_at or datetime.now(UTC).isoformat()
         image_key = build_image_key(info)
         legacy_key = build_legacy_image_key(info)
         event: str | None = None
@@ -519,7 +519,7 @@ class ManifestStore:
         *,
         cache_ttl_minutes: int = 60,
     ) -> TrivyScanResult | None:
-        import json  # noqa: PLC0415
+        import json
 
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
@@ -535,7 +535,7 @@ class ManifestStore:
         image_ref, scan_json, critical, high, medium, low, scanned_at = row
         try:
             scanned_dt = datetime.fromisoformat(scanned_at)
-            age = (datetime.now(timezone.utc) - scanned_dt).total_seconds()
+            age = (datetime.now(UTC) - scanned_dt).total_seconds()
             if age > cache_ttl_minutes * 60:
                 return None
         except (ValueError, TypeError):
@@ -558,9 +558,9 @@ class ManifestStore:
         )
 
     def trivy_cache_put(self, image_id: str, result: TrivyScanResult) -> None:
-        import json  # noqa: PLC0415
+        import json
 
-        scanned_at = datetime.now(timezone.utc).isoformat()
+        scanned_at = datetime.now(UTC).isoformat()
         findings_data = json.dumps([{
             "vulnerability_id": f.vulnerability_id,
             "pkg_name": f.pkg_name,
@@ -627,7 +627,7 @@ class ManifestStore:
 
     def _set_flags(self, kind: str, names: list[str]) -> None:
         deduped = list(dict.fromkeys(n.strip() for n in names if n.strip()))
-        observed_at = datetime.now(timezone.utc).isoformat()
+        observed_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM container_flags WHERE kind = ?", (kind,))
@@ -653,7 +653,7 @@ class ManifestStore:
 
     def add_flag(self, name: str, kind: str) -> bool:
         name = name.strip()
-        observed_at = datetime.now(timezone.utc).isoformat()
+        observed_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -791,7 +791,7 @@ class ManifestStore:
 
     def create_role(self, name: str, permissions: list[str]) -> bool:
         name = name.strip()
-        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        normalized = sorted({p for p in permissions if p in VALID_PERMISSIONS})
         if not normalized:
             raise ValueError("Role must have at least one valid permission.")
         with closing(self._connect()) as connection, connection:
@@ -809,7 +809,7 @@ class ManifestStore:
 
     def update_role_permissions(self, name: str, permissions: list[str]) -> bool:
         name = name.strip()
-        normalized = sorted(set(p for p in permissions if p in VALID_PERMISSIONS))
+        normalized = sorted({p for p in permissions if p in VALID_PERMISSIONS})
         if not normalized:
             raise ValueError("Role must have at least one valid permission.")
         with closing(self._connect()) as connection, connection:
@@ -865,7 +865,7 @@ class ManifestStore:
     def create_user(self, username: str, password_hash: str, role_name: str) -> int:
         username = username.strip()
         role_name = role_name.strip()
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -979,7 +979,7 @@ class ManifestStore:
     # --- Recovery token methods ---
 
     def create_recovery_token(self, user_id: int, token_hash: str, expires_at: str) -> int:
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
@@ -1001,7 +1001,7 @@ class ManifestStore:
         return RecoveryTokenRecord(*row)
 
     def mark_recovery_token_used(self, token_id: int) -> bool:
-        used_at = datetime.now(timezone.utc).isoformat()
+        used_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
@@ -1041,7 +1041,7 @@ class ManifestStore:
         user_id: int | None = None,
         username: str | None = None,
     ) -> int:
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(

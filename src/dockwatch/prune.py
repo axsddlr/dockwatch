@@ -372,7 +372,7 @@ async def prune_all(
     try:
         images = await asyncio.to_thread(docker_client.list_images)
         in_use_ids = await asyncio.to_thread(docker_client.in_use_image_ids)
-    except Exception as exc:  # noqa: BLE001 -- balanced broadcast, then re-raise for the caller
+    except Exception as exc:
         if broadcast is not None:
             await broadcast(
                 "prune_complete",

@@ -185,7 +185,7 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             images = await client.list_images(4)
 
         self.assertEqual([i["Id"] for i in images], ["sha256:a", "sha256:b"])
-        url, headers, _ = mock_client.calls[0]
+        url, _headers, _ = mock_client.calls[0]
         self.assertEqual(url, "https://portainer.test/api/endpoints/4/docker/images/json")
 
     async def test_list_images_wraps_http_error(self) -> None:
@@ -252,7 +252,7 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["Id"], 9)
-        url, headers, params = mock_client.calls[0]
+        url, _headers, params = mock_client.calls[0]
         self.assertEqual(url, "https://portainer.test/api/stacks/create/standalone/string")
         self.assertEqual(params, {"endpointId": 1})
 
@@ -269,7 +269,7 @@ class PortainerTests(unittest.IsolatedAsyncioTestCase):
             client = PortainerClient(base_url="https://portainer.test", api_key="token")
             await client.update_stack(7, 1, stack_file_content="services: {}", env=[])
 
-        url, headers, params = mock_client.calls[0]
+        url, _headers, params = mock_client.calls[0]
         self.assertEqual(url, "https://portainer.test/api/stacks/7")
         self.assertEqual(params, {"endpointId": 1})
 

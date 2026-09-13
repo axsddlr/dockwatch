@@ -22,7 +22,12 @@ from pydantic import BaseModel, Field
 
 from .. import __version__, docker_client
 from ..config import MAX_HOOK_TIMEOUT_SECONDS, VALID_PRUNE_MODES, DockwatchConfig
-from ..docker_client import DockerConnectionError, get_docker_client, get_running_containers, parse_image_ref
+from ..docker_client import (
+    DockerConnectionError,
+    get_docker_client,
+    get_running_containers,
+    parse_image_ref,
+)
 from ..models import ContainerInfo
 from ..prune import execute_prune, plan_prune
 from ..updater import UpdateExecutionError, UpdatePlan, _execute_plain_update
@@ -214,7 +219,7 @@ def create_agent_app(token: str) -> FastAPI:
             container.restart(timeout=10)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: restart of '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="restart failed") from exc
         finally:
@@ -243,7 +248,7 @@ def create_agent_app(token: str) -> FastAPI:
             )
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: exec in '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="exec failed") from exc
         finally:
@@ -262,7 +267,7 @@ def create_agent_app(token: str) -> FastAPI:
             container.remove(force=force)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: delete of container '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="delete failed") from exc
         finally:
@@ -276,7 +281,7 @@ def create_agent_app(token: str) -> FastAPI:
             client.images.remove(image_id, force=force)
         except docker.errors.ImageNotFound as exc:
             raise HTTPException(status_code=404, detail=f"image '{image_id}' not found") from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: delete of image '%s' failed: %s", image_id, exc)
             raise HTTPException(status_code=502, detail="image delete failed") from exc
         finally:
@@ -290,7 +295,7 @@ def create_agent_app(token: str) -> FastAPI:
         try:
             images = await asyncio.to_thread(docker_client.list_images)
             in_use = await asyncio.to_thread(docker_client.in_use_image_ids)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: image prune listing failed: %s", exc)
             raise HTTPException(status_code=502, detail="docker connection failed") from exc
 
@@ -301,7 +306,7 @@ def create_agent_app(token: str) -> FastAPI:
         config = DockwatchConfig()
         try:
             result = await execute_prune(preview, config=config, store=None, source="local")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: image prune failed: %s", exc)
             raise HTTPException(status_code=502, detail="image prune failed") from exc
 
@@ -327,7 +332,7 @@ def create_agent_app(token: str) -> FastAPI:
             logs = container.logs(tail=tail, timestamps=True)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _logger.error("agent: logs request for '%s' failed: %s", container_id, exc)
             raise HTTPException(status_code=502, detail="logs request failed") from exc
         finally:

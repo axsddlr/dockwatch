@@ -6,7 +6,12 @@ from unittest.mock import patch
 from rich.console import Console
 
 from dockwatch.display import render_update_table
-from dockwatch.models import ContainerInfo, RegistryType, UpdateResult, deployed_display_result
+from dockwatch.models import (
+    ContainerInfo,
+    RegistryType,
+    UpdateResult,
+    deployed_display_result,
+)
 from dockwatch.semver import compare_versions
 
 

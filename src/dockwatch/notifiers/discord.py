@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import httpx
 
-from .base import BaseNotifier, NotificationEvent
 from ..links import build_registry_url
-from ..models import UpdateResult, comparison_summary, deployed_display_result, remote_display
+from ..models import (
+    UpdateResult,
+    comparison_summary,
+    deployed_display_result,
+    remote_display,
+)
+from .base import BaseNotifier, NotificationEvent
 
 SEVERITY_COLORS: dict[str, int] = {
     "info": 3447003,      # blue

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
@@ -420,7 +420,7 @@ class UnpinUnignoreTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _run(self, *args: str):  # noqa: ANN202
+    def _run(self, *args: str):
         from dockwatch.db import ManifestStore
 
         runner = CliRunner()

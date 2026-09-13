@@ -5,21 +5,31 @@ import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
 
-from dockwatch.agent.protocol import deserialize_container_info, serialize_container_info
+from dockwatch.agent.protocol import (
+    deserialize_container_info,
+    serialize_container_info,
+)
 from dockwatch.agent.server import create_agent_app
 from dockwatch.config import AgentConfig, DockwatchConfig, HookConfig
 from dockwatch.db import ManifestStore
-from dockwatch.hooks import HookOutcome, HookPhase, HookResult
 from dockwatch.docker_client import ExecResult
+from dockwatch.hooks import HookOutcome, HookPhase, HookResult
 from dockwatch.integrations.agent import AgentClient, AgentError
 from dockwatch.models import ContainerInfo, RegistryType, UpdateResult
 from dockwatch.sources import discover_agents
-from dockwatch.updater import UpdateExecutionResult, build_rollback_plan, build_update_plan, execute_agent_rollback, execute_agent_update
+from dockwatch.updater import (
+    UpdateExecutionResult,
+    build_rollback_plan,
+    build_update_plan,
+    execute_agent_rollback,
+    execute_agent_update,
+)
 
 
 class MockResponse:
@@ -137,12 +147,14 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(items, [{"name": "web"}])
 
     async def test_list_containers_rejects_missing_key(self) -> None:
-        with patch(
-            "dockwatch.integrations.agent.httpx.AsyncClient",
-            return_value=MockAsyncClient([MockResponse(200, {"nope": []})]),
+        with (
+            patch(
+                "dockwatch.integrations.agent.httpx.AsyncClient",
+                return_value=MockAsyncClient([MockResponse(200, {"nope": []})]),
+            ),
+            self.assertRaises(AgentError),
         ):
-            with self.assertRaises(AgentError):
-                await AgentClient(base_url="http://agent.test", token="secret").list_containers()
+            await AgentClient(base_url="http://agent.test", token="secret").list_containers()
 
     async def test_update_posts_image_ref(self) -> None:
         mock = MockAsyncClient([MockResponse(200, {"ok": True, "message": "updated"})])
@@ -163,12 +175,14 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["Authorization"], "Bearer s3cret-test-token-16chars")
 
     async def test_http_error_raises_agent_error(self) -> None:
-        with patch(
-            "dockwatch.integrations.agent.httpx.AsyncClient",
-            return_value=MockAsyncClient([MockResponse(401)]),
+        with (
+            patch(
+                "dockwatch.integrations.agent.httpx.AsyncClient",
+                return_value=MockAsyncClient([MockResponse(401)]),
+            ),
+            self.assertRaises(AgentError),
         ):
-            with self.assertRaises(AgentError):
-                await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
+            await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
 
     async def test_retries_once_on_connection_error(self) -> None:
         request = httpx.Request("GET", "https://agent.test")
@@ -181,9 +195,11 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_does_not_retry_on_http_status_error(self) -> None:
         mock = MockAsyncClient([MockResponse(401)])
-        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock):
-            with self.assertRaises(AgentError):
-                await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
+        with (
+            patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock),
+            self.assertRaises(AgentError),
+        ):
+            await AgentClient(base_url="http://agent.test", token="secret").restart_container("abc123")
         self.assertEqual(len(mock.calls), 1)
 
     async def test_exec_container_posts_and_returns_payload(self) -> None:
@@ -202,14 +218,16 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_exec_container_wraps_http_error_in_agent_error(self) -> None:
-        with patch(
-            "dockwatch.integrations.agent.httpx.AsyncClient",
-            return_value=MockAsyncClient([MockResponse(502)]),
+        with (
+            patch(
+                "dockwatch.integrations.agent.httpx.AsyncClient",
+                return_value=MockAsyncClient([MockResponse(502)]),
+            ),
+            self.assertRaises(AgentError),
         ):
-            with self.assertRaises(AgentError):
-                await AgentClient(base_url="http://agent.test", token="secret").exec_container(
-                    "abc123", command="echo hi"
-                )
+            await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                "abc123", command="echo hi"
+            )
 
     async def test_exec_container_does_not_retry_on_read_timeout(self) -> None:
         # A ReadTimeout can fire after the server has already executed the
@@ -219,13 +237,14 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
             httpx.ReadTimeout("timed out", request=request),
             MockResponse(200, {"exit_code": 0, "output": "late", "truncated": False}),
         ])
-        with patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock), patch(
-            "dockwatch.integrations.agent.asyncio.sleep", new=AsyncMock(),
+        with (
+            patch("dockwatch.integrations.agent.httpx.AsyncClient", return_value=mock),
+            patch("dockwatch.integrations.agent.asyncio.sleep", new=AsyncMock()),
+            self.assertRaises(AgentError),
         ):
-            with self.assertRaises(AgentError):
-                await AgentClient(base_url="http://agent.test", token="secret").exec_container(
-                    "abc123", command="echo hi"
-                )
+            await AgentClient(base_url="http://agent.test", token="secret").exec_container(
+                "abc123", command="echo hi"
+            )
         self.assertEqual(len(mock.calls), 1)
 
     async def test_exec_container_retries_once_on_connect_error(self) -> None:
@@ -258,25 +277,25 @@ class AgentClientTests(unittest.IsolatedAsyncioTestCase):
 
 
 def _make_result(**kwargs) -> UpdateResult:
-    container_kwargs = dict(
-        name="web",
-        container_id="abcdef123456",
-        image_ref="nginx:1.0.0",
-        registry=RegistryType.DOCKERHUB,
-        namespace="library",
-        image_name="nginx",
-        current_tag="1.0.0",
-        source="agent",
-        environment_id="media-pc",
-    )
+    container_kwargs = {
+        "name": "web",
+        "container_id": "abcdef123456",
+        "image_ref": "nginx:1.0.0",
+        "registry": RegistryType.DOCKERHUB,
+        "namespace": "library",
+        "image_name": "nginx",
+        "current_tag": "1.0.0",
+        "source": "agent",
+        "environment_id": "media-pc",
+    }
     container_kwargs.update(kwargs.pop("container_overrides", {}))
-    fields = dict(
-        container_info=ContainerInfo(**container_kwargs),
-        is_outdated=True,
-        deployed_tag="1.0.0",
-        remote_tag="1.1.0",
-        comparison_basis="version",
-    )
+    fields = {
+        "container_info": ContainerInfo(**container_kwargs),
+        "is_outdated": True,
+        "deployed_tag": "1.0.0",
+        "remote_tag": "1.1.0",
+        "comparison_basis": "version",
+    }
     fields.update(kwargs)
     return UpdateResult(**fields)
 
@@ -591,7 +610,7 @@ class AgentServerTests(unittest.TestCase):
 
     def _fake_container(self, *, labels=None, image_ref="nginx:1.0.0", name="web", container_id="abcdef123456"):
         class FakeImage:
-            attrs = {"RepoDigests": ["sha256:abc"]}
+            attrs: ClassVar[dict[str, list[str]]] = {"RepoDigests": ["sha256:abc"]}
 
         container = type("FakeContainer", (), {})()
         container.name = name

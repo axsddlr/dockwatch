@@ -26,14 +26,14 @@ dockwatch = "dockwatch.main:app"
 dev = [
   # Exact pins are fine for tools that stand alone: Dependabot can bump them and
   # CI catches any fallout (see the ruff 0.16 bump).
-  "ruff==0.16.6",
+  "ruff==0.16.7",
   "mypy==2.3.1",
   # pytest and pytest-asyncio constrain each other — pytest-asyncio caps the
   # pytest major it supports — so exact pins make each one unupdatable: bumping
   # either alone leaves the other unsatisfiable and Dependabot reports
   # dependency_file_not_resolvable. Lower bounds let the resolver co-upgrade the
   # pair; uv.lock still pins the exact versions CI installs.
-  "pytest>=8.3.3",
+  "pytest>=9.1.1",
   "pytest-asyncio>=0.25.3",
   "types-docker>=7.2.0",
 ]

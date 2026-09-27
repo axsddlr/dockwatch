@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.32.0"]
+requires = ["hatchling>=1.32.3"]
 build-backend = "hatchling.build"
 
 [project]
@@ -26,7 +26,7 @@ dockwatch = "dockwatch.main:app"
 dev = [
   # Exact pins are fine for tools that stand alone: Dependabot can bump them and
   # CI catches any fallout (see the ruff 0.16 bump).
-  "ruff==0.16.7",
+  "ruff==0.16.8",
   "mypy==2.3.1",
   # pytest and pytest-asyncio constrain each other — pytest-asyncio caps the
   # pytest major it supports — so exact pins make each one unupdatable: bumping

@@ -14,8 +14,8 @@ dependencies = [
   "httpx>=0.27.0",
   "rich>=13.7.1",
   "packaging>=26.3",
-  "fastapi>=0.141.1",
-  "uvicorn[standard]>=0.53.0",
+  "fastapi>=0.142.2",
+  "uvicorn[standard]>=0.54.0",
   "itsdangerous>=2.1.2",
 ]
 

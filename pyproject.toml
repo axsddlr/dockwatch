@@ -26,8 +26,8 @@ dockwatch = "dockwatch.main:app"
 dev = [
   # Exact pins are fine for tools that stand alone: Dependabot can bump them and
   # CI catches any fallout (see the ruff 0.16 bump).
-  "ruff==0.16.9",
-  "mypy==2.3.1",
+  "ruff==0.16.10",
+  "mypy==2.4.0",
   # pytest and pytest-asyncio constrain each other — pytest-asyncio caps the
   # pytest major it supports — so exact pins make each one unupdatable: bumping
   # either alone leaves the other unsatisfiable and Dependabot reports
